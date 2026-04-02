@@ -1,0 +1,12 @@
+diff --git a/node_modules/@luma.gl/core/dist/adapter/canvas-context.js b/node_modules/@luma.gl/core/dist/adapter/canvas-context.js
+index d4436e1..d6d4643 100644
+--- a/node_modules/@luma.gl/core/dist/adapter/canvas-context.js
++++ b/node_modules/@luma.gl/core/dist/adapter/canvas-context.js
+@@ -166,6 +166,7 @@ export class CanvasContext {
+     }
+     /** Returns the biggest allowed framebuffer size. @todo Allow the application to limit this? */
+     getMaxDrawingBufferSize() {
++        if (!this.device) return [4096, 4096];
+         const maxTextureDimension = this.device.limits.maxTextureDimension2D;
+         return [maxTextureDimension, maxTextureDimension];
+     }

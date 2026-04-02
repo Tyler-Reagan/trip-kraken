@@ -9,7 +9,8 @@
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "scraper:install": "playwright install chromium"
+    "scraper:install": "playwright install chromium",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -20,11 +21,14 @@
     "deck.gl": "^9.2.11",
     "fast-xml-parser": "^5.5.9",
     "maplibre-gl": "^5.21.1",
-    "next": "^15.1.0",
+    "next": "^16.2.2",
     "playwright": "^1.49.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-map-gl": "^8.1.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["@prisma/client", "@prisma/engines", "prisma", "sharp"]
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",
@@ -32,6 +36,7 @@
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.0",
+    "patch-package": "^8.0.1",
     "postcss": "^8.4.0",
     "prisma": "^5.22.0",
     "tailwindcss": "^3.4.0",
