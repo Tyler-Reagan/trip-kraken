@@ -6,15 +6,8 @@ import DeckGL from "@deck.gl/react";
 import { ScatterplotLayer, PathLayer } from "@deck.gl/layers";
 import { WebMercatorViewport } from "@deck.gl/core";
 import type { PickingInfo } from "@deck.gl/core";
-import { luma } from "@luma.gl/core";
 import Map from "react-map-gl/maplibre";
 import type { TripWithDetails } from "@/types";
-
-// deck.gl v9 defaults to 'best-available' which attempts WebGPU first.
-// WebGPU is not yet universally available; when navigator.gpu.requestAdapter()
-// returns null the subsequent adapter.limits.maxTextureDimension2D access
-// throws. Force WebGL2 so the renderer never reaches that branch.
-luma.setDefaultDeviceProps({ type: "webgl" });
 
 const CARTO_DARK =
   "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
@@ -218,6 +211,7 @@ export default function MapView({
         layers={layers}
         getTooltip={getTooltip}
         onClick={handleClick}
+        deviceProps={{ type: "webgl" }}
         style={{ position: "absolute", inset: "0" }}
       >
         <Map mapStyle={CARTO_DARK} />
