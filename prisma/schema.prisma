@@ -1,0 +1,57 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Trip {
+  id        String   @id @default(cuid())
+  name      String
+  sourceUrl String
+  numDays   Int?
+  startDate DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  locations Location[]
+  days      ItineraryDay[]
+}
+
+model Location {
+  id       String  @id @default(cuid())
+  tripId   String
+  trip     Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  name     String
+  address  String?
+  lat      Float?
+  lng      Float?
+  placeId  String?
+  excluded Boolean @default(false)
+  note     String?
+
+  stops ItineraryStop[]
+}
+
+model ItineraryDay {
+  id        String    @id @default(cuid())
+  tripId    String
+  trip      Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  dayNumber Int
+  date      DateTime?
+  label     String?
+
+  stops ItineraryStop[]
+}
+
+model ItineraryStop {
+  id         String       @id @default(cuid())
+  dayId      String
+  day        ItineraryDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  locationId String
+  location   Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  order      Int
+  notes      String?
+}
