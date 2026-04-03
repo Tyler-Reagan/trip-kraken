@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import type { TripWithDetails } from "@/types";
+import type { TripWithDetails, Location } from "@/types";
 import OptimizeModal from "./OptimizeModal";
 import LocationSidebar from "./LocationSidebar";
 import ItineraryView from "./ItineraryView";
 import AddLocationModal from "./AddLocationModal";
+import NearbyDrawer from "./NearbyDrawer";
 
 // deck.gl and maplibre-gl use browser-only APIs — never SSR
 const MapView = dynamic(() => import("./MapView"), { ssr: false });
@@ -24,6 +25,7 @@ export default function TripClient({ trip: initial }: Props) {
   const [activeView, setActiveView] = useState<ActiveView>("itinerary");
   const [highlightedLocationId, setHighlightedLocationId] = useState<string | null>(null);
   const [selectedDayNumber, setSelectedDayNumber] = useState<number | null>(null);
+  const [nearbyAnchor, setNearbyAnchor] = useState<Location | null>(null);
 
   async function reload() {
     const res = await fetch(`/api/trips/${trip.id}`);
@@ -159,6 +161,7 @@ export default function TripClient({ trip: initial }: Props) {
             <LocationSidebar
               locations={trip.locations}
               onToggle={toggleExcluded}
+              onFindNearby={setNearbyAnchor}
             />
           </aside>
 
@@ -203,6 +206,18 @@ export default function TripClient({ trip: initial }: Props) {
             setShowAddLocation(false);
             reload();
           }}
+        />
+      )}
+
+      {nearbyAnchor && (
+        <NearbyDrawer
+          tripId={trip.id}
+          anchorLocation={nearbyAnchor}
+          existingPlaceIds={new Set(
+            trip.locations.map((l) => l.placeId).filter((id): id is string => id !== null)
+          )}
+          onClose={() => setNearbyAnchor(null)}
+          onAdded={reload}
         />
       )}
     </div>

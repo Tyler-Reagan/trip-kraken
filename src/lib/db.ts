@@ -33,6 +33,15 @@ function openDb(): DatabaseSync {
       note TEXT
     )
   `);
+  const locationAlters = [
+    "ALTER TABLE Location ADD COLUMN rating REAL",
+    "ALTER TABLE Location ADD COLUMN reviewCount INTEGER",
+    "ALTER TABLE Location ADD COLUMN categories TEXT",
+  ];
+  for (const sql of locationAlters) {
+    try { database.exec(sql); } catch { /* column already exists */ }
+  }
+
   database.exec(`
     CREATE TABLE IF NOT EXISTS ItineraryDay (
       id TEXT PRIMARY KEY,
@@ -74,6 +83,7 @@ type LocationRow = {
   id: string; tripId: string; name: string; address: string | null;
   lat: number | null; lng: number | null; placeId: string | null;
   excluded: number; note: string | null;
+  rating: number | null; reviewCount: number | null; categories: string | null;
 };
 type DayRow = {
   id: string; tripId: string; dayNumber: number;
@@ -84,6 +94,7 @@ type StopWithLocRow = StopRow & {
   loc_id: string; loc_tripId: string; loc_name: string;
   loc_address: string | null; loc_lat: number | null; loc_lng: number | null;
   loc_placeId: string | null; loc_excluded: number; loc_note: string | null;
+  loc_rating: number | null; loc_reviewCount: number | null; loc_categories: string | null;
 };
 
 // ─── Deserializers ────────────────────────────────────────────────────────────
@@ -99,7 +110,11 @@ function parseTrip(r: TripRow) {
 }
 
 function parseLocation(r: LocationRow): Location {
-  return { ...r, excluded: r.excluded !== 0 };
+  return {
+    ...r,
+    excluded: r.excluded !== 0,
+    categories: r.categories ? JSON.parse(r.categories) : null,
+  };
 }
 
 function parseStopWithLoc(r: StopWithLocRow): ItineraryStop {
@@ -110,6 +125,8 @@ function parseStopWithLoc(r: StopWithLocRow): ItineraryStop {
       id: r.loc_id, tripId: r.loc_tripId, name: r.loc_name,
       address: r.loc_address, lat: r.loc_lat, lng: r.loc_lng,
       placeId: r.loc_placeId, excluded: r.loc_excluded !== 0, note: r.loc_note,
+      rating: r.loc_rating, reviewCount: r.loc_reviewCount,
+      categories: r.loc_categories ? JSON.parse(r.loc_categories) : null,
     },
   };
 }
@@ -161,7 +178,9 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
     SELECT s.id, s.dayId, s.locationId, s.ord, s.notes,
            l.id as loc_id, l.tripId as loc_tripId, l.name as loc_name,
            l.address as loc_address, l.lat as loc_lat, l.lng as loc_lng,
-           l.placeId as loc_placeId, l.excluded as loc_excluded, l.note as loc_note
+           l.placeId as loc_placeId, l.excluded as loc_excluded, l.note as loc_note,
+           l.rating as loc_rating, l.reviewCount as loc_reviewCount,
+           l.categories as loc_categories
     FROM ItineraryStop s
     JOIN Location l ON l.id = s.locationId
     JOIN ItineraryDay d ON d.id = s.dayId

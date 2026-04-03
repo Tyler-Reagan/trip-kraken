@@ -5,9 +5,10 @@ import type { Location } from "@/types";
 interface Props {
   locations: Location[];
   onToggle: (id: string, excluded: boolean) => void;
+  onFindNearby: (location: Location) => void;
 }
 
-export default function LocationSidebar({ locations, onToggle }: Props) {
+export default function LocationSidebar({ locations, onToggle, onFindNearby }: Props) {
   const included = locations.filter((l) => !l.excluded);
   const excluded = locations.filter((l) => l.excluded);
 
@@ -21,7 +22,7 @@ export default function LocationSidebar({ locations, onToggle }: Props) {
         {locations.map((loc) => (
           <li
             key={loc.id}
-            className={`flex items-start gap-2.5 py-1.5 px-2 rounded-lg transition-colors
+            className={`group flex items-start gap-2.5 py-1.5 px-2 rounded-lg transition-colors
               ${loc.excluded ? "opacity-50" : "hover:bg-gray-50"}`}
           >
             <input
@@ -31,12 +32,24 @@ export default function LocationSidebar({ locations, onToggle }: Props) {
               className="mt-0.5 rounded border-gray-300 text-brand-600 focus:ring-brand-500 cursor-pointer shrink-0"
               aria-label={`Include ${loc.name}`}
             />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-gray-800 truncate">{loc.name}</p>
               {loc.address && (
                 <p className="text-xs text-gray-400 truncate">{loc.address}</p>
               )}
             </div>
+            <button
+              onClick={() => onFindNearby(loc)}
+              disabled={loc.lat === null || loc.lng === null}
+              title={loc.lat === null ? "No coordinates — geocoding failed" : "Find nearby attractions"}
+              className={`shrink-0 text-xs opacity-0 group-hover:opacity-100 transition-opacity
+                ${loc.lat !== null && loc.lng !== null
+                  ? "text-brand-600 hover:text-brand-700 cursor-pointer"
+                  : "text-gray-300 cursor-not-allowed"
+                }`}
+            >
+              Nearby
+            </button>
           </li>
         ))}
       </ul>

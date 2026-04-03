@@ -21,6 +21,22 @@ export type Location = {
   excluded: boolean;
   note: string | null;
   stops?: ItineraryStop[];
+  rating: number | null;
+  reviewCount: number | null;
+  categories: string[] | null;
+};
+
+export type NearbyPlace = {
+  placeId: string;
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  rating: number | null;
+  reviewCount: number | null;
+  categories: string[];
+  priceLevel: number | null;  // 0–4
+  distanceMeters: number | null;
 };
 
 export type ItineraryDay = {
