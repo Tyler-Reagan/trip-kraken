@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, rebuildItinerary } from "@/lib/db";
+import { getDb, rebuildItinerary } from "@/lib/db";
 import { optimizeItinerary } from "@/lib/optimizer";
 
 export async function POST(
@@ -15,11 +15,11 @@ export async function POST(
   }
 
   type LocationRow = { id: string; lat: number | null; lng: number | null; excluded: number };
-  const locations = db.prepare(
+  const locations = getDb().prepare(
     "SELECT id, lat, lng, excluded FROM Location WHERE tripId = ? AND excluded = 0"
   ).all(tripId) as LocationRow[];
 
-  const tripExists = db.prepare("SELECT id FROM Trip WHERE id = ?").get(tripId);
+  const tripExists = getDb().prepare("SELECT id FROM Trip WHERE id = ?").get(tripId);
   if (!tripExists) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
   const dayPlans = optimizeItinerary(

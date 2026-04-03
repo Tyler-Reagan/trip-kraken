@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDb } from "@/lib/db";
 
 export async function PATCH(
   req: NextRequest,
@@ -9,8 +9,8 @@ export async function PATCH(
   const body = await req.json();
   const { label } = body;
 
-  db.prepare("UPDATE ItineraryDay SET label = ? WHERE id = ?").run(label ?? null, dayId);
+  getDb().prepare("UPDATE ItineraryDay SET label = ? WHERE id = ?").run(label ?? null, dayId);
 
-  const day = db.prepare("SELECT * FROM ItineraryDay WHERE id = ?").get(dayId);
+  const day = getDb().prepare("SELECT * FROM ItineraryDay WHERE id = ?").get(dayId);
   return NextResponse.json(day);
 }

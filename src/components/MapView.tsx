@@ -1,13 +1,11 @@
 "use client";
 
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useMemo } from "react";
-import DeckGL from "@deck.gl/react";
-import { ScatterplotLayer, PathLayer } from "@deck.gl/layers";
-import { WebMercatorViewport } from "@deck.gl/core";
-import type { PickingInfo } from "@deck.gl/core";
-import Map from "react-map-gl/maplibre";
+import { useMemo, useState, useCallback, useRef } from "react";
+import Map, { Source, Layer, MapMouseEvent } from "react-map-gl/maplibre";
+import type { MapRef, LayerProps } from "react-map-gl/maplibre";
 import type { TripWithDetails } from "@/types";
+import type { FeatureCollection, LineString, Point } from "geojson";
 
 const CARTO_DARK =
   "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
@@ -17,42 +15,39 @@ const CARTO_DARK =
  * Colors loop for trips with more than 14 days.
  */
 const DAY_COLORS: [number, number, number][] = [
-  [251, 191, 36],  // amber-400
-  [34, 211, 238],  // cyan-400
-  [163, 230, 53],  // lime-400
-  [251, 146, 60],  // orange-400
-  [167, 139, 250], // violet-400
-  [248, 113, 113], // red-400
-  [52, 211, 153],  // emerald-400
-  [250, 204, 21],  // yellow-400
-  [96, 165, 250],  // blue-400
-  [244, 114, 182], // pink-400
-  [45, 212, 191],  // teal-400
-  [251, 113, 133], // rose-400
-  [129, 140, 248], // indigo-400
-  [56, 189, 248],  // sky-400
+  [251, 191, 36],   // amber-400
+  [34, 211, 238],   // cyan-400
+  [163, 230, 53],   // lime-400
+  [251, 146, 60],   // orange-400
+  [167, 139, 250],  // violet-400
+  [248, 113, 113],  // red-400
+  [52, 211, 153],   // emerald-400
+  [250, 204, 21],   // yellow-400
+  [96, 165, 250],   // blue-400
+  [244, 114, 182],  // pink-400
+  [45, 212, 191],   // teal-400
+  [251, 113, 133],  // rose-400
+  [129, 140, 248],  // indigo-400
+  [56, 189, 248],   // sky-400
 ];
-
-type ScatterPoint = {
-  position: [number, number];
-  color: [number, number, number, number];
-  locationId: string;
-  name: string;
-  dayNumber: number;
-  order: number;
-};
-
-type PathEntry = {
-  path: [number, number][];
-  color: [number, number, number, number];
-  dayNumber: number;
-};
 
 interface MapViewProps {
   trip: TripWithDetails;
   selectedDayNumber: number | null;
   highlightedLocationId: string | null;
   onLocationClick: (locationId: string) => void;
+}
+
+type TooltipState = {
+  x: number;
+  y: number;
+  name: string;
+  dayNumber: number;
+  order: number;
+} | null;
+
+function toRgb(rgb: [number, number, number]): string {
+  return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
 }
 
 function computeInitialViewState(trip: TripWithDetails) {
@@ -71,23 +66,11 @@ function computeInitialViewState(trip: TripWithDetails) {
   const minLat = Math.min(...lats);
   const maxLat = Math.max(...lats);
 
-  try {
-    const vp = new WebMercatorViewport({ width: 800, height: 500 });
-    const { longitude, latitude, zoom } = vp.fitBounds(
-      [
-        [minLng, minLat],
-        [maxLng, maxLat],
-      ],
-      { padding: 80 }
-    );
-    return { longitude, latitude, zoom };
-  } catch {
-    return {
-      longitude: (minLng + maxLng) / 2,
-      latitude: (minLat + maxLat) / 2,
-      zoom: 11,
-    };
-  }
+  return {
+    longitude: (minLng + maxLng) / 2,
+    latitude: (minLat + maxLat) / 2,
+    zoom: 11,
+  };
 }
 
 export default function MapView({
@@ -96,126 +79,156 @@ export default function MapView({
   highlightedLocationId,
   onLocationClick,
 }: MapViewProps) {
-  // Stable initial viewport — only recomputed when trip ID changes (new import)
+  const mapRef = useRef<MapRef>(null);
+  const [tooltip, setTooltip] = useState<TooltipState>(null);
+
   const initialViewState = useMemo(
     () => computeInitialViewState(trip),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [trip.id]
   );
 
-  const { scatterData, pathData } = useMemo(() => {
-    const scatter: ScatterPoint[] = [];
-    const paths: PathEntry[] = [];
+  // Build GeoJSON for route lines and stop dots
+  const { pointsGeoJSON, routesGeoJSON } = useMemo(() => {
+    const points: FeatureCollection<Point> = { type: "FeatureCollection", features: [] };
+    const routes: FeatureCollection<LineString> = { type: "FeatureCollection", features: [] };
 
     for (const day of trip.days) {
       const rgb = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length];
-      const isActive =
-        selectedDayNumber === null || selectedDayNumber === day.dayNumber;
-      const alpha = isActive ? 220 : 45;
+      const isActive = selectedDayNumber === null || selectedDayNumber === day.dayNumber;
+      const alpha = isActive ? 1 : 0.18;
+      const color = toRgb(rgb);
 
       const geocodedStops = day.stops.filter(
         (s) => s.location.lat !== null && s.location.lng !== null
       );
 
       for (const stop of geocodedStops) {
-        scatter.push({
-          position: [stop.location.lng!, stop.location.lat!],
-          color: [rgb[0], rgb[1], rgb[2], alpha],
-          locationId: stop.location.id,
-          name: stop.location.name,
-          dayNumber: day.dayNumber,
-          order: stop.order,
+        points.features.push({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [stop.location.lng!, stop.location.lat!] },
+          properties: {
+            locationId: stop.location.id,
+            name: stop.location.name,
+            dayNumber: day.dayNumber,
+            order: stop.order,
+            color,
+            alpha,
+            isHighlighted: stop.location.id === highlightedLocationId,
+          },
         });
       }
 
-      if (
-        geocodedStops.length >= 2 &&
-        (selectedDayNumber === null || selectedDayNumber === day.dayNumber)
-      ) {
-        paths.push({
-          path: geocodedStops.map((s) => [s.location.lng!, s.location.lat!]),
-          color: [rgb[0], rgb[1], rgb[2], isActive ? 160 : 0],
-          dayNumber: day.dayNumber,
+      if (geocodedStops.length >= 2) {
+        routes.features.push({
+          type: "Feature",
+          geometry: {
+            type: "LineString",
+            coordinates: geocodedStops.map((s) => [s.location.lng!, s.location.lat!]),
+          },
+          properties: { color, alpha: isActive ? 0.65 : 0 },
         });
       }
     }
 
-    return { scatterData: scatter, pathData: paths };
-  }, [trip.days, selectedDayNumber]);
+    return { pointsGeoJSON: points, routesGeoJSON: routes };
+  }, [trip.days, selectedDayNumber, highlightedLocationId]);
 
-  const layers = [
-    new PathLayer<PathEntry>({
-      id: "routes",
-      data: pathData,
-      getPath: (d) => d.path,
-      getColor: (d) => d.color,
-      getWidth: 3,
-      widthMinPixels: 2,
-      capRounded: true,
-      jointRounded: true,
-    }),
-    new ScatterplotLayer<ScatterPoint>({
-      id: "locations",
-      data: scatterData,
-      getPosition: (d) => d.position,
-      getFillColor: (d) =>
-        d.locationId === highlightedLocationId
-          ? [255, 255, 255, 255]
-          : d.color,
-      getLineColor: (d) =>
-        d.locationId === highlightedLocationId
-          ? [22, 163, 74, 255]  // brand-600
-          : [0, 0, 0, 80],
-      getRadius: (d) =>
-        d.locationId === highlightedLocationId ? 18 : 11,
-      radiusUnits: "pixels",
-      stroked: true,
-      lineWidthMinPixels: 2,
-      pickable: true,
-      updateTriggers: {
-        getFillColor: [highlightedLocationId],
-        getLineColor: [highlightedLocationId],
-        getRadius: [highlightedLocationId],
-      },
-    }),
-  ];
+  const routeLayer: LayerProps = {
+    id: "routes",
+    type: "line",
+    paint: {
+      "line-color": ["get", "color"],
+      "line-opacity": ["get", "alpha"],
+      "line-width": 3,
+    },
+    layout: { "line-cap": "round", "line-join": "round" },
+  };
 
-  function getTooltip(info: PickingInfo) {
-    const obj = info.object as ScatterPoint | undefined;
-    if (!obj) return null;
-    return {
-      html: `<div style="padding:6px 10px;font-family:system-ui,sans-serif;font-size:13px;line-height:1.4">
-        <strong>${obj.name}</strong><br/>
-        <span style="opacity:.7">Day ${obj.dayNumber} · Stop ${obj.order + 1}</span>
-      </div>`,
-      style: {
-        background: "rgba(0,0,0,0.85)",
-        color: "#fff",
-        borderRadius: "8px",
-        border: "1px solid rgba(255,255,255,0.1)",
-        padding: "0",
-      },
-    };
-  }
+  const dotsLayer: LayerProps = {
+    id: "stops",
+    type: "circle",
+    paint: {
+      "circle-radius": ["case", ["get", "isHighlighted"], 18, 11],
+      "circle-color": ["case", ["get", "isHighlighted"], "#ffffff", ["get", "color"]],
+      "circle-opacity": ["get", "alpha"],
+      "circle-stroke-width": 2,
+      "circle-stroke-color": ["case", ["get", "isHighlighted"], "#16a34a", "rgba(0,0,0,0.3)"],
+      "circle-stroke-opacity": ["get", "alpha"],
+    },
+  };
 
-  function handleClick(info: PickingInfo) {
-    const obj = info.object as ScatterPoint | undefined;
-    if (obj?.locationId) onLocationClick(obj.locationId);
-  }
+  const handleClick = useCallback((e: MapMouseEvent) => {
+    const features = mapRef.current?.queryRenderedFeatures(e.point, { layers: ["stops"] });
+    const f = features?.[0];
+    if (f?.properties?.locationId) {
+      onLocationClick(f.properties.locationId as string);
+    }
+  }, [onLocationClick]);
+
+  const handleMouseMove = useCallback((e: MapMouseEvent) => {
+    const features = mapRef.current?.queryRenderedFeatures(e.point, { layers: ["stops"] });
+    const f = features?.[0];
+    if (f?.properties) {
+      setTooltip({
+        x: e.point.x,
+        y: e.point.y,
+        name: f.properties.name as string,
+        dayNumber: f.properties.dayNumber as number,
+        order: f.properties.order as number,
+      });
+    } else {
+      setTooltip(null);
+    }
+  }, []);
+
+  const handleMouseLeave = useCallback(() => setTooltip(null), []);
 
   return (
     <div className="relative w-full rounded-xl overflow-hidden border border-gray-200" style={{ height: 520 }}>
-      <DeckGL
+      <Map
+        ref={mapRef}
         initialViewState={initialViewState}
-        controller={true}
-        layers={layers}
-        getTooltip={getTooltip}
+        mapStyle={CARTO_DARK}
+        style={{ width: "100%", height: "100%" }}
+        interactiveLayerIds={["stops"]}
         onClick={handleClick}
-        deviceProps={{ type: "webgl" }}
-        style={{ position: "absolute", inset: "0" }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        cursor={tooltip ? "pointer" : "grab"}
       >
-        <Map mapStyle={CARTO_DARK} />
-      </DeckGL>
+        <Source id="routes" type="geojson" data={routesGeoJSON}>
+          <Layer {...routeLayer} />
+        </Source>
+        <Source id="stops" type="geojson" data={pointsGeoJSON}>
+          <Layer {...dotsLayer} />
+        </Source>
+      </Map>
+
+      {/* Tooltip */}
+      {tooltip && (
+        <div
+          className="absolute pointer-events-none z-10"
+          style={{ left: tooltip.x + 12, top: tooltip.y - 8 }}
+        >
+          <div
+            style={{
+              background: "rgba(0,0,0,0.85)",
+              color: "#fff",
+              borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.1)",
+              padding: "6px 10px",
+              fontFamily: "system-ui,sans-serif",
+              fontSize: 13,
+              lineHeight: 1.4,
+            }}
+          >
+            <strong>{tooltip.name}</strong>
+            <br />
+            <span style={{ opacity: 0.7 }}>Day {tooltip.dayNumber} · Stop {tooltip.order + 1}</span>
+          </div>
+        </div>
+      )}
 
       {/* Legend */}
       <div className="absolute bottom-3 left-3 bg-black/70 text-white text-xs rounded-lg px-3 py-2 space-y-1 backdrop-blur-sm pointer-events-none">

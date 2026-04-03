@@ -3,9 +3,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import type { TripWithDetails, Location, ItineraryDay, ItineraryStop } from "@/types";
 
-const DB_PATH = path.join(process.cwd(), "prisma", "dev.db");
-
-const g = globalThis as unknown as { _db?: DatabaseSync };
+const DB_PATH = path.join(process.cwd(), "db", "dev.db");
 
 function openDb(): DatabaseSync {
   const database = new DatabaseSync(DB_PATH);
@@ -56,8 +54,12 @@ function openDb(): DatabaseSync {
   return database;
 }
 
-export const db = g._db ?? openDb();
-if (process.env.NODE_ENV !== "production") g._db = db;
+const g = globalThis as unknown as { _db?: DatabaseSync };
+
+export function getDb(): DatabaseSync {
+  if (!g._db) g._db = openDb();
+  return g._db;
+}
 
 export const newId = () => randomUUID();
 
@@ -115,13 +117,13 @@ function parseStopWithLoc(r: StopWithLocRow): ItineraryStop {
 // ─── Transaction helper ───────────────────────────────────────────────────────
 
 function transaction<T>(fn: () => T): T {
-  db.exec("BEGIN");
+  getDb().exec("BEGIN");
   try {
     const result = fn();
-    db.exec("COMMIT");
+    getDb().exec("COMMIT");
     return result;
   } catch (err) {
-    db.exec("ROLLBACK");
+    getDb().exec("ROLLBACK");
     throw err;
   }
 }
@@ -129,7 +131,7 @@ function transaction<T>(fn: () => T): T {
 // ─── Exported query helpers ───────────────────────────────────────────────────
 
 export function listTrips() {
-  const rows = db.prepare(`
+  const rows = getDb().prepare(`
     SELECT t.*, COUNT(l.id) as locationCount
     FROM Trip t
     LEFT JOIN Location l ON l.tripId = t.id
@@ -144,18 +146,18 @@ export function listTrips() {
 }
 
 export function getTripWithDetails(id: string): TripWithDetails | null {
-  const tripRow = db.prepare("SELECT * FROM Trip WHERE id = ?").get(id) as TripRow | undefined;
+  const tripRow = getDb().prepare("SELECT * FROM Trip WHERE id = ?").get(id) as TripRow | undefined;
   if (!tripRow) return null;
 
-  const locationRows = db.prepare(
+  const locationRows = getDb().prepare(
     "SELECT * FROM Location WHERE tripId = ? ORDER BY name ASC"
   ).all(id) as LocationRow[];
 
-  const dayRows = db.prepare(
+  const dayRows = getDb().prepare(
     "SELECT * FROM ItineraryDay WHERE tripId = ? ORDER BY dayNumber ASC"
   ).all(id) as DayRow[];
 
-  const stopRows = db.prepare(`
+  const stopRows = getDb().prepare(`
     SELECT s.id, s.dayId, s.locationId, s.ord, s.notes,
            l.id as loc_id, l.tripId as loc_tripId, l.name as loc_name,
            l.address as loc_address, l.lat as loc_lat, l.lng as loc_lng,
@@ -189,10 +191,10 @@ export function createTripWithLocations(data: {
   }>;
 }): TripWithDetails {
   const tripId = newId();
-  const insertTrip = db.prepare(
+  const insertTrip = getDb().prepare(
     "INSERT INTO Trip (id, name, sourceUrl, numDays, startDate, createdAt, updatedAt) VALUES (?, ?, ?, NULL, NULL, datetime('now'), datetime('now'))"
   );
-  const insertLoc = db.prepare(
+  const insertLoc = getDb().prepare(
     "INSERT INTO Location (id, tripId, name, address, lat, lng, placeId, excluded, note) VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL)"
   );
 
@@ -212,14 +214,14 @@ export function rebuildItinerary(
   startDate: string | null,
   dayPlans: Array<{ dayNumber: number; locationIds: string[] }>
 ): TripWithDetails {
-  const deleteDays = db.prepare("DELETE FROM ItineraryDay WHERE tripId = ?");
-  const updateTrip = db.prepare(
+  const deleteDays = getDb().prepare("DELETE FROM ItineraryDay WHERE tripId = ?");
+  const updateTrip = getDb().prepare(
     "UPDATE Trip SET numDays = ?, startDate = ?, updatedAt = datetime('now') WHERE id = ?"
   );
-  const insertDay = db.prepare(
+  const insertDay = getDb().prepare(
     "INSERT INTO ItineraryDay (id, tripId, dayNumber, date, label) VALUES (?, ?, ?, ?, NULL)"
   );
-  const insertStop = db.prepare(
+  const insertStop = getDb().prepare(
     "INSERT INTO ItineraryStop (id, dayId, locationId, ord, notes) VALUES (?, ?, ?, ?, NULL)"
   );
 
@@ -251,18 +253,18 @@ export function moveStop(
   targetDayId: string,
   targetOrder: number
 ): TripWithDetails {
-  const getStop = db.prepare("SELECT * FROM ItineraryStop WHERE id = ?");
-  const getDay = db.prepare("SELECT * FROM ItineraryDay WHERE id = ? AND tripId = ?");
-  const shiftOrds = db.prepare(
+  const getStop = getDb().prepare("SELECT * FROM ItineraryStop WHERE id = ?");
+  const getDay = getDb().prepare("SELECT * FROM ItineraryDay WHERE id = ? AND tripId = ?");
+  const shiftOrds = getDb().prepare(
     "UPDATE ItineraryStop SET ord = ord + 1 WHERE dayId = ? AND ord >= ?"
   );
-  const updateStop = db.prepare(
+  const updateStop = getDb().prepare(
     "UPDATE ItineraryStop SET dayId = ?, ord = ? WHERE id = ?"
   );
-  const getRemaining = db.prepare(
+  const getRemaining = getDb().prepare(
     "SELECT id FROM ItineraryStop WHERE dayId = ? ORDER BY ord ASC"
   );
-  const setOrd = db.prepare("UPDATE ItineraryStop SET ord = ? WHERE id = ?");
+  const setOrd = getDb().prepare("UPDATE ItineraryStop SET ord = ? WHERE id = ?");
 
   transaction(() => {
     const stop = getStop.get(stopId) as StopRow | undefined;

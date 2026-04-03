@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDb } from "@/lib/db";
+import { SQLInputValue } from "node:sqlite";
 
 export async function PATCH(
   req: NextRequest,
@@ -18,10 +19,10 @@ export async function PATCH(
 
   if (setClauses.length > 0) {
     values.push(locationId);
-    db.prepare(`UPDATE Location SET ${setClauses.join(", ")} WHERE id = ?`).run(...values);
+    getDb().prepare(`UPDATE Location SET ${setClauses.join(", ")} WHERE id = ?`).run(...(values as SQLInputValue[]));
   }
 
-  const location = db.prepare("SELECT * FROM Location WHERE id = ?").get(locationId);
+  const location = getDb().prepare("SELECT * FROM Location WHERE id = ?").get(locationId);
   return NextResponse.json(location);
 }
 
@@ -30,6 +31,6 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; locationId: string }> }
 ) {
   const { locationId } = await params;
-  db.prepare("DELETE FROM Location WHERE id = ?").run(locationId);
+  getDb().prepare("DELETE FROM Location WHERE id = ?").run(locationId);
   return new NextResponse(null, { status: 204 });
 }

@@ -3,8 +3,8 @@ import type { ScrapedPlace } from "./scraper";
 export interface GeocodedPlace {
   name: string;
   address?: string;
-  lat: number;
-  lng: number;
+  lat?: number;
+  lng?: number;
   placeId?: string;
 }
 
@@ -52,7 +52,7 @@ export async function geocodePlaces(
       } else {
         // Couldn't resolve — include without coords so user can see it
         console.warn(`Could not geocode: "${query}"`);
-        results.push({ name: place.name, address: place.address, lat: 0, lng: 0 });
+        results.push({ name: place.name, address: place.address });
       }
     } catch (err) {
       console.error(`Geocoding error for "${query}":`, err);

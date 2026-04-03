@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, getTripWithDetails } from "@/lib/db";
+import { getDb, getTripWithDetails } from "@/lib/db";
+import { SQLInputValue } from "node:sqlite";
 
 export async function GET(
   _req: NextRequest,
@@ -30,7 +31,7 @@ export async function PATCH(
   }
 
   values.push(id);
-  db.prepare(`UPDATE Trip SET ${setClauses.join(", ")} WHERE id = ?`).run(...values);
+  getDb().prepare(`UPDATE Trip SET ${setClauses.join(", ")} WHERE id = ?`).run(...(values as SQLInputValue[]));
 
   const trip = getTripWithDetails(id);
   return NextResponse.json(trip);
@@ -41,6 +42,6 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  db.prepare("DELETE FROM Trip WHERE id = ?").run(id);
+  getDb().prepare("DELETE FROM Trip WHERE id = ?").run(id);
   return new NextResponse(null, { status: 204 });
 }

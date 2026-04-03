@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, newId } from "@/lib/db";
+import { getDb, newId } from "@/lib/db";
 
 export async function POST(
   req: NextRequest,
@@ -14,10 +14,10 @@ export async function POST(
   }
 
   const id = newId();
-  db.prepare(
+  getDb().prepare(
     "INSERT INTO Location (id, tripId, name, address, lat, lng, placeId, excluded, note) VALUES (?, ?, ?, ?, ?, ?, NULL, 0, NULL)"
   ).run(id, tripId, name, address ?? null, lat ?? null, lng ?? null);
 
-  const location = db.prepare("SELECT * FROM Location WHERE id = ?").get(id);
+  const location = getDb().prepare("SELECT * FROM Location WHERE id = ?").get(id);
   return NextResponse.json(location, { status: 201 });
 }
