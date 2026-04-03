@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { createTripWithLocations } from "@/lib/db";
 import { parseKml, parseKmz } from "@/lib/parsers/kml";
 
 export async function POST(req: NextRequest) {
@@ -47,26 +47,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // KML already has coordinates — no geocoding needed
-  const tripName = name || `KML import — ${new Date().toLocaleDateString()}`;
-
-  const trip = await db.trip.create({
-    data: {
-      name: tripName,
-      sourceUrl: `kml:${file.name}`,
-      locations: {
-        create: places.map((place) => ({
-          name: place.name,
-          address: place.description ?? null,
-          lat: place.lat,
-          lng: place.lng,
-        })),
-      },
-    },
-    include: {
-      locations: true,
-      days: { include: { stops: { include: { location: true } } } },
-    },
+  const trip = createTripWithLocations({
+    name: name || `KML import — ${new Date().toLocaleDateString()}`,
+    sourceUrl: `kml:${file.name}`,
+    locations: places.map((p) => ({
+      name: p.name,
+      address: p.description ?? null,
+      lat: p.lat,
+      lng: p.lng,
+    })),
   });
 
   return NextResponse.json(trip, { status: 201 });

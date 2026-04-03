@@ -9,10 +9,8 @@ export async function PATCH(
   const body = await req.json();
   const { label } = body;
 
-  const day = await db.itineraryDay.update({
-    where: { id: dayId },
-    data: { label: label ?? null },
-  });
+  db.prepare("UPDATE ItineraryDay SET label = ? WHERE id = ?").run(label ?? null, dayId);
 
+  const day = db.prepare("SELECT * FROM ItineraryDay WHERE id = ?").get(dayId);
   return NextResponse.json(day);
 }

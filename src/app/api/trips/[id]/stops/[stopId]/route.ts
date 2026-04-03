@@ -6,6 +6,6 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; stopId: string }> }
 ) {
   const { stopId } = await params;
-  await db.itineraryStop.delete({ where: { id: stopId } });
+  db.prepare("DELETE FROM ItineraryStop WHERE id = ?").run(stopId);
   return new NextResponse(null, { status: 204 });
 }

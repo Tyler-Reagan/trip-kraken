@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, newId } from "@/lib/db";
 
-// POST — add a custom location to a trip
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -14,15 +13,11 @@ export async function POST(
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
-  const location = await db.location.create({
-    data: {
-      tripId,
-      name,
-      address: address ?? null,
-      lat: lat ?? null,
-      lng: lng ?? null,
-    },
-  });
+  const id = newId();
+  db.prepare(
+    "INSERT INTO Location (id, tripId, name, address, lat, lng, placeId, excluded, note) VALUES (?, ?, ?, ?, ?, ?, NULL, 0, NULL)"
+  ).run(id, tripId, name, address ?? null, lat ?? null, lng ?? null);
 
+  const location = db.prepare("SELECT * FROM Location WHERE id = ?").get(id);
   return NextResponse.json(location, { status: 201 });
 }

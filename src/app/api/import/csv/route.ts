@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { createTripWithLocations } from "@/lib/db";
 import { parseTakeoutCsv } from "@/lib/parsers/takeout-csv";
 import { geocodePlaces } from "@/lib/geocoding";
 import type { ScrapedPlace } from "@/lib/scraper";
@@ -32,10 +32,7 @@ export async function POST(req: NextRequest) {
   try {
     parsed = parseTakeoutCsv(text);
   } catch (err) {
-    return NextResponse.json(
-      { error: (err as Error).message },
-      { status: 422 }
-    );
+    return NextResponse.json({ error: (err as Error).message }, { status: 422 });
   }
 
   if (parsed.length === 0) {
@@ -45,7 +42,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Convert to ScrapedPlace shape so the shared geocoding layer can handle it
   const scraped: ScrapedPlace[] = parsed.map((p) => ({
     name: p.name,
     lat: p.lat,
@@ -63,26 +59,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const tripName = name || `Takeout import — ${new Date().toLocaleDateString()}`;
-
-  const trip = await db.trip.create({
-    data: {
-      name: tripName,
-      sourceUrl: `takeout-csv:${file.name}`,
-      locations: {
-        create: geocoded.map((place) => ({
-          name: place.name,
-          address: place.address ?? null,
-          lat: place.lat,
-          lng: place.lng,
-          placeId: place.placeId ?? null,
-        })),
-      },
-    },
-    include: {
-      locations: true,
-      days: { include: { stops: { include: { location: true } } } },
-    },
+  const trip = createTripWithLocations({
+    name: name || `Takeout import — ${new Date().toLocaleDateString()}`,
+    sourceUrl: `takeout-csv:${file.name}`,
+    locations: geocoded.map((p) => ({
+      name: p.name,
+      address: p.address ?? null,
+      lat: p.lat,
+      lng: p.lng,
+      placeId: p.placeId ?? null,
+    })),
   });
 
   return NextResponse.json(trip, { status: 201 });

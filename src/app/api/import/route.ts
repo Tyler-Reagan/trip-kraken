@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { createTripWithLocations } from "@/lib/db";
 import { scrapeGoogleMapsList } from "@/lib/scraper";
 import { geocodePlaces } from "@/lib/geocoding";
 
@@ -16,7 +16,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "url is required" }, { status: 400 });
   }
 
-  // Basic URL sanity check
   try {
     new URL(url);
   } catch {
@@ -52,27 +51,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Derive a name from the URL or use the provided name
-  const tripName = name?.trim() || deriveTripName(url);
-
-  const trip = await db.trip.create({
-    data: {
-      name: tripName,
-      sourceUrl: url,
-      locations: {
-        create: geocoded.map((place) => ({
-          name: place.name,
-          address: place.address ?? null,
-          lat: place.lat,
-          lng: place.lng,
-          placeId: place.placeId ?? null,
-        })),
-      },
-    },
-    include: {
-      locations: true,
-      days: { include: { stops: { include: { location: true } } } },
-    },
+  const trip = createTripWithLocations({
+    name: name?.trim() || deriveTripName(url),
+    sourceUrl: url,
+    locations: geocoded.map((p) => ({
+      name: p.name,
+      address: p.address ?? null,
+      lat: p.lat,
+      lng: p.lng,
+      placeId: p.placeId ?? null,
+    })),
   });
 
   return NextResponse.json(trip, { status: 201 });

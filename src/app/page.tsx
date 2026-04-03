@@ -1,14 +1,11 @@
-import { db } from "@/lib/db";
+import { listTrips } from "@/lib/db";
 import ImportForm from "@/components/ImportForm";
 import TripList from "@/components/TripList";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const trips = await db.trip.findMany({
-    orderBy: { createdAt: "desc" },
-    include: { _count: { select: { locations: true } } },
-  });
+  const trips = listTrips();
 
   return (
     <div className="space-y-10">
