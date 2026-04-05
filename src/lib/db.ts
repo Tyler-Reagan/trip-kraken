@@ -198,6 +198,12 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
   return { ...parseTrip(tripRow), locations: locationRows.map(parseLocation), days };
 }
 
+function requireTrip(tripId: string): TripWithDetails {
+  const trip = getTripWithDetails(tripId);
+  if (!trip) throw new Error(`Trip ${tripId} not found after write — possible DB inconsistency`);
+  return trip;
+}
+
 export function createTripWithLocations(data: {
   name: string;
   sourceUrl: string;
@@ -224,7 +230,7 @@ export function createTripWithLocations(data: {
     }
   });
 
-  return getTripWithDetails(tripId)!;
+  return requireTrip(tripId);
 }
 
 export function rebuildItinerary(
@@ -263,7 +269,7 @@ export function rebuildItinerary(
     }
   });
 
-  return getTripWithDetails(tripId)!;
+  return requireTrip(tripId);
 }
 
 export function addStopToDay(
@@ -288,7 +294,7 @@ export function addStopToDay(
     "INSERT INTO ItineraryStop (id, dayId, locationId, ord, notes) VALUES (?, ?, ?, ?, NULL)"
   ).run(newId(), dayId, locationId, ord);
 
-  return getTripWithDetails(tripId)!;
+  return requireTrip(tripId);
 }
 
 export function moveStop(
@@ -330,5 +336,5 @@ export function moveStop(
     }
   });
 
-  return getTripWithDetails(tripId)!;
+  return requireTrip(tripId);
 }

@@ -1,27 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import type { TripWithDetails, ItineraryDay, ItineraryStop } from "@/types";
+import type { ItineraryDay, ItineraryStop } from "@/types";
+import { useTripStore } from "@/store/tripStore";
 import DayCard from "./DayCard";
 
-interface Props {
-  trip: TripWithDetails;
-  selectedDayNumber: number | null;
-  onMoveStop: (stopId: string, targetDayId: string, targetOrder: number) => void;
-  onReload: () => void;
-  highlightedLocationId?: string | null;
-  onHighlightClear?: () => void;
-}
-
-export default function ItineraryView({
-  trip,
-  selectedDayNumber,
-  onMoveStop,
-  onReload,
-  highlightedLocationId,
-  onHighlightClear,
-}: Props) {
+export default function ItineraryView() {
+  const trip = useTripStore((s) => s.trip);
+  const selectedDayNumber = useTripStore((s) => s.selectedDayNumber);
   const [dragging, setDragging] = useState<ItineraryStop | null>(null);
+
+  if (!trip) return null;
 
   function handleDragStart(stop: ItineraryStop) {
     setDragging(stop);
@@ -29,7 +18,7 @@ export default function ItineraryView({
 
   function handleDrop(targetDay: ItineraryDay, targetOrder: number) {
     if (!dragging) return;
-    onMoveStop(dragging.id, targetDay.id, targetOrder);
+    useTripStore.getState().moveStop(dragging.id, targetDay.id, targetOrder);
     setDragging(null);
   }
 
@@ -43,13 +32,9 @@ export default function ItineraryView({
         <DayCard
           key={day.id}
           day={day}
-          trip={trip}
           draggingStop={dragging}
           onDragStart={handleDragStart}
           onDrop={handleDrop}
-          onReload={onReload}
-          highlightedLocationId={highlightedLocationId}
-          onHighlightClear={onHighlightClear}
         />
       ))}
     </div>

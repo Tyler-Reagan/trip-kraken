@@ -1,19 +1,14 @@
 /**
- * Parses KML and KMZ files into a flat list of named places with coordinates.
+ * Parses KML text into a flat list of named places with coordinates.
  *
- * KML (Keyhole Markup Language) is an XML-based format used by Google My Maps,
- * Google Earth, and most GPS/mapping tools. Coordinates are stored directly in
- * each <Placemark>, so no geocoding step is required.
- *
- * KMZ is simply a ZIP archive whose primary entry is a file named "doc.kml".
- * We unzip it in memory and then parse the contained KML.
+ * KML (Keyhole Markup Language) is an XML-based format used by Google My Maps.
+ * Coordinates are stored directly in each <Placemark>, so no geocoding is needed.
  *
  * KML coordinate order is longitude, latitude, altitude (not lat/lng!).
  * That's a historical quirk of the format — we swap them on the way out.
  */
 
 import { XMLParser } from "fast-xml-parser";
-import AdmZip from "adm-zip";
 
 export interface KmlPlace {
   name: string;
@@ -42,28 +37,6 @@ export function parseKml(text: string): KmlPlace[] {
   }
 
   return extractPlacemarks(parsed);
-}
-
-export function parseKmz(buffer: Buffer): KmlPlace[] {
-  let zip: AdmZip;
-  try {
-    zip = new AdmZip(buffer);
-  } catch {
-    throw new Error("Could not read KMZ file — it may be corrupt or not a valid ZIP.");
-  }
-
-  // The primary KML file in a KMZ is conventionally named doc.kml,
-  // but some exporters use a different name. Take the first .kml entry.
-  const kmlEntry =
-    zip.getEntry("doc.kml") ??
-    zip.getEntries().find((e) => e.entryName.endsWith(".kml"));
-
-  if (!kmlEntry) {
-    throw new Error("No .kml file found inside the KMZ archive.");
-  }
-
-  const kmlText = kmlEntry.getData().toString("utf-8");
-  return parseKml(kmlText);
 }
 
 // ---------------------------------------------------------------------------

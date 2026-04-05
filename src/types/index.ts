@@ -57,23 +57,3 @@ export type ItineraryStop = {
   location: Location;
 };
 
-export type ImportPayload = {
-  url: string;
-};
-
-export type OptimizePayload = {
-  numDays: number;
-  startDate?: string;
-};
-
-export type UpdateLocationPayload = {
-  excluded?: boolean;
-  note?: string;
-  name?: string;
-};
-
-export type MoveStopPayload = {
-  stopId: string;
-  targetDayId: string;
-  targetOrder: number;
-};

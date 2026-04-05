@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useRef } from "react";
 import dynamic from "next/dynamic";
-import type { TripWithDetails, Location } from "@/types";
+import type { TripWithDetails } from "@/types";
+import { useTripStore } from "@/store/tripStore";
 import OptimizeModal from "./OptimizeModal";
 import LocationSidebar from "./LocationSidebar";
 import ItineraryView from "./ItineraryView";
 import AddLocationModal from "./AddLocationModal";
 import NearbyDrawer from "./NearbyDrawer";
 
-// deck.gl and maplibre-gl use browser-only APIs — never SSR
 const MapView = dynamic(() => import("./MapView"), { ssr: false });
 
 type ActiveView = "itinerary" | "map";
@@ -19,81 +19,64 @@ interface Props {
 }
 
 export default function TripClient({ trip: initial }: Props) {
-  const [trip, setTrip] = useState<TripWithDetails>(initial);
-  const [showOptimize, setShowOptimize] = useState(!initial.numDays);
-  const [showAddLocation, setShowAddLocation] = useState(false);
-  const [activeView, setActiveView] = useState<ActiveView>("itinerary");
-  const [highlightedLocationId, setHighlightedLocationId] = useState<string | null>(null);
-  const [selectedDayNumber, setSelectedDayNumber] = useState<number | null>(null);
-  const [nearbyAnchor, setNearbyAnchor] = useState<Location | null>(null);
-
-  async function reload() {
-    const res = await fetch(`/api/trips/${trip.id}`);
-    if (res.ok) setTrip(await res.json());
-  }
-
-  async function toggleExcluded(locationId: string, excluded: boolean) {
-    await fetch(`/api/trips/${trip.id}/locations/${locationId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ excluded }),
+  // Initialise the store synchronously on first render so children see
+  // the correct trip data without waiting for a useEffect.
+  const initialized = useRef(false);
+  if (!initialized.current) {
+    initialized.current = true;
+    useTripStore.setState({
+      trip: initial,
+      tripId: initial.id,
+      showOptimize: !initial.numDays,
+      activeView: "itinerary",
+      selectedDayNumber: null,
+      nearbyAnchor: null,
+      highlightedLocationId: null,
+      showLocationDrawer: false,
     });
-    await reload();
   }
 
-  async function moveStop(
-    stopId: string,
-    targetDayId: string,
-    targetOrder: number
-  ) {
-    await fetch(`/api/trips/${trip.id}/stops`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stopId, targetDayId, targetOrder }),
-    });
-    await reload();
-  }
+  // Use initial as fallback — store is set synchronously above but guard for SSR edge cases
+  const trip = useTripStore((s) => s.trip) ?? initial;
+  const activeView = useTripStore((s) => s.activeView);
+  const selectedDayNumber = useTripStore((s) => s.selectedDayNumber);
+  const nearbyAnchor = useTripStore((s) => s.nearbyAnchor);
+  const showOptimize = useTripStore((s) => s.showOptimize);
+  const showAddLocation = useTripStore((s) => s.showAddLocation);
+  const showLocationDrawer = useTripStore((s) => s.showLocationDrawer);
 
-  // Switch to itinerary, briefly highlight the clicked stop, then auto-clear.
-  function handleMapLocationClick(locationId: string) {
-    setHighlightedLocationId(locationId);
-    setActiveView("itinerary");
-    setTimeout(() => setHighlightedLocationId(null), 2000);
-  }
+  const setActiveView = useTripStore((s) => s.setActiveView);
+  const setSelectedDayNumber = useTripStore((s) => s.setSelectedDayNumber);
+  const setShowOptimize = useTripStore((s) => s.setShowOptimize);
+  const setShowAddLocation = useTripStore((s) => s.setShowAddLocation);
+  const setShowLocationDrawer = useTripStore((s) => s.setShowLocationDrawer);
 
-  const hasItinerary = trip.days.length > 0;
+  const hasItinerary = trip?.days.length > 0;
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{trip.name}</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{trip?.name}</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            {trip.locations.length} locations
-            {trip.numDays ? ` · ${trip.numDays} days` : ""}
+            {trip?.locations.length} locations
+            {trip?.numDays ? ` · ${trip?.numDays} days` : ""}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button
-            onClick={() => setShowAddLocation(true)}
-            className="btn-secondary text-sm"
-          >
+          <button onClick={() => setShowAddLocation(true)} className="btn-secondary text-sm">
             + Add location
           </button>
-          <button
-            onClick={() => setShowOptimize(true)}
-            className="btn-primary text-sm"
-          >
+          <button onClick={() => setShowOptimize(true)} className="btn-primary text-sm">
             {hasItinerary ? "Re-optimize" : "Plan itinerary"}
           </button>
         </div>
       </div>
 
-      {/* View tabs + day filter — only shown when itinerary exists */}
+      {/* View tabs + day filter */}
       {hasItinerary && (
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          {/* View switcher */}
           <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
             {(["itinerary", "map"] as ActiveView[]).map((view) => (
               <button
@@ -110,7 +93,6 @@ export default function TripClient({ trip: initial }: Props) {
             ))}
           </div>
 
-          {/* Day filter */}
           <div className="flex gap-1.5 flex-wrap">
             <button
               onClick={() => setSelectedDayNumber(null)}
@@ -122,13 +104,11 @@ export default function TripClient({ trip: initial }: Props) {
             >
               All days
             </button>
-            {trip.days.map((day) => (
+            {trip?.days.map((day) => (
               <button
                 key={day.id}
                 onClick={() =>
-                  setSelectedDayNumber(
-                    selectedDayNumber === day.dayNumber ? null : day.dayNumber
-                  )
+                  setSelectedDayNumber(selectedDayNumber === day.dayNumber ? null : day.dayNumber)
                 }
                 className={`px-3 py-1 text-xs rounded-full border transition-colors
                   ${selectedDayNumber === day.dayNumber
@@ -149,93 +129,61 @@ export default function TripClient({ trip: initial }: Props) {
           <p className="text-4xl">🗺️</p>
           <p className="font-medium">No itinerary yet</p>
           <p className="text-sm">
-            Click <strong className="text-gray-700 dark:text-gray-200">Plan itinerary</strong> to cluster your locations into
-            days.
+            Click <strong className="text-gray-700 dark:text-gray-200">Plan itinerary</strong> to
+            cluster your locations into days.
           </p>
         </div>
       )}
 
-      {hasItinerary && activeView === "itinerary" && (
-        <div className="flex gap-6 items-start">
-          {/* Location sidebar */}
-          <aside className="hidden lg:block w-72 shrink-0">
-            <LocationSidebar
-              locations={trip.locations}
-              activeDayLocationIds={
-                selectedDayNumber
-                  ? new Set(
-                      trip.days
-                        .find((d) => d.dayNumber === selectedDayNumber)
-                        ?.stops.map((s) => s.locationId) ?? []
-                    )
-                  : null
-              }
-              onToggle={toggleExcluded}
-              onFindNearby={setNearbyAnchor}
-            />
-          </aside>
+      <div className="flex gap-4 items-start">
+        <div className="flex-1 min-w-0 space-y-4">
+          {hasItinerary && activeView === "itinerary" && (
+            <div className="flex gap-6 items-start">
+              {/* Desktop sidebar */}
+              <aside className="hidden lg:block w-72 shrink-0">
+                <LocationSidebar />
+              </aside>
 
-          {/* Itinerary */}
-          <div className="flex-1 min-w-0">
-            <ItineraryView
-              trip={trip}
-              selectedDayNumber={selectedDayNumber}
-              onMoveStop={moveStop}
-              onReload={reload}
-              highlightedLocationId={highlightedLocationId}
-              onHighlightClear={() => setHighlightedLocationId(null)}
-            />
-          </div>
+              <div className="flex-1 min-w-0 space-y-4">
+                <ItineraryView />
+
+                {/* Mobile: open location drawer */}
+                <button
+                  onClick={() => setShowLocationDrawer(true)}
+                  className="lg:hidden w-full btn-secondary text-sm"
+                >
+                  View locations
+                </button>
+              </div>
+            </div>
+          )}
+
+          {hasItinerary && activeView === "map" && <MapView />}
+        </div>
+
+        {/* Nearby drawer — inline side panel */}
+        {nearbyAnchor && <NearbyDrawer />}
+      </div>
+
+      {/* Mobile location drawer */}
+      {showLocationDrawer && (
+        <div
+          className="fixed inset-0 z-40 lg:hidden"
+          onClick={() => setShowLocationDrawer(false)}
+          aria-hidden="true"
+        >
+          <div className="absolute inset-0 bg-black/50" />
         </div>
       )}
+      <div
+        className={`fixed inset-x-0 bottom-0 z-50 lg:hidden transition-transform duration-300
+          ${showLocationDrawer ? "translate-y-0" : "translate-y-full"}`}
+      >
+        <LocationSidebar isDrawer onCloseDrawer={() => setShowLocationDrawer(false)} />
+      </div>
 
-      {hasItinerary && activeView === "map" && (
-        <MapView
-          trip={trip}
-          selectedDayNumber={selectedDayNumber}
-          highlightedLocationId={highlightedLocationId}
-          onLocationClick={handleMapLocationClick}
-        />
-      )}
-
-      {showOptimize && (
-        <OptimizeModal
-          trip={trip}
-          onClose={() => setShowOptimize(false)}
-          onOptimized={(updated) => {
-            setTrip(updated);
-            setShowOptimize(false);
-          }}
-        />
-      )}
-
-      {showAddLocation && (
-        <AddLocationModal
-          tripId={trip.id}
-          onClose={() => setShowAddLocation(false)}
-          onAdded={() => {
-            setShowAddLocation(false);
-            reload();
-          }}
-        />
-      )}
-
-      {nearbyAnchor && (
-        <NearbyDrawer
-          tripId={trip.id}
-          anchorLocation={nearbyAnchor}
-          anchorDayId={
-            trip.days.find((d) =>
-              d.stops.some((s) => s.locationId === nearbyAnchor.id)
-            )?.id ?? null
-          }
-          existingPlaceIds={new Set(
-            trip.locations.map((l) => l.placeId).filter((id): id is string => id !== null)
-          )}
-          onClose={() => setNearbyAnchor(null)}
-          onAdded={reload}
-        />
-      )}
+      {showOptimize && <OptimizeModal />}
+      {showAddLocation && <AddLocationModal />}
     </div>
   );
 }

@@ -1,23 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import type { TripWithDetails } from "@/types";
+import { useTripStore } from "@/store/tripStore";
 
-interface Props {
-  trip: TripWithDetails;
-  onClose: () => void;
-  onOptimized: (trip: TripWithDetails) => void;
-}
-
-export default function OptimizeModal({ trip, onClose, onOptimized }: Props) {
-  const [numDays, setNumDays] = useState<number>(trip.numDays ?? 3);
+export default function OptimizeModal() {
+  const trip = useTripStore((s) => s.trip);
+  const setShowOptimize = useTripStore((s) => s.setShowOptimize);
+  const reload = useTripStore((s) => s.reload);
+  // useState initializers use optional chaining so hooks are always called
+  const [numDays, setNumDays] = useState<number>(trip?.numDays ?? 3);
   const [startDate, setStartDate] = useState<string>(
-    trip.startDate
-      ? new Date(trip.startDate).toISOString().slice(0, 10)
-      : ""
+    trip?.startDate ? new Date(trip.startDate).toISOString().slice(0, 10) : ""
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (!trip) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -25,6 +23,7 @@ export default function OptimizeModal({ trip, onClose, onOptimized }: Props) {
     setLoading(true);
 
     try {
+      if (!trip) return;
       const res = await fetch(`/api/trips/${trip.id}/optimize`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -40,7 +39,8 @@ export default function OptimizeModal({ trip, onClose, onOptimized }: Props) {
         return;
       }
 
-      onOptimized(data);
+      await reload();
+      setShowOptimize(false);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -52,12 +52,18 @@ export default function OptimizeModal({ trip, onClose, onOptimized }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="card w-full max-w-md p-6 space-y-5 shadow-xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="optimize-modal-title"
+        className="card w-full max-w-md p-6 space-y-5 shadow-xl"
+      >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Plan your itinerary</h2>
+          <h2 id="optimize-modal-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">Plan your itinerary</h2>
           <button
-            onClick={onClose}
-            className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-xl leading-none transition-colors"
+            onClick={() => setShowOptimize(false)}
+            disabled={loading}
+            className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-xl leading-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             aria-label="Close"
           >
             ×
@@ -108,7 +114,7 @@ export default function OptimizeModal({ trip, onClose, onOptimized }: Props) {
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => setShowOptimize(false)}
               className="btn-secondary flex-1"
             >
               Cancel

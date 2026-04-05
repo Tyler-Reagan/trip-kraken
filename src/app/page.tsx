@@ -1,6 +1,7 @@
 import { listTrips } from "@/lib/db";
 import ImportForm from "@/components/ImportForm";
 import TripList from "@/components/TripList";
+import HelpButton from "@/components/HelpButton";
 
 export const dynamic = "force-dynamic";
 
@@ -29,19 +30,7 @@ export default async function HomePage() {
         </section>
       )}
 
-      {/* Instructions */}
-      <section className="card p-6 space-y-3 max-w-2xl mx-auto text-sm text-gray-600 dark:text-gray-400">
-        <h3 className="font-semibold text-gray-800 dark:text-gray-200">How to get your map link</h3>
-        <ol className="list-decimal list-inside space-y-2">
-          <li>Go to <a href="https://mymaps.google.com" target="_blank" rel="noopener noreferrer" className="underline text-brand-600 dark:text-brand-400">mymaps.google.com</a> and create a map.</li>
-          <li>Add placemarks for all the locations you want to visit.</li>
-          <li>Click the <strong className="text-gray-700 dark:text-gray-300">Share</strong> button and set access to <strong className="text-gray-700 dark:text-gray-300">Anyone with the link can view</strong>.</li>
-          <li>Copy the URL from your browser&apos;s address bar and paste it above.</li>
-        </ol>
-        <p className="text-xs text-gray-400 dark:text-gray-500">
-          The map must be public for import to work. Coordinates are read directly from the map — no extra steps needed.
-        </p>
-      </section>
+      <HelpButton />
     </div>
   );
 }

@@ -1,16 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { Location, NearbyPlace } from "@/types";
-
-interface Props {
-  tripId: string;
-  anchorLocation: Location;
-  anchorDayId: string | null;
-  existingPlaceIds: Set<string>;
-  onClose: () => void;
-  onAdded: () => void;
-}
+import type { NearbyPlace } from "@/types";
+import { useTripStore } from "@/store/tripStore";
 
 const PRICE_LABELS = ["Free", "$", "$$", "$$$", "$$$$"];
 
@@ -25,14 +17,22 @@ const PLACE_TYPES = [
   { label: "Bars", value: "bar" },
 ];
 
-export default function NearbyDrawer({
-  tripId,
-  anchorLocation,
-  anchorDayId,
-  existingPlaceIds,
-  onClose,
-  onAdded,
-}: Props) {
+export default function NearbyDrawer() {
+  const tripId = useTripStore((s) => s.tripId);
+  const trip = useTripStore((s) => s.trip);
+  const anchorLocation = useTripStore((s) => s.nearbyAnchor);
+  const setNearbyAnchor = useTripStore((s) => s.setNearbyAnchor);
+  const reload = useTripStore((s) => s.reload);
+
+  // Derived values — safe with optional chaining since hooks must run first
+  const anchorDayId = trip && anchorLocation
+    ? (trip.days.find((d) => d.stops.some((s) => s.locationId === anchorLocation.id))?.id ?? null)
+    : null;
+
+  const existingPlaceIds = new Set(
+    (trip?.locations ?? []).map((l) => l.placeId).filter(Boolean) as string[]
+  );
+
   const [results, setResults] = useState<NearbyPlace[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +42,8 @@ export default function NearbyDrawer({
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set(existingPlaceIds));
   const [addingId, setAddingId] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  if (!tripId || !trip || !anchorLocation) return null;
 
   const fetchNearby = useCallback(async (r: number, t: string, kw: string) => {
     setLoading(true);
@@ -97,7 +99,7 @@ export default function NearbyDrawer({
       if (res.status === 409) {
         // Already in trip — still mark as added
         setAddedIds((prev) => new Set(prev).add(place.placeId));
-        onAdded();
+        await reload();
         return;
       }
 
@@ -119,7 +121,7 @@ export default function NearbyDrawer({
         });
       }
 
-      onAdded();
+      await reload();
     } catch {
       setError("Network error. Could not add location.");
     } finally {
@@ -128,7 +130,11 @@ export default function NearbyDrawer({
   }
 
   return (
-    <div className="fixed inset-y-0 right-0 w-96 z-40 bg-white dark:bg-gray-900 shadow-xl flex flex-col border-l border-gray-200 dark:border-gray-800">
+    <div
+      role="complementary"
+      aria-label="Nearby places"
+      className="w-80 shrink-0 sticky top-6 self-start flex flex-col max-h-[calc(100vh-5rem)] rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm overflow-hidden"
+    >
       {/* Header */}
       <div className="flex items-start justify-between gap-2 p-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
         <div className="min-w-0">
@@ -136,7 +142,7 @@ export default function NearbyDrawer({
           <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{anchorLocation.name}</p>
         </div>
         <button
-          onClick={onClose}
+          onClick={() => setNearbyAnchor(null)}
           className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors shrink-0 mt-0.5"
           aria-label="Close"
         >
@@ -169,10 +175,7 @@ export default function NearbyDrawer({
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           placeholder="Search by keyword…"
-          className="w-full text-sm border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-1.5
-            bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
-            placeholder:text-gray-400 dark:placeholder:text-gray-500
-            focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="input py-1.5"
         />
 
         {/* Radius */}

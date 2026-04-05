@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "project": ["src/**/*.{ts,tsx}"],
+  "entry": [
+    "src/app/**/{page,layout,loading,error,not-found,route,template,default}.{ts,tsx}",
+    "src/app/**/route.ts",
+    "next.config.{js,ts,mjs}"
+  ],
+  "ignoreDependencies": [],
+  "ignoreExportsUsedInFile": true,
+  "rules": {
+    "duplicates": "warn",
+    "enumMembers": "warn",
+    "exports": "warn",
+    "files": "warn",
+    "nsExports": "warn",
+    "nsTypes": "warn",
+    "types": "warn",
+    "unlisted": "error",
+    "unresolved": "error"
+  }
+}

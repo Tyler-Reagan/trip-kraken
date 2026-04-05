@@ -1,29 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { TripWithDetails, ItineraryDay, ItineraryStop } from "@/types";
+import type { ItineraryDay, ItineraryStop } from "@/types";
+import { useTripStore } from "@/store/tripStore";
 
 interface Props {
   day: ItineraryDay;
-  trip: TripWithDetails;
   draggingStop: ItineraryStop | null;
   onDragStart: (stop: ItineraryStop) => void;
   onDrop: (day: ItineraryDay, order: number) => void;
-  onReload: () => void;
-  highlightedLocationId?: string | null;
-  onHighlightClear?: () => void;
 }
 
-export default function DayCard({
-  day,
-  trip,
-  draggingStop,
-  onDragStart,
-  onDrop,
-  onReload,
-  highlightedLocationId,
-  onHighlightClear,
-}: Props) {
+export default function DayCard({ day, draggingStop, onDragStart, onDrop }: Props) {
+  const tripId = useTripStore((s) => s.tripId);
+  const reload = useTripStore((s) => s.reload);
   const [dragOver, setDragOver] = useState(false);
   const [editingLabel, setEditingLabel] = useState(false);
   const [label, setLabel] = useState(day.label ?? "");
@@ -38,12 +28,12 @@ export default function DayCard({
 
   async function saveLabel() {
     setEditingLabel(false);
-    await fetch(`/api/trips/${trip.id}/days/${day.id}`, {
+    await fetch(`/api/trips/${tripId}/days/${day.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ label: label.trim() || null }),
     });
-    onReload();
+    reload();
   }
 
   function handleDragOver(e: React.DragEvent) {
@@ -118,13 +108,9 @@ export default function DayCard({
               stop={stop}
               index={idx}
               day={day}
-              tripId={trip.id}
               isDragging={draggingStop?.id === stop.id}
-              isHighlighted={highlightedLocationId === stop.locationId}
               onDragStart={onDragStart}
               onDropBefore={() => onDrop(day, idx)}
-              onReload={onReload}
-              onHighlightClear={onHighlightClear}
             />
           ))}
         </ol>
@@ -137,26 +123,17 @@ interface StopRowProps {
   stop: ItineraryStop;
   index: number;
   day: ItineraryDay;
-  tripId: string;
   isDragging: boolean;
-  isHighlighted: boolean;
   onDragStart: (stop: ItineraryStop) => void;
   onDropBefore: () => void;
-  onReload: () => void;
-  onHighlightClear?: () => void;
 }
 
-function StopRow({
-  stop,
-  index,
-  tripId,
-  isDragging,
-  isHighlighted,
-  onDragStart,
-  onDropBefore,
-  onReload,
-  onHighlightClear,
-}: StopRowProps) {
+function StopRow({ stop, index, isDragging, onDragStart, onDropBefore }: StopRowProps) {
+  const tripId = useTripStore((s) => s.tripId);
+  const reload = useTripStore((s) => s.reload);
+  const highlightedLocationId = useTripStore((s) => s.highlightedLocationId);
+  const setHighlightedLocationId = useTripStore((s) => s.setHighlightedLocationId);
+  const isHighlighted = highlightedLocationId === stop.locationId;
   const [dropTarget, setDropTarget] = useState(false);
   const rowRef = useRef<HTMLLIElement>(null);
 
@@ -168,12 +145,11 @@ function StopRow({
 
   async function removeStop() {
     await fetch(`/api/trips/${tripId}/stops/${stop.id}`, { method: "DELETE" });
-    onReload();
+    reload();
   }
 
   return (
     <>
-      {/* Drop zone above this stop */}
       <div
         className={`h-1 rounded-full transition-all ${
           dropTarget ? "bg-brand-400 h-2" : "bg-transparent"
@@ -195,7 +171,7 @@ function StopRow({
         ref={rowRef}
         draggable
         onDragStart={() => onDragStart(stop)}
-        onClick={() => isHighlighted && onHighlightClear?.()}
+        onClick={() => isHighlighted && setHighlightedLocationId(null)}
         className={`flex items-start gap-3 p-2 rounded-lg border cursor-grab active:cursor-grabbing
           transition-all select-none
           ${isDragging ? "opacity-40" : ""}
@@ -204,12 +180,9 @@ function StopRow({
             : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
           }`}
       >
-        {/* Order badge */}
         <span className="shrink-0 w-5 h-5 rounded-full bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-400 text-xs flex items-center justify-center font-semibold mt-0.5">
           {index + 1}
         </span>
-
-        {/* Location info */}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
             {stop.location.name}
@@ -218,8 +191,6 @@ function StopRow({
             <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{stop.location.address}</p>
           )}
         </div>
-
-        {/* Remove button */}
         <button
           onClick={(e) => {
             e.stopPropagation();

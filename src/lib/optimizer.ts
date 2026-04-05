@@ -166,7 +166,9 @@ function nearestNeighborOrder(locations: LocationInput[]): LocationInput[] {
 
   // Start from the northernmost location (top of the map feels natural)
   unvisited.sort((a, b) => b.lat - a.lat);
-  ordered.push(unvisited.shift()!);
+  const first = unvisited.shift();
+  if (!first) throw new Error("nearestNeighborOrder: unexpected empty array after length guard");
+  ordered.push(first);
 
   while (unvisited.length > 0) {
     const last = ordered[ordered.length - 1];

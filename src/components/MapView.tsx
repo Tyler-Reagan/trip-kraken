@@ -1,11 +1,11 @@
 "use client";
 
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useMemo, useState, useCallback, useRef } from "react";
+import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import Map, { Source, Layer, MapMouseEvent } from "react-map-gl/maplibre";
 import type { MapRef, LayerProps } from "react-map-gl/maplibre";
-import type { TripWithDetails } from "@/types";
 import type { FeatureCollection, LineString, Point } from "geojson";
+import { useTripStore } from "@/store/tripStore";
 
 const CARTO_DARK =
   "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
@@ -31,13 +31,6 @@ const DAY_COLORS: [number, number, number][] = [
   [56, 189, 248],   // sky-400
 ];
 
-interface MapViewProps {
-  trip: TripWithDetails;
-  selectedDayNumber: number | null;
-  highlightedLocationId: string | null;
-  onLocationClick: (locationId: string) => void;
-}
-
 type TooltipState = {
   x: number;
   y: number;
@@ -50,17 +43,18 @@ function toRgb(rgb: [number, number, number]): string {
   return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
 }
 
-function computeInitialViewState(trip: TripWithDetails) {
+function computeInitialViewState(trip: { locations: { excluded: boolean; lat: number | null; lng: number | null }[] }) {
   const valid = trip.locations.filter(
-    (l) => !l.excluded && l.lat !== null && l.lng !== null
+    (l): l is typeof l & { lat: number; lng: number } =>
+      !l.excluded && l.lat !== null && l.lng !== null
   );
   if (valid.length === 0) return { longitude: 139.69, latitude: 35.69, zoom: 10 };
   if (valid.length === 1) {
-    return { longitude: valid[0].lng!, latitude: valid[0].lat!, zoom: 14 };
+    return { longitude: valid[0].lng, latitude: valid[0].lat, zoom: 14 };
   }
 
-  const lngs = valid.map((l) => l.lng!);
-  const lats = valid.map((l) => l.lat!);
+  const lngs = valid.map((l) => l.lng);
+  const lats = valid.map((l) => l.lat);
   const minLng = Math.min(...lngs);
   const maxLng = Math.max(...lngs);
   const minLat = Math.min(...lats);
@@ -73,19 +67,39 @@ function computeInitialViewState(trip: TripWithDetails) {
   };
 }
 
-export default function MapView({
-  trip,
-  selectedDayNumber,
-  highlightedLocationId,
-  onLocationClick,
-}: MapViewProps) {
+export default function MapView() {
+  const trip = useTripStore((s) => s.trip);
+  const selectedDayNumber = useTripStore((s) => s.selectedDayNumber);
+  const highlightedLocationId = useTripStore((s) => s.highlightedLocationId);
+  const handleMapLocationClick = useTripStore((s) => s.handleMapLocationClick);
   const mapRef = useRef<MapRef>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [tooltip, setTooltip] = useState<TooltipState>(null);
+  // Gate Map mounting until the container has real dimensions.
+  // MapLibre reads clientWidth/clientHeight synchronously in its constructor,
+  // but React's commit phase runs before the browser's layout pass — the
+  // container reports 0×0 and MapLibre's WebGL context never recovers from
+  // that. ResizeObserver fires after the first real layout, at which point we
+  // flip `mapReady` and let <Map> mount against a properly-sized container.
+  const [mapReady, setMapReady] = useState(false);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const ro = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      if (width > 0 && height > 0) setMapReady(true);
+      // Keep map in sync on subsequent container size changes (e.g. NearbyDrawer toggle).
+      mapRef.current?.resize();
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
 
   const initialViewState = useMemo(
-    () => computeInitialViewState(trip),
+    () => trip ? computeInitialViewState(trip) : { longitude: 139.69, latitude: 35.69, zoom: 10 },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [trip.id]
+    [trip?.id]
   );
 
   // Build GeoJSON for route lines and stop dots
@@ -93,20 +107,21 @@ export default function MapView({
     const points: FeatureCollection<Point> = { type: "FeatureCollection", features: [] };
     const routes: FeatureCollection<LineString> = { type: "FeatureCollection", features: [] };
 
-    for (const day of trip.days) {
+    for (const day of (trip?.days ?? [])) {
       const rgb = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length];
       const isActive = selectedDayNumber === null || selectedDayNumber === day.dayNumber;
       const alpha = isActive ? 1 : 0.18;
       const color = toRgb(rgb);
 
       const geocodedStops = day.stops.filter(
-        (s) => s.location.lat !== null && s.location.lng !== null
+        (s): s is typeof s & { location: typeof s.location & { lat: number; lng: number } } =>
+          s.location.lat !== null && s.location.lng !== null
       );
 
       for (const stop of geocodedStops) {
         points.features.push({
           type: "Feature",
-          geometry: { type: "Point", coordinates: [stop.location.lng!, stop.location.lat!] },
+          geometry: { type: "Point", coordinates: [stop.location.lng, stop.location.lat] },
           properties: {
             locationId: stop.location.id,
             name: stop.location.name,
@@ -114,7 +129,7 @@ export default function MapView({
             order: stop.order,
             color,
             alpha,
-            isHighlighted: stop.location.id === highlightedLocationId,
+            isHighlighted: stop.location.id === highlightedLocationId ? 1 : 0,
           },
         });
       }
@@ -124,7 +139,7 @@ export default function MapView({
           type: "Feature",
           geometry: {
             type: "LineString",
-            coordinates: geocodedStops.map((s) => [s.location.lng!, s.location.lat!]),
+            coordinates: geocodedStops.map((s) => [s.location.lng, s.location.lat]),
           },
           properties: { color, alpha: isActive ? 0.65 : 0 },
         });
@@ -132,7 +147,7 @@ export default function MapView({
     }
 
     return { pointsGeoJSON: points, routesGeoJSON: routes };
-  }, [trip.days, selectedDayNumber, highlightedLocationId]);
+  }, [trip?.days, selectedDayNumber, highlightedLocationId]);
 
   const routeLayer: LayerProps = {
     id: "routes",
@@ -149,11 +164,11 @@ export default function MapView({
     id: "stops",
     type: "circle",
     paint: {
-      "circle-radius": ["case", ["get", "isHighlighted"], 18, 11],
-      "circle-color": ["case", ["get", "isHighlighted"], "#ffffff", ["get", "color"]],
+      "circle-radius": ["case", ["==", ["get", "isHighlighted"], 1], 18, 11],
+      "circle-color": ["case", ["==", ["get", "isHighlighted"], 1], "#ffffff", ["get", "color"]],
       "circle-opacity": ["get", "alpha"],
       "circle-stroke-width": 2,
-      "circle-stroke-color": ["case", ["get", "isHighlighted"], "#16a34a", "rgba(0,0,0,0.3)"],
+      "circle-stroke-color": ["case", ["==", ["get", "isHighlighted"], 1], "#16a34a", "rgba(0,0,0,0.3)"],
       "circle-stroke-opacity": ["get", "alpha"],
     },
   };
@@ -162,9 +177,9 @@ export default function MapView({
     const features = mapRef.current?.queryRenderedFeatures(e.point, { layers: ["stops"] });
     const f = features?.[0];
     if (f?.properties?.locationId) {
-      onLocationClick(f.properties.locationId as string);
+      handleMapLocationClick(f.properties.locationId as string);
     }
-  }, [onLocationClick]);
+  }, [handleMapLocationClick]);
 
   const handleMouseMove = useCallback((e: MapMouseEvent) => {
     const features = mapRef.current?.queryRenderedFeatures(e.point, { layers: ["stops"] });
@@ -184,26 +199,30 @@ export default function MapView({
 
   const handleMouseLeave = useCallback(() => setTooltip(null), []);
 
+  if (!trip) return null;
+
   return (
-    <div className="relative w-full rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800" style={{ height: 520 }}>
-      <Map
-        ref={mapRef}
-        initialViewState={initialViewState}
-        mapStyle={CARTO_DARK}
-        style={{ width: "100%", height: "100%" }}
-        interactiveLayerIds={["stops"]}
-        onClick={handleClick}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
-        cursor={tooltip ? "pointer" : "grab"}
-      >
-        <Source id="routes" type="geojson" data={routesGeoJSON}>
-          <Layer {...routeLayer} />
-        </Source>
-        <Source id="stops" type="geojson" data={pointsGeoJSON}>
-          <Layer {...dotsLayer} />
-        </Source>
-      </Map>
+    <div ref={containerRef} className="relative w-full h-[520px] rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
+      {mapReady && (
+        <Map
+          ref={mapRef}
+          initialViewState={initialViewState}
+          mapStyle={CARTO_DARK}
+          style={{ width: "100%", height: "100%" }}
+          interactiveLayerIds={["stops"]}
+          onClick={handleClick}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+          cursor={tooltip ? "pointer" : "grab"}
+        >
+          <Source id="routes" type="geojson" data={routesGeoJSON}>
+            <Layer {...routeLayer} />
+          </Source>
+          <Source id="stops" type="geojson" data={pointsGeoJSON}>
+            <Layer {...dotsLayer} />
+          </Source>
+        </Map>
+      )}
 
       {/* Tooltip */}
       {tooltip && (
@@ -211,47 +230,38 @@ export default function MapView({
           className="absolute pointer-events-none z-10"
           style={{ left: tooltip.x + 12, top: tooltip.y - 8 }}
         >
-          <div
-            style={{
-              background: "rgba(0,0,0,0.85)",
-              color: "#fff",
-              borderRadius: 8,
-              border: "1px solid rgba(255,255,255,0.1)",
-              padding: "6px 10px",
-              fontFamily: "system-ui,sans-serif",
-              fontSize: 13,
-              lineHeight: 1.4,
-            }}
-          >
-            <strong>{tooltip.name}</strong>
+          <div className="bg-gray-900/90 text-white text-xs rounded-lg border border-white/10 px-2.5 py-1.5 leading-snug">
+            <strong className="font-semibold">{tooltip.name}</strong>
             <br />
-            <span style={{ opacity: 0.7 }}>Day {tooltip.dayNumber} · Stop {tooltip.order + 1}</span>
+            <span className="opacity-70">Day {tooltip.dayNumber} · Stop {tooltip.order + 1}</span>
           </div>
         </div>
       )}
 
       {/* Legend */}
-      <div className="absolute bottom-3 left-3 bg-black/70 text-white text-xs rounded-lg px-3 py-2 space-y-1 backdrop-blur-sm pointer-events-none">
-        {trip.days.map((day) => {
-          const [r, g, b] = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length];
-          const isActive = selectedDayNumber === null || selectedDayNumber === day.dayNumber;
-          return (
-            <div
-              key={day.id}
-              className={`flex items-center gap-2 transition-opacity ${isActive ? "opacity-100" : "opacity-30"}`}
-            >
-              <span
-                className="inline-block w-3 h-3 rounded-full shrink-0"
-                style={{ background: `rgb(${r},${g},${b})` }}
-              />
-              <span>
-                Day {day.dayNumber}
-                {day.label ? ` — ${day.label}` : ""}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+      {mapReady && (
+        <div className="absolute bottom-3 left-3 bg-black/70 text-white text-xs rounded-lg px-3 py-2 space-y-1 backdrop-blur-sm pointer-events-none">
+          {trip.days.map((day) => {
+            const [r, g, b] = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length];
+            const isActive = selectedDayNumber === null || selectedDayNumber === day.dayNumber;
+            return (
+              <div
+                key={day.id}
+                className={`flex items-center gap-2 transition-opacity ${isActive ? "opacity-100" : "opacity-30"}`}
+              >
+                <span
+                  className="inline-block w-3 h-3 rounded-full shrink-0"
+                  style={{ background: `rgb(${r},${g},${b})` }}
+                />
+                <span>
+                  Day {day.dayNumber}
+                  {day.label ? ` — ${day.label}` : ""}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

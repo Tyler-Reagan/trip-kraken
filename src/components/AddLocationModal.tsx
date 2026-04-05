@@ -1,18 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { useTripStore } from "@/store/tripStore";
 
-interface Props {
-  tripId: string;
-  onClose: () => void;
-  onAdded: () => void;
-}
-
-export default function AddLocationModal({ tripId, onClose, onAdded }: Props) {
+export default function AddLocationModal() {
+  const tripId = useTripStore((s) => s.tripId);
+  const setShowAddLocation = useTripStore((s) => s.setShowAddLocation);
+  const reload = useTripStore((s) => s.reload);
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (!tripId) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,7 +32,8 @@ export default function AddLocationModal({ tripId, onClose, onAdded }: Props) {
         return;
       }
 
-      onAdded();
+      await reload();
+      setShowAddLocation(false);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -42,11 +43,16 @@ export default function AddLocationModal({ tripId, onClose, onAdded }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="card w-full max-w-md p-6 space-y-5 shadow-xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-location-modal-title"
+        className="card w-full max-w-md p-6 space-y-5 shadow-xl"
+      >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Add a location</h2>
+          <h2 id="add-location-modal-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">Add a location</h2>
           <button
-            onClick={onClose}
+            onClick={() => setShowAddLocation(false)}
             className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-xl leading-none transition-colors"
             aria-label="Close"
           >
@@ -93,7 +99,7 @@ export default function AddLocationModal({ tripId, onClose, onAdded }: Props) {
           )}
 
           <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="btn-secondary flex-1">
+            <button type="button" onClick={() => setShowAddLocation(false)} className="btn-secondary flex-1">
               Cancel
             </button>
             <button type="submit" disabled={loading || !name} className="btn-primary flex-1">
