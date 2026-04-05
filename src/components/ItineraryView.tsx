@@ -6,6 +6,7 @@ import DayCard from "./DayCard";
 
 interface Props {
   trip: TripWithDetails;
+  selectedDayNumber: number | null;
   onMoveStop: (stopId: string, targetDayId: string, targetOrder: number) => void;
   onReload: () => void;
   highlightedLocationId?: string | null;
@@ -14,6 +15,7 @@ interface Props {
 
 export default function ItineraryView({
   trip,
+  selectedDayNumber,
   onMoveStop,
   onReload,
   highlightedLocationId,
@@ -31,9 +33,13 @@ export default function ItineraryView({
     setDragging(null);
   }
 
+  const visibleDays = selectedDayNumber
+    ? trip.days.filter((d) => d.dayNumber === selectedDayNumber)
+    : trip.days;
+
   return (
     <div className="space-y-4">
-      {trip.days.map((day) => (
+      {visibleDays.map((day) => (
         <DayCard
           key={day.id}
           day={day}

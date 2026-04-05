@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { moveStop } from "@/lib/db";
+import { moveStop, addStopToDay } from "@/lib/db";
 
 export async function POST(
   req: NextRequest,
@@ -7,11 +7,26 @@ export async function POST(
 ) {
   const { id: tripId } = await params;
   const body = await req.json();
-  const { stopId, targetDayId, targetOrder } = body;
+  const { stopId, locationId, targetDayId, targetOrder } = body;
 
-  if (!stopId || !targetDayId || targetOrder === undefined) {
+  if (!targetDayId) {
+    return NextResponse.json({ error: "targetDayId is required" }, { status: 400 });
+  }
+
+  // Create a new stop from a location
+  if (locationId) {
+    try {
+      const updated = addStopToDay(tripId, locationId, targetDayId);
+      return NextResponse.json(updated, { status: 201 });
+    } catch (err) {
+      return NextResponse.json({ error: (err as Error).message }, { status: 404 });
+    }
+  }
+
+  // Move an existing stop
+  if (!stopId || targetOrder === undefined) {
     return NextResponse.json(
-      { error: "stopId, targetDayId, and targetOrder are required" },
+      { error: "Either locationId (create) or stopId + targetOrder (move) are required" },
       { status: 400 }
     );
   }

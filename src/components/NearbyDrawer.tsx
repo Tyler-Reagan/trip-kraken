@@ -6,6 +6,7 @@ import type { Location, NearbyPlace } from "@/types";
 interface Props {
   tripId: string;
   anchorLocation: Location;
+  anchorDayId: string | null;
   existingPlaceIds: Set<string>;
   onClose: () => void;
   onAdded: () => void;
@@ -27,6 +28,7 @@ const PLACE_TYPES = [
 export default function NearbyDrawer({
   tripId,
   anchorLocation,
+  anchorDayId,
   existingPlaceIds,
   onClose,
   onAdded,
@@ -91,13 +93,33 @@ export default function NearbyDrawer({
           categories: place.categories,
         }),
       });
-      if (res.ok || res.status === 409) {
+
+      if (res.status === 409) {
+        // Already in trip — still mark as added
         setAddedIds((prev) => new Set(prev).add(place.placeId));
         onAdded();
-      } else {
+        return;
+      }
+
+      if (!res.ok) {
         const data = await res.json();
         setError(data.error ?? "Failed to add location");
+        return;
       }
+
+      const newLocation = await res.json();
+      setAddedIds((prev) => new Set(prev).add(place.placeId));
+
+      // If the anchor is already on a day, append the new stop to that same day
+      if (anchorDayId && newLocation.id) {
+        await fetch(`/api/trips/${tripId}/stops`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ locationId: newLocation.id, targetDayId: anchorDayId }),
+        });
+      }
+
+      onAdded();
     } catch {
       setError("Network error. Could not add location.");
     } finally {

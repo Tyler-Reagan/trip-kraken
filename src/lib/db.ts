@@ -266,6 +266,31 @@ export function rebuildItinerary(
   return getTripWithDetails(tripId)!;
 }
 
+export function addStopToDay(
+  tripId: string,
+  locationId: string,
+  dayId: string
+): TripWithDetails {
+  const db = getDb();
+
+  const loc = db.prepare("SELECT id FROM Location WHERE id = ? AND tripId = ?").get(locationId, tripId);
+  if (!loc) throw new Error("Location not found in trip");
+
+  const day = db.prepare("SELECT id FROM ItineraryDay WHERE id = ? AND tripId = ?").get(dayId, tripId);
+  if (!day) throw new Error("Day not found in trip");
+
+  const { maxOrd } = db
+    .prepare("SELECT MAX(ord) as maxOrd FROM ItineraryStop WHERE dayId = ?")
+    .get(dayId) as { maxOrd: number | null };
+
+  const ord = (maxOrd ?? -1) + 1;
+  db.prepare(
+    "INSERT INTO ItineraryStop (id, dayId, locationId, ord, notes) VALUES (?, ?, ?, ?, NULL)"
+  ).run(newId(), dayId, locationId, ord);
+
+  return getTripWithDetails(tripId)!;
+}
+
 export function moveStop(
   tripId: string,
   stopId: string,

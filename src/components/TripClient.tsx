@@ -54,9 +54,11 @@ export default function TripClient({ trip: initial }: Props) {
     await reload();
   }
 
+  // Switch to itinerary, briefly highlight the clicked stop, then auto-clear.
   function handleMapLocationClick(locationId: string) {
     setHighlightedLocationId(locationId);
     setActiveView("itinerary");
+    setTimeout(() => setHighlightedLocationId(null), 2000);
   }
 
   const hasItinerary = trip.days.length > 0;
@@ -159,6 +161,15 @@ export default function TripClient({ trip: initial }: Props) {
           <aside className="hidden lg:block w-72 shrink-0">
             <LocationSidebar
               locations={trip.locations}
+              activeDayLocationIds={
+                selectedDayNumber
+                  ? new Set(
+                      trip.days
+                        .find((d) => d.dayNumber === selectedDayNumber)
+                        ?.stops.map((s) => s.locationId) ?? []
+                    )
+                  : null
+              }
               onToggle={toggleExcluded}
               onFindNearby={setNearbyAnchor}
             />
@@ -168,6 +179,7 @@ export default function TripClient({ trip: initial }: Props) {
           <div className="flex-1 min-w-0">
             <ItineraryView
               trip={trip}
+              selectedDayNumber={selectedDayNumber}
               onMoveStop={moveStop}
               onReload={reload}
               highlightedLocationId={highlightedLocationId}
@@ -212,6 +224,11 @@ export default function TripClient({ trip: initial }: Props) {
         <NearbyDrawer
           tripId={trip.id}
           anchorLocation={nearbyAnchor}
+          anchorDayId={
+            trip.days.find((d) =>
+              d.stops.some((s) => s.locationId === nearbyAnchor.id)
+            )?.id ?? null
+          }
           existingPlaceIds={new Set(
             trip.locations.map((l) => l.placeId).filter((id): id is string => id !== null)
           )}
