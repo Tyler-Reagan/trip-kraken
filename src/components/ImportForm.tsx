@@ -40,7 +40,7 @@ export default function ImportForm() {
     <div className="card p-6 space-y-5 max-w-2xl mx-auto">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
-          <label htmlFor="url" className="text-sm font-medium text-gray-700">
+          <label htmlFor="url" className="text-sm font-medium text-gray-700 dark:text-gray-300">
             Google My Maps link
           </label>
           <input
@@ -55,9 +55,9 @@ export default function ImportForm() {
         </div>
 
         <div className="space-y-1.5">
-          <label htmlFor="name" className="text-sm font-medium text-gray-700">
+          <label htmlFor="name" className="text-sm font-medium text-gray-700 dark:text-gray-300">
             Trip name{" "}
-            <span className="text-gray-400 font-normal">(optional)</span>
+            <span className="text-gray-400 dark:text-gray-500 font-normal">(optional)</span>
           </label>
           <input
             id="name"
@@ -69,23 +69,24 @@ export default function ImportForm() {
           />
         </div>
 
-        <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 leading-relaxed">
+        <p className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2 leading-relaxed">
           Create a map at{" "}
           <a
             href="https://mymaps.google.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="underline text-brand-600"
+            className="underline text-brand-600 dark:text-brand-400"
           >
             mymaps.google.com
           </a>
           , add your places, then set it to{" "}
-          <strong>Anyone with the link can view</strong> and paste the URL here.
+          <strong className="text-gray-700 dark:text-gray-200">Anyone with the link can view</strong>{" "}
+          and paste the URL here.
           Coordinates are embedded in the map — no extra processing needed.
         </p>
 
         {error && (
-          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
             {error}
           </p>
         )}

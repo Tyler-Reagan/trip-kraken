@@ -185,7 +185,7 @@ export default function MapView({
   const handleMouseLeave = useCallback(() => setTooltip(null), []);
 
   return (
-    <div className="relative w-full rounded-xl overflow-hidden border border-gray-200" style={{ height: 520 }}>
+    <div className="relative w-full rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800" style={{ height: 520 }}>
       <Map
         ref={mapRef}
         initialViewState={initialViewState}

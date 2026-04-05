@@ -106,16 +106,16 @@ export default function NearbyDrawer({
   }
 
   return (
-    <div className="fixed inset-y-0 right-0 w-96 z-40 bg-white shadow-xl flex flex-col border-l border-gray-200">
+    <div className="fixed inset-y-0 right-0 w-96 z-40 bg-white dark:bg-gray-900 shadow-xl flex flex-col border-l border-gray-200 dark:border-gray-800">
       {/* Header */}
-      <div className="flex items-start justify-between gap-2 p-4 border-b border-gray-100 shrink-0">
+      <div className="flex items-start justify-between gap-2 p-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-gray-900">Nearby places</h2>
-          <p className="text-xs text-gray-500 truncate">{anchorLocation.name}</p>
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Nearby places</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{anchorLocation.name}</p>
         </div>
         <button
           onClick={onClose}
-          className="text-gray-400 hover:text-gray-600 transition-colors shrink-0 mt-0.5"
+          className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors shrink-0 mt-0.5"
           aria-label="Close"
         >
           ✕
@@ -123,7 +123,7 @@ export default function NearbyDrawer({
       </div>
 
       {/* Controls */}
-      <div className="p-4 border-b border-gray-100 space-y-3 shrink-0">
+      <div className="p-4 border-b border-gray-100 dark:border-gray-800 space-y-3 shrink-0">
         {/* Type filter */}
         <div className="flex gap-1.5 flex-wrap">
           {PLACE_TYPES.map((pt) => (
@@ -132,8 +132,8 @@ export default function NearbyDrawer({
               onClick={() => setType(pt.value)}
               className={`px-2.5 py-1 text-xs rounded-full border transition-colors
                 ${type === pt.value
-                  ? "bg-brand-600 text-white border-brand-600"
-                  : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
+                  ? "bg-brand-600 dark:bg-brand-500 text-white border-brand-600 dark:border-brand-500"
+                  : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
                 }`}
             >
               {pt.label}
@@ -147,12 +147,15 @@ export default function NearbyDrawer({
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           placeholder="Search by keyword…"
-          className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="w-full text-sm border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-1.5
+            bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
+            placeholder:text-gray-400 dark:placeholder:text-gray-500
+            focus:outline-none focus:ring-2 focus:ring-brand-500"
         />
 
         {/* Radius */}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
+          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
             Radius: {radius >= 1000 ? `${(radius / 1000).toFixed(1)}km` : `${radius}m`}
           </label>
           <input
@@ -162,9 +165,9 @@ export default function NearbyDrawer({
             step={500}
             value={radius}
             onChange={(e) => setRadius(Number(e.target.value))}
-            className="w-full accent-brand-600"
+            className="w-full accent-brand-500"
           />
-          <div className="flex justify-between text-xs text-gray-400 mt-0.5">
+          <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 mt-0.5">
             <span>500m</span>
             <span>5km</span>
           </div>
@@ -174,25 +177,25 @@ export default function NearbyDrawer({
       {/* Results */}
       <div className="flex-1 overflow-y-auto">
         {loading && (
-          <div className="flex items-center justify-center h-32 text-sm text-gray-400">
+          <div className="flex items-center justify-center h-32 text-sm text-gray-400 dark:text-gray-500">
             Loading…
           </div>
         )}
 
         {!loading && error && (
-          <div className="p-4 text-sm text-red-600 bg-red-50 m-4 rounded-lg">
+          <div className="p-4 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 m-4 rounded-lg">
             {error}
           </div>
         )}
 
         {!loading && !error && results !== null && results.length === 0 && (
-          <div className="flex items-center justify-center h-32 text-sm text-gray-400">
+          <div className="flex items-center justify-center h-32 text-sm text-gray-400 dark:text-gray-500">
             No results. Try a larger radius or different type.
           </div>
         )}
 
         {!loading && !error && results && results.length > 0 && (
-          <ul className="divide-y divide-gray-100">
+          <ul className="divide-y divide-gray-100 dark:divide-gray-800">
             {results.map((place) => {
               const isAdded = addedIds.has(place.placeId);
               const isAdding = addingId === place.placeId;
@@ -204,33 +207,33 @@ export default function NearbyDrawer({
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="text-sm font-medium text-gray-900 truncate">{place.name}</p>
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{place.name}</p>
                         {place.priceLevel !== null && (
-                          <span className="text-xs text-gray-500 shrink-0">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
                             {PRICE_LABELS[place.priceLevel]}
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-400 truncate">{place.address}</p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{place.address}</p>
                     </div>
                     <button
                       onClick={() => handleAdd(place)}
                       disabled={isAdded || isAdding}
                       className={`text-xs px-3 py-1.5 rounded-lg font-medium shrink-0 transition-colors
                         ${isAdded
-                          ? "bg-gray-100 text-gray-400 cursor-default"
-                          : "bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50"
+                          ? "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-default"
+                          : "bg-brand-600 dark:bg-brand-500 text-white hover:bg-brand-700 dark:hover:bg-brand-400 disabled:opacity-50"
                         }`}
                     >
                       {isAdding ? "…" : isAdded ? "Added" : "Add"}
                     </button>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
+                  <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
                     {place.rating !== null && (
                       <span>★ {place.rating}{place.reviewCount !== null ? ` (${place.reviewCount.toLocaleString()})` : ""}</span>
                     )}
                     {displayTypes.map((t) => (
-                      <span key={t} className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded capitalize">
+                      <span key={t} className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-1.5 py-0.5 rounded capitalize">
                         {t}
                       </span>
                     ))}

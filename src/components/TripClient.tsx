@@ -54,7 +54,6 @@ export default function TripClient({ trip: initial }: Props) {
     await reload();
   }
 
-  // Clicking a map pin highlights the stop in the itinerary and switches to it
   function handleMapLocationClick(locationId: string) {
     setHighlightedLocationId(locationId);
     setActiveView("itinerary");
@@ -67,8 +66,8 @@ export default function TripClient({ trip: initial }: Props) {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{trip.name}</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{trip.name}</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
             {trip.locations.length} locations
             {trip.numDays ? ` · ${trip.numDays} days` : ""}
           </p>
@@ -93,15 +92,15 @@ export default function TripClient({ trip: initial }: Props) {
       {hasItinerary && (
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           {/* View switcher */}
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden shrink-0">
+          <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
             {(["itinerary", "map"] as ActiveView[]).map((view) => (
               <button
                 key={view}
                 onClick={() => setActiveView(view)}
                 className={`px-4 py-1.5 text-sm font-medium transition-colors capitalize
                   ${activeView === view
-                    ? "bg-brand-600 text-white"
-                    : "bg-white text-gray-600 hover:bg-gray-50"
+                    ? "bg-brand-600 dark:bg-brand-500 text-white"
+                    : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
                   }`}
               >
                 {view === "itinerary" ? "Itinerary" : "Map"}
@@ -115,8 +114,8 @@ export default function TripClient({ trip: initial }: Props) {
               onClick={() => setSelectedDayNumber(null)}
               className={`px-3 py-1 text-xs rounded-full border transition-colors
                 ${selectedDayNumber === null
-                  ? "bg-gray-900 text-white border-gray-900"
-                  : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
+                  ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100"
+                  : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
                 }`}
             >
               All days
@@ -131,8 +130,8 @@ export default function TripClient({ trip: initial }: Props) {
                 }
                 className={`px-3 py-1 text-xs rounded-full border transition-colors
                   ${selectedDayNumber === day.dayNumber
-                    ? "bg-gray-900 text-white border-gray-900"
-                    : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
+                    ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100"
+                    : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
                   }`}
               >
                 Day {day.dayNumber}
@@ -144,11 +143,11 @@ export default function TripClient({ trip: initial }: Props) {
       )}
 
       {!hasItinerary && (
-        <div className="card p-8 text-center text-gray-500 space-y-3">
+        <div className="card p-8 text-center text-gray-500 dark:text-gray-400 space-y-3">
           <p className="text-4xl">🗺️</p>
           <p className="font-medium">No itinerary yet</p>
           <p className="text-sm">
-            Click <strong>Plan itinerary</strong> to cluster your locations into
+            Click <strong className="text-gray-700 dark:text-gray-200">Plan itinerary</strong> to cluster your locations into
             days.
           </p>
         </div>

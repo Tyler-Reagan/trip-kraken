@@ -17,15 +17,15 @@ export default function TripList({ trips }: { trips: TripSummary[] }) {
         <li key={trip.id}>
           <Link
             href={`/trips/${trip.id}`}
-            className="card p-4 block hover:shadow-md transition-shadow"
+            className="card p-4 block hover:shadow-md dark:hover:shadow-gray-950 transition-shadow"
           >
-            <p className="font-semibold text-gray-900 truncate">{trip.name}</p>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="font-semibold text-gray-900 dark:text-gray-100 truncate">{trip.name}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               {trip._count.locations} location
               {trip._count.locations !== 1 ? "s" : ""}
               {trip.numDays ? ` · ${trip.numDays} days` : ""}
             </p>
-            <p className="text-xs text-gray-400 mt-2">
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
               {new Date(trip.createdAt).toLocaleDateString()}
             </p>
           </Link>

@@ -64,7 +64,7 @@ export default function DayCard({
   return (
     <div
       className={`card p-4 space-y-3 transition-all
-        ${dragOver && draggingStop ? "ring-2 ring-brand-400 bg-brand-50" : ""}`}
+        ${dragOver && draggingStop ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/20" : ""}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -72,11 +72,11 @@ export default function DayCard({
       {/* Day header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="font-semibold text-brand-700 shrink-0">
+          <span className="font-semibold text-brand-600 dark:text-brand-400 shrink-0">
             Day {day.dayNumber}
           </span>
           {dateStr && (
-            <span className="text-xs text-gray-400 shrink-0">{dateStr}</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">{dateStr}</span>
           )}
           {editingLabel ? (
             <input
@@ -93,21 +93,21 @@ export default function DayCard({
           ) : (
             <button
               onClick={() => setEditingLabel(true)}
-              className="text-sm text-gray-500 hover:text-gray-800 truncate max-w-[160px]"
+              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 truncate max-w-[160px] transition-colors"
               title="Click to add a label"
             >
-              {day.label || <span className="text-gray-300 italic">Add label…</span>}
+              {day.label || <span className="text-gray-300 dark:text-gray-600 italic">Add label…</span>}
             </button>
           )}
         </div>
-        <span className="text-xs text-gray-400 shrink-0">
+        <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">
           {day.stops.length} stop{day.stops.length !== 1 ? "s" : ""}
         </span>
       </div>
 
       {/* Stops list */}
       {day.stops.length === 0 ? (
-        <p className="text-sm text-gray-400 italic py-2 text-center">
+        <p className="text-sm text-gray-400 dark:text-gray-500 italic py-2 text-center">
           Drag stops here or re-optimize
         </p>
       ) : (
@@ -160,7 +160,6 @@ function StopRow({
   const [dropTarget, setDropTarget] = useState(false);
   const rowRef = useRef<HTMLLIElement>(null);
 
-  // Scroll highlighted stop into view when it becomes active
   useEffect(() => {
     if (isHighlighted && rowRef.current) {
       rowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -201,22 +200,22 @@ function StopRow({
           transition-all select-none
           ${isDragging ? "opacity-40" : ""}
           ${isHighlighted
-            ? "ring-2 ring-brand-400 bg-brand-50 border-brand-200"
-            : "border-transparent hover:bg-gray-50 hover:border-gray-200"
+            ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/30 border-brand-200 dark:border-brand-800"
+            : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
           }`}
       >
         {/* Order badge */}
-        <span className="shrink-0 w-5 h-5 rounded-full bg-brand-100 text-brand-700 text-xs flex items-center justify-center font-semibold mt-0.5">
+        <span className="shrink-0 w-5 h-5 rounded-full bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-400 text-xs flex items-center justify-center font-semibold mt-0.5">
           {index + 1}
         </span>
 
         {/* Location info */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-800 truncate">
+          <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
             {stop.location.name}
           </p>
           {stop.location.address && (
-            <p className="text-xs text-gray-400 truncate">{stop.location.address}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{stop.location.address}</p>
           )}
         </div>
 
@@ -226,7 +225,7 @@ function StopRow({
             e.stopPropagation();
             removeStop();
           }}
-          className="shrink-0 text-gray-300 hover:text-red-400 transition-colors text-lg leading-none mt-0.5"
+          className="shrink-0 text-gray-300 dark:text-gray-600 hover:text-red-400 dark:hover:text-red-400 transition-colors text-lg leading-none mt-0.5"
           title="Remove from this day"
           aria-label="Remove stop"
         >
