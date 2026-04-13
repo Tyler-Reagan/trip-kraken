@@ -16,6 +16,7 @@ interface TripStore {
   showOptimize: boolean;
   showAddLocation: boolean;
   showLocationDrawer: boolean;
+  showCategoryChips: boolean;
 
   // Setters
   setTrip: (trip: TripWithDetails) => void;
@@ -26,11 +27,13 @@ interface TripStore {
   setShowOptimize: (v: boolean) => void;
   setShowAddLocation: (v: boolean) => void;
   setShowLocationDrawer: (v: boolean) => void;
+  setShowCategoryChips: (v: boolean) => void;
 
   // Async mutations — use get().tripId internally
   reload: () => Promise<void>;
   moveStop: (stopId: string, targetDayId: string, targetOrder: number) => Promise<void>;
   toggleExcluded: (locationId: string, excluded: boolean) => Promise<void>;
+  toggleAnchor: (locationId: string, isAnchor: boolean) => Promise<void>;
 
   // Composite action: switch to itinerary + highlight, then auto-clear
   handleMapLocationClick: (locationId: string) => void;
@@ -47,6 +50,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   showOptimize: false,
   showAddLocation: false,
   showLocationDrawer: false,
+  showCategoryChips: false,
 
   setTrip: (trip) => set({ trip, tripId: trip.id }),
   setActiveView: (v) => set({ activeView: v }),
@@ -56,6 +60,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   setShowOptimize: (v) => set({ showOptimize: v }),
   setShowAddLocation: (v) => set({ showAddLocation: v }),
   setShowLocationDrawer: (v) => set({ showLocationDrawer: v }),
+  setShowCategoryChips: (v) => set({ showCategoryChips: v }),
 
   reload: async () => {
     const tripId = get().tripId;
@@ -82,6 +87,17 @@ export const useTripStore = create<TripStore>()((set, get) => ({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ excluded }),
+    });
+    await get().reload();
+  },
+
+  toggleAnchor: async (locationId, isAnchor) => {
+    const tripId = get().tripId;
+    if (!tripId) return;
+    await fetch(`/api/trips/${tripId}/locations/${locationId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isAnchor }),
     });
     await get().reload();
   },

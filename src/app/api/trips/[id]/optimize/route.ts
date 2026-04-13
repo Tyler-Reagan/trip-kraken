@@ -8,15 +8,19 @@ export async function POST(
 ) {
   const { id: tripId } = await params;
   const body = await req.json();
-  const { numDays, startDate, dayBudgetHours } = body;
+  const { numDays, startDate, dayBudgetHours, balanceCategories } = body;
 
   if (!numDays || typeof numDays !== "number" || numDays < 1) {
     return NextResponse.json({ error: "numDays must be a positive integer" }, { status: 400 });
   }
 
-  type LocationRow = { id: string; lat: number | null; lng: number | null; excluded: number; visitDuration: number | null; openTime: string | null; closeTime: string | null };
+  type LocationRow = {
+    id: string; lat: number | null; lng: number | null; excluded: number;
+    visitDuration: number | null; openTime: string | null; closeTime: string | null;
+    isAnchor: number; categories: string | null;
+  };
   const locations = getDb().prepare(
-    "SELECT id, lat, lng, excluded, visitDuration, openTime, closeTime FROM Location WHERE tripId = ? AND excluded = 0"
+    "SELECT id, lat, lng, excluded, visitDuration, openTime, closeTime, isAnchor, categories FROM Location WHERE tripId = ? AND excluded = 0"
   ).all(tripId) as LocationRow[];
 
   const tripExists = getDb().prepare("SELECT id FROM Trip WHERE id = ?").get(tripId);
@@ -33,8 +37,10 @@ export async function POST(
       lat: l.lat ?? 0,
       lng: l.lng ?? 0,
       ...(l.visitDuration != null ? { visitDuration: l.visitDuration } : {}),
-      ...(l.openTime  != null ? { openTime:  l.openTime  } : {}),
-      ...(l.closeTime != null ? { closeTime: l.closeTime } : {}),
+      ...(l.openTime     != null ? { openTime:      l.openTime      } : {}),
+      ...(l.closeTime    != null ? { closeTime:     l.closeTime     } : {}),
+      ...(l.isAnchor                                   ? { isAnchor: true }                                       : {}),
+      ...(balanceCategories && l.categories != null ? { categories: JSON.parse(l.categories) as string[] } : {}),
     })),
     numDays,
     dayBudgetMinutes

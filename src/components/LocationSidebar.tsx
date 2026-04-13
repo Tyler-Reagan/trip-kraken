@@ -84,7 +84,9 @@ export default function LocationSidebar({ isDrawer, onCloseDrawer }: Props) {
   const tripId = useTripStore((s) => s.tripId);
   const selectedDayNumber = useTripStore((s) => s.selectedDayNumber);
   const toggleExcluded = useTripStore((s) => s.toggleExcluded);
+  const toggleAnchor = useTripStore((s) => s.toggleAnchor);
   const setNearbyAnchor = useTripStore((s) => s.setNearbyAnchor);
+  const showCategoryChips = useTripStore((s) => s.showCategoryChips);
   const reload = useTripStore((s) => s.reload);
 
   if (!trip) return null;
@@ -149,20 +151,47 @@ export default function LocationSidebar({ isDrawer, onCloseDrawer }: Props) {
                   <LengthOfStayInput loc={loc} tripId={tripId} reload={reload} />
                 )}
                 <OpeningHours loc={loc} />
+                {showCategoryChips && loc.categories && loc.categories.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {loc.categories.map((cat) => (
+                      <span
+                        key={cat}
+                        className="inline-block text-[10px] leading-tight px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
+                      >
+                        {cat.replace(/_/g, " ")}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-              <button
-                onClick={() => setNearbyAnchor(loc)}
-                disabled={loc.lat === null || loc.lng === null}
-                title={loc.lat === null ? "No coordinates" : "Find nearby attractions"}
-                className={`shrink-0 text-xs opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity
-                  focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand-500 rounded
-                  ${loc.lat !== null && loc.lng !== null
-                    ? "text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 cursor-pointer"
-                    : "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-                  }`}
-              >
-                Nearby
-              </button>
+              <div className="shrink-0 flex flex-col items-end gap-1">
+                <button
+                  onClick={() => toggleAnchor(loc.id, !loc.isAnchor)}
+                  title={loc.isAnchor ? "Unmark as base (hotel/start point)" : "Mark as base — first stop of every day"}
+                  className={`text-xs transition-opacity focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand-500 rounded
+                    ${loc.isAnchor
+                      ? "opacity-100 text-amber-500 dark:text-amber-400 hover:text-amber-600 dark:hover:text-amber-300 cursor-pointer"
+                      : "opacity-0 group-hover:opacity-100 focus:opacity-100 text-gray-400 dark:text-gray-500 hover:text-amber-500 dark:hover:text-amber-400 cursor-pointer"
+                    }`}
+                  aria-label={loc.isAnchor ? `Unmark ${loc.name} as base` : `Mark ${loc.name} as base`}
+                  aria-pressed={loc.isAnchor}
+                >
+                  {loc.isAnchor ? "Base ✓" : "Base"}
+                </button>
+                <button
+                  onClick={() => setNearbyAnchor(loc)}
+                  disabled={loc.lat === null || loc.lng === null}
+                  title={loc.lat === null ? "No coordinates" : "Find nearby attractions"}
+                  className={`text-xs opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity
+                    focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand-500 rounded
+                    ${loc.lat !== null && loc.lng !== null
+                      ? "text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 cursor-pointer"
+                      : "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                    }`}
+                >
+                  Nearby
+                </button>
+              </div>
             </li>
           );
         })}

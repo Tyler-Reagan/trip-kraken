@@ -19,6 +19,7 @@ export type Location = {
   lng: number | null;
   placeId: string | null;
   excluded: boolean;
+  isAnchor: boolean;
   note: string | null;
   stops?: ItineraryStop[];
   rating: number | null;

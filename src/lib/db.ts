@@ -40,6 +40,7 @@ function openDb(): DatabaseSync {
     "ALTER TABLE Location ADD COLUMN visitDuration INTEGER",
     "ALTER TABLE Location ADD COLUMN openTime TEXT",
     "ALTER TABLE Location ADD COLUMN closeTime TEXT",
+    "ALTER TABLE Location ADD COLUMN isAnchor INTEGER NOT NULL DEFAULT 0",
   ];
   for (const sql of locationAlters) {
     try { database.exec(sql); } catch { /* column already exists */ }
@@ -85,7 +86,7 @@ type TripRow = {
 type LocationRow = {
   id: string; tripId: string; name: string; address: string | null;
   lat: number | null; lng: number | null; placeId: string | null;
-  excluded: number; note: string | null;
+  excluded: number; isAnchor: number; note: string | null;
   rating: number | null; reviewCount: number | null; categories: string | null;
   visitDuration: number | null;
   openTime: string | null;
@@ -99,7 +100,7 @@ type StopRow = { id: string; dayId: string; locationId: string; ord: number; not
 type StopWithLocRow = StopRow & {
   loc_id: string; loc_tripId: string; loc_name: string;
   loc_address: string | null; loc_lat: number | null; loc_lng: number | null;
-  loc_placeId: string | null; loc_excluded: number; loc_note: string | null;
+  loc_placeId: string | null; loc_excluded: number; loc_isAnchor: number; loc_note: string | null;
   loc_rating: number | null; loc_reviewCount: number | null; loc_categories: string | null;
   loc_visitDuration: number | null;
   loc_openTime: string | null;
@@ -122,6 +123,7 @@ function parseLocation(r: LocationRow): Location {
   return {
     ...r,
     excluded: r.excluded !== 0,
+    isAnchor: r.isAnchor !== 0,
     categories: r.categories ? JSON.parse(r.categories) : null,
   };
 }
@@ -139,6 +141,7 @@ function parseStopWithLoc(r: StopWithLocRow): ItineraryStop {
       visitDuration: r.loc_visitDuration ?? null,
       openTime: r.loc_openTime ?? null,
       closeTime: r.loc_closeTime ?? null,
+      isAnchor: r.loc_isAnchor !== 0,
     },
   };
 }
@@ -193,7 +196,8 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
            l.placeId as loc_placeId, l.excluded as loc_excluded, l.note as loc_note,
            l.rating as loc_rating, l.reviewCount as loc_reviewCount,
            l.categories as loc_categories, l.visitDuration as loc_visitDuration,
-           l.openTime as loc_openTime, l.closeTime as loc_closeTime
+           l.openTime as loc_openTime, l.closeTime as loc_closeTime,
+           l.isAnchor as loc_isAnchor
     FROM ItineraryStop s
     JOIN Location l ON l.id = s.locationId
     JOIN ItineraryDay d ON d.id = s.dayId

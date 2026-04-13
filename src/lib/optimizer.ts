@@ -23,9 +23,11 @@ export interface LocationInput {
   id: string;
   lat: number;
   lng: number;
-  visitDuration?: number; // minutes; used for day duration balancing
-  openTime?: string;      // "HH:MM" 24-hour; soft time-window constraint
-  closeTime?: string;     // "HH:MM" 24-hour; soft time-window constraint
+  visitDuration?: number;   // minutes; used for day duration balancing
+  openTime?: string;        // "HH:MM" 24-hour; soft time-window constraint
+  closeTime?: string;       // "HH:MM" 24-hour; soft time-window constraint
+  isAnchor?: boolean;       // hotel/base: prepended to every day; excluded from clustering
+  categories?: string[];    // Google Places categories; used for cross-day balance
 }
 
 export interface DayPlan {
@@ -41,21 +43,25 @@ export function optimizeItinerary(
 ): DayPlan[] {
   if (locations.length === 0) return [];
 
-  // Filter out locations without valid coordinates
-  const valid = locations.filter((l) => l.lat !== 0 || l.lng !== 0);
-  const invalid = locations.filter((l) => l.lat === 0 && l.lng === 0);
-
   const days = numDays > 0 ? numDays : 1;
 
-  // If fewer locations than days, each location gets its own day
+  // Extract anchor (hotel/base) — excluded from clustering, prepended to every day
+  const anchor = locations.find((l) => l.isAnchor);
+  const nonAnchor = locations.filter((l) => !l.isAnchor);
+
+  // Filter out locations without valid coordinates
+  const valid = nonAnchor.filter((l) => l.lat !== 0 || l.lng !== 0);
+  const invalid = nonAnchor.filter((l) => l.lat === 0 && l.lng === 0);
+
+  // If fewer non-anchor locations than days, each gets its own day
   if (valid.length <= days) {
     const plans: DayPlan[] = valid.map((loc, i) => ({
       dayNumber: i + 1,
-      locationIds: [loc.id],
+      locationIds: anchor ? [anchor.id, loc.id] : [loc.id],
     }));
-    // Pad remaining days as empty
+    // Pad remaining days as empty (still include anchor)
     for (let d = valid.length + 1; d <= days; d++) {
-      plans.push({ dayNumber: d, locationIds: [] });
+      plans.push({ dayNumber: d, locationIds: anchor ? [anchor.id] : [] });
     }
     // Append invalid locations to last day
     if (invalid.length > 0 && plans.length > 0) {
@@ -64,14 +70,19 @@ export function optimizeItinerary(
     return plans;
   }
 
-  // Phase 1: k-means clustering
+  // Phase 1: k-means clustering (non-anchor locations only)
   const clusters = kMeans(valid, days, dayBudgetMinutes);
 
   // Phase 2: nearest-neighbor TSP + 2-opt refinement within each cluster
-  const plans: DayPlan[] = clusters.map((cluster, i) => ({
-    dayNumber: i + 1,
-    locationIds: twoOpt(nearestNeighborOrder(cluster, dayStartMins), dayStartMins).map((l) => l.id),
-  }));
+  // Anchor is passed to nearestNeighborOrder so it starts the route from the anchor
+  const plans: DayPlan[] = clusters.map((cluster, i) => {
+    const ordered = twoOpt(nearestNeighborOrder(cluster, dayStartMins, anchor), dayStartMins);
+    const stopIds = ordered.map((l) => l.id);
+    return {
+      dayNumber: i + 1,
+      locationIds: anchor ? [anchor.id, ...stopIds] : stopIds,
+    };
+  });
 
   // Distribute locations with missing coordinates across days round-robin
   invalid.forEach((loc, i) => {
@@ -90,6 +101,15 @@ function kMeans(locations: LocationInput[], k: number, dayBudgetMinutes?: number
   const centroids = kMeansPlusPlusInit(locations, k);
   let assignments = new Array<number>(locations.length).fill(0);
 
+  // Pre-compute ideal category distribution across days for Task 5
+  const allCategories = locations.flatMap((l) => l.categories ?? []);
+  const uniqueCategories = [...new Set(allCategories)];
+  const idealCategoryCounts: Record<string, number> = {};
+  for (const cat of uniqueCategories) {
+    const total = locations.filter((l) => l.categories?.includes(cat)).length;
+    idealCategoryCounts[cat] = total / k;
+  }
+
   for (let iter = 0; iter < 100; iter++) {
     // Compute current day durations from previous iteration's assignments so
     // the cost function can penalise adding more stops to over-budget days.
@@ -101,9 +121,19 @@ function kMeans(locations: LocationInput[], k: number, dayBudgetMinutes?: number
         )
       : undefined;
 
-    // Assign each location to the nearest centroid (with optional duration penalty)
+    // Compute current category counts per day for category balance penalty
+    const dayCategoryCounts: Record<string, number>[] = Array.from({ length: k }, () => ({}));
+    if (uniqueCategories.length > 0) {
+      locations.forEach((loc, i) => {
+        for (const cat of loc.categories ?? []) {
+          dayCategoryCounts[assignments[i]][cat] = (dayCategoryCounts[assignments[i]][cat] ?? 0) + 1;
+        }
+      });
+    }
+
+    // Assign each location to the nearest centroid (with optional duration + category penalty)
     const newAssignments = locations.map((loc) =>
-      nearestCentroidIndex(loc, centroids, dayDurations, dayBudgetMinutes)
+      nearestCentroidIndex(loc, centroids, dayDurations, dayBudgetMinutes, dayCategoryCounts, idealCategoryCounts)
     );
 
     const changed = newAssignments.some((a, i) => a !== assignments[i]);
@@ -161,16 +191,23 @@ function kMeansPlusPlusInit(
   return centroids;
 }
 
+// Category balance penalty scale: ~1 km per unit excess over ideal count.
+// Keeps geographic proximity dominant while gently spreading categories across days.
+const CATEGORY_BALANCE_KM = 1.0;
+
 function nearestCentroidIndex(
   loc: LocationInput,
   centroids: LocationInput[],
   dayDurations?: number[],
-  dayBudgetMinutes?: number
+  dayBudgetMinutes?: number,
+  dayCategoryCounts?: Record<string, number>[],
+  idealCategoryCounts?: Record<string, number>
 ): number {
   let best = 0;
   let bestCost = Infinity;
   centroids.forEach((c, i) => {
     let cost = haversine(loc, c);
+
     // Soft duration penalty: add 2 km per hour that this assignment would put
     // the day over budget. Keeps geographic proximity dominant while nudging
     // stops away from already-full days.
@@ -181,6 +218,19 @@ function nearestCentroidIndex(
       );
       cost += (excess / 60) * 2;
     }
+
+    // Soft category balance penalty: penalize concentrating the same category
+    // on one day. For each category of this location, add penalty proportional
+    // to how much the day would exceed the ideal per-day count.
+    if (dayCategoryCounts && idealCategoryCounts) {
+      for (const cat of loc.categories ?? []) {
+        const current = dayCategoryCounts[i][cat] ?? 0;
+        const ideal = idealCategoryCounts[cat] ?? 0;
+        const excess = Math.max(0, current + 1 - ideal);
+        cost += excess * CATEGORY_BALANCE_KM;
+      }
+    }
+
     if (cost < bestCost) {
       bestCost = cost;
       best = i;
@@ -193,19 +243,29 @@ function nearestCentroidIndex(
 // Nearest-neighbor TSP
 // ---------------------------------------------------------------------------
 
-function nearestNeighborOrder(locations: LocationInput[], dayStartMins = 9 * 60): LocationInput[] {
+function nearestNeighborOrder(
+  locations: LocationInput[],
+  dayStartMins = 9 * 60,
+  anchor?: LocationInput
+): LocationInput[] {
   if (locations.length <= 1) return locations;
 
   const unvisited = [...locations];
   const ordered: LocationInput[] = [];
   let timeMins = dayStartMins;
 
-  // Start from the northernmost location (top of the map feels natural)
-  unvisited.sort((a, b) => b.lat - a.lat);
-  const first = unvisited.shift();
-  if (!first) throw new Error("nearestNeighborOrder: unexpected empty array after length guard");
-  ordered.push(first);
-  timeMins += first.visitDuration ?? DEFAULT_VISIT_MINS;
+  if (anchor) {
+    // Start greedy walk from anchor's position (anchor itself is not in the stop list)
+    ordered.push({ ...anchor, id: "__anchor_start__" });
+    timeMins += anchor.visitDuration ?? DEFAULT_VISIT_MINS;
+  } else {
+    // Fall back to northernmost heuristic
+    unvisited.sort((a, b) => b.lat - a.lat);
+    const first = unvisited.shift();
+    if (!first) throw new Error("nearestNeighborOrder: unexpected empty array after length guard");
+    ordered.push(first);
+    timeMins += first.visitDuration ?? DEFAULT_VISIT_MINS;
+  }
 
   while (unvisited.length > 0) {
     const last = ordered[ordered.length - 1];
@@ -224,7 +284,8 @@ function nearestNeighborOrder(locations: LocationInput[], dayStartMins = 9 * 60)
     timeMins += haversine(last, next) / AVG_SPEED_KM_PER_MIN + (next.visitDuration ?? DEFAULT_VISIT_MINS);
   }
 
-  return ordered;
+  // Remove the sentinel anchor entry used only as a starting position
+  return ordered.filter((l) => l.id !== "__anchor_start__");
 }
 
 // ---------------------------------------------------------------------------

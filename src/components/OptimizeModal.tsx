@@ -6,6 +6,7 @@ import { useTripStore } from "@/store/tripStore";
 export default function OptimizeModal() {
   const trip = useTripStore((s) => s.trip);
   const setShowOptimize = useTripStore((s) => s.setShowOptimize);
+  const setShowCategoryChips = useTripStore((s) => s.setShowCategoryChips);
   const reload = useTripStore((s) => s.reload);
   // useState initializers use optional chaining so hooks are always called
   const [numDays, setNumDays] = useState<number>(trip?.numDays ?? 3);
@@ -13,8 +14,11 @@ export default function OptimizeModal() {
     trip?.startDate ? new Date(trip.startDate).toISOString().slice(0, 10) : ""
   );
   const [dayBudgetHours, setDayBudgetHours] = useState<number>(8);
+  const [balanceCategories, setBalanceCategories] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const hasCategoryData = trip?.locations.some((l) => l.categories && l.categories.length > 0) ?? false;
 
   if (!trip) return null;
 
@@ -32,6 +36,7 @@ export default function OptimizeModal() {
           numDays,
           startDate: startDate || undefined,
           dayBudgetHours,
+          balanceCategories,
         }),
       });
 
@@ -41,6 +46,7 @@ export default function OptimizeModal() {
         return;
       }
 
+      setShowCategoryChips(balanceCategories);
       await reload();
       setShowOptimize(false);
     } catch {
@@ -127,6 +133,25 @@ export default function OptimizeModal() {
               Balances days so no single day exceeds this visit time. Only applies when locations have durations set.
             </p>
           </div>
+
+          {hasCategoryData && (
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={balanceCategories}
+                onChange={(e) => setBalanceCategories(e.target.checked)}
+                className="mt-0.5 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 shrink-0"
+              />
+              <div>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Balance categories across days
+                </span>
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                  Spreads location types (restaurants, museums, etc.) evenly so no single day concentrates one category.
+                </p>
+              </div>
+            </label>
+          )}
 
           {error && (
             <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
