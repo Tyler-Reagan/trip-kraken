@@ -136,7 +136,7 @@ The current optimizer is distance-only — it has no awareness of actual travel 
 The nearest-neighbor TSP heuristic is fast but not optimal. Planned improvements:
 
 - ~~2-opt local search post-processing — reverses route segments to eliminate crossings (~8–12% improvement over nearest-neighbor; `optimizer.ts` only, no schema changes)~~
-- Time-window constraints — soft penalties for visiting locations outside their opening hours; requires `openTime`/`closeTime` on `Location` and `visitDuration` to compute simulated arrival times
+- ~~Time-window constraints — soft penalties for visiting locations outside their opening hours; requires `openTime`/`closeTime` on `Location` and `visitDuration` to compute simulated arrival times~~
 - ~~Day duration budget modeling — balance days by total visit + travel time rather than stop count; adds `visitDuration` to `Location` and a day budget input to `OptimizeModal`~~
 - User-defined anchor — mark one location (e.g., a hotel) as the daily start/end point; each day's TSP runs anchor → stops → anchor instead of starting at the northernmost point
 - Category balance across days — penalize k-means assignment when the same category concentrates on one day; uses existing `categories` field, no schema changes
