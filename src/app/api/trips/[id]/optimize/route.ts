@@ -8,23 +8,34 @@ export async function POST(
 ) {
   const { id: tripId } = await params;
   const body = await req.json();
-  const { numDays, startDate } = body;
+  const { numDays, startDate, dayBudgetHours } = body;
 
   if (!numDays || typeof numDays !== "number" || numDays < 1) {
     return NextResponse.json({ error: "numDays must be a positive integer" }, { status: 400 });
   }
 
-  type LocationRow = { id: string; lat: number | null; lng: number | null; excluded: number };
+  type LocationRow = { id: string; lat: number | null; lng: number | null; excluded: number; visitDuration: number | null };
   const locations = getDb().prepare(
-    "SELECT id, lat, lng, excluded FROM Location WHERE tripId = ? AND excluded = 0"
+    "SELECT id, lat, lng, excluded, visitDuration FROM Location WHERE tripId = ? AND excluded = 0"
   ).all(tripId) as LocationRow[];
 
   const tripExists = getDb().prepare("SELECT id FROM Trip WHERE id = ?").get(tripId);
   if (!tripExists) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
+  const dayBudgetMinutes =
+    typeof dayBudgetHours === "number" && dayBudgetHours > 0
+      ? dayBudgetHours * 60
+      : undefined;
+
   const dayPlans = optimizeItinerary(
-    locations.map((l) => ({ id: l.id, lat: l.lat ?? 0, lng: l.lng ?? 0 })),
-    numDays
+    locations.map((l) => ({
+      id: l.id,
+      lat: l.lat ?? 0,
+      lng: l.lng ?? 0,
+      ...(l.visitDuration != null ? { visitDuration: l.visitDuration } : {}),
+    })),
+    numDays,
+    dayBudgetMinutes
   );
 
   const updated = rebuildItinerary(tripId, numDays, startDate ?? null, dayPlans);

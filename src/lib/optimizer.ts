@@ -17,6 +17,7 @@ export interface LocationInput {
   id: string;
   lat: number;
   lng: number;
+  visitDuration?: number; // minutes; used for day duration balancing
 }
 
 export interface DayPlan {
@@ -26,7 +27,8 @@ export interface DayPlan {
 
 export function optimizeItinerary(
   locations: LocationInput[],
-  numDays: number
+  numDays: number,
+  dayBudgetMinutes?: number
 ): DayPlan[] {
   if (locations.length === 0) return [];
 
@@ -54,7 +56,7 @@ export function optimizeItinerary(
   }
 
   // Phase 1: k-means clustering
-  const clusters = kMeans(valid, days);
+  const clusters = kMeans(valid, days, dayBudgetMinutes);
 
   // Phase 2: nearest-neighbor TSP + 2-opt refinement within each cluster
   const plans: DayPlan[] = clusters.map((cluster, i) => ({
@@ -74,15 +76,25 @@ export function optimizeItinerary(
 // K-means clustering
 // ---------------------------------------------------------------------------
 
-function kMeans(locations: LocationInput[], k: number): LocationInput[][] {
+function kMeans(locations: LocationInput[], k: number, dayBudgetMinutes?: number): LocationInput[][] {
   // Initialise centroids using k-means++ seeding
   const centroids = kMeansPlusPlusInit(locations, k);
   let assignments = new Array<number>(locations.length).fill(0);
 
   for (let iter = 0; iter < 100; iter++) {
-    // Assign each location to the nearest centroid
+    // Compute current day durations from previous iteration's assignments so
+    // the cost function can penalise adding more stops to over-budget days.
+    const dayDurations = dayBudgetMinutes
+      ? Array.from({ length: k }, (_, c) =>
+          locations
+            .filter((_, i) => assignments[i] === c)
+            .reduce((sum, l) => sum + (l.visitDuration ?? 0), 0)
+        )
+      : undefined;
+
+    // Assign each location to the nearest centroid (with optional duration penalty)
     const newAssignments = locations.map((loc) =>
-      nearestCentroidIndex(loc, centroids)
+      nearestCentroidIndex(loc, centroids, dayDurations, dayBudgetMinutes)
     );
 
     const changed = newAssignments.some((a, i) => a !== assignments[i]);
@@ -142,14 +154,26 @@ function kMeansPlusPlusInit(
 
 function nearestCentroidIndex(
   loc: LocationInput,
-  centroids: LocationInput[]
+  centroids: LocationInput[],
+  dayDurations?: number[],
+  dayBudgetMinutes?: number
 ): number {
   let best = 0;
-  let bestDist = Infinity;
+  let bestCost = Infinity;
   centroids.forEach((c, i) => {
-    const d = haversine(loc, c);
-    if (d < bestDist) {
-      bestDist = d;
+    let cost = haversine(loc, c);
+    // Soft duration penalty: add 2 km per hour that this assignment would put
+    // the day over budget. Keeps geographic proximity dominant while nudging
+    // stops away from already-full days.
+    if (dayDurations && dayBudgetMinutes) {
+      const excess = Math.max(
+        0,
+        dayDurations[i] + (loc.visitDuration ?? 0) - dayBudgetMinutes
+      );
+      cost += (excess / 60) * 2;
+    }
+    if (cost < bestCost) {
+      bestCost = cost;
       best = i;
     }
   });

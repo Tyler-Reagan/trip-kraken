@@ -24,6 +24,7 @@ export type Location = {
   rating: number | null;
   reviewCount: number | null;
   categories: string[] | null;
+  visitDuration: number | null; // estimated visit time in minutes
 };
 
 export type NearbyPlace = {

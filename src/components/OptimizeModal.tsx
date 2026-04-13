@@ -12,6 +12,7 @@ export default function OptimizeModal() {
   const [startDate, setStartDate] = useState<string>(
     trip?.startDate ? new Date(trip.startDate).toISOString().slice(0, 10) : ""
   );
+  const [dayBudgetHours, setDayBudgetHours] = useState<number>(8);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,6 +31,7 @@ export default function OptimizeModal() {
         body: JSON.stringify({
           numDays,
           startDate: startDate || undefined,
+          dayBudgetHours,
         }),
       });
 
@@ -103,6 +105,27 @@ export default function OptimizeModal() {
               onChange={(e) => setStartDate(e.target.value)}
               className="input"
             />
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Day budget
+              </label>
+              <span className="text-sm text-gray-500 dark:text-gray-400">{dayBudgetHours}h</span>
+            </div>
+            <input
+              type="range"
+              min={4}
+              max={14}
+              step={1}
+              value={dayBudgetHours}
+              onChange={(e) => setDayBudgetHours(Number(e.target.value))}
+              className="w-full accent-brand-600"
+            />
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              Balances days so no single day exceeds this visit time. Only applies when locations have durations set.
+            </p>
           </div>
 
           {error && (

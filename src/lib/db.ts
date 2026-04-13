@@ -37,6 +37,7 @@ function openDb(): DatabaseSync {
     "ALTER TABLE Location ADD COLUMN rating REAL",
     "ALTER TABLE Location ADD COLUMN reviewCount INTEGER",
     "ALTER TABLE Location ADD COLUMN categories TEXT",
+    "ALTER TABLE Location ADD COLUMN visitDuration INTEGER",
   ];
   for (const sql of locationAlters) {
     try { database.exec(sql); } catch { /* column already exists */ }
@@ -84,6 +85,7 @@ type LocationRow = {
   lat: number | null; lng: number | null; placeId: string | null;
   excluded: number; note: string | null;
   rating: number | null; reviewCount: number | null; categories: string | null;
+  visitDuration: number | null;
 };
 type DayRow = {
   id: string; tripId: string; dayNumber: number;
@@ -95,6 +97,7 @@ type StopWithLocRow = StopRow & {
   loc_address: string | null; loc_lat: number | null; loc_lng: number | null;
   loc_placeId: string | null; loc_excluded: number; loc_note: string | null;
   loc_rating: number | null; loc_reviewCount: number | null; loc_categories: string | null;
+  loc_visitDuration: number | null;
 };
 
 // ─── Deserializers ────────────────────────────────────────────────────────────
@@ -127,6 +130,7 @@ function parseStopWithLoc(r: StopWithLocRow): ItineraryStop {
       placeId: r.loc_placeId, excluded: r.loc_excluded !== 0, note: r.loc_note,
       rating: r.loc_rating, reviewCount: r.loc_reviewCount,
       categories: r.loc_categories ? JSON.parse(r.loc_categories) : null,
+      visitDuration: r.loc_visitDuration ?? null,
     },
   };
 }
@@ -180,7 +184,7 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
            l.address as loc_address, l.lat as loc_lat, l.lng as loc_lng,
            l.placeId as loc_placeId, l.excluded as loc_excluded, l.note as loc_note,
            l.rating as loc_rating, l.reviewCount as loc_reviewCount,
-           l.categories as loc_categories
+           l.categories as loc_categories, l.visitDuration as loc_visitDuration
     FROM ItineraryStop s
     JOIN Location l ON l.id = s.locationId
     JOIN ItineraryDay d ON d.id = s.dayId

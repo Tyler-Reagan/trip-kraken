@@ -1,17 +1,82 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useTripStore } from "@/store/tripStore";
+import type { Location } from "@/types";
 
 interface Props {
   isDrawer?: boolean;
   onCloseDrawer?: () => void;
 }
 
+function DurationInput({ loc, tripId, reload }: { loc: Location; tripId: string; reload: () => Promise<void> }) {
+  // Use loose != null so both null and undefined (pre-migration rows) map to 0
+  const savedHours = loc.visitDuration != null ? Math.floor(loc.visitDuration / 60) : 0;
+  const savedMins  = loc.visitDuration != null ? loc.visitDuration % 60 : 0;
+
+  const [hours, setHours] = useState(savedHours);
+  const [mins,  setMins]  = useState(savedMins);
+
+  useEffect(() => {
+    setHours(loc.visitDuration != null ? Math.floor(loc.visitDuration / 60) : 0);
+    setMins(loc.visitDuration != null ? loc.visitDuration % 60 : 0);
+  }, [loc.visitDuration]);
+
+  async function handleBlur() {
+    const total = hours * 60 + mins;
+    const current = loc.visitDuration ?? 0;
+    if (total === current) return;
+    await fetch(`/api/trips/${tripId}/locations/${loc.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visitDuration: total === 0 ? null : total }),
+    });
+    await reload();
+  }
+
+  const inputCls = "w-6 text-xs text-center text-gray-400 dark:text-gray-500 bg-transparent border-none focus:outline-none focus:text-gray-600 dark:focus:text-gray-300 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
+
+  return (
+    <div
+      className="flex items-center gap-0.5 mt-0.5"
+      title="Estimated time spent at this location — used to balance day lengths when optimizing"
+    >
+      <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0 select-none cursor-default">Duration:</span>
+      <input
+        type="number"
+        min={0}
+        max={23}
+        value={hours}
+        placeholder="0"
+        onChange={(e) => setHours(Math.min(23, Math.max(0, parseInt(e.target.value) || 0)))}
+        onBlur={handleBlur}
+        className={inputCls}
+        aria-label={`Hours for ${loc.name} visit duration`}
+      />
+      <span className="text-xs text-gray-400 dark:text-gray-500 select-none">h</span>
+      <input
+        type="number"
+        min={0}
+        max={59}
+        value={mins}
+        placeholder="0"
+        onChange={(e) => setMins(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
+        onBlur={handleBlur}
+        className={inputCls}
+        aria-label={`Minutes for ${loc.name} visit duration`}
+      />
+      <span className="text-xs text-gray-400 dark:text-gray-500 select-none">m</span>
+    </div>
+  );
+}
+
 export default function LocationSidebar({ isDrawer, onCloseDrawer }: Props) {
   const trip = useTripStore((s) => s.trip);
+  const tripId = useTripStore((s) => s.tripId);
   const selectedDayNumber = useTripStore((s) => s.selectedDayNumber);
   const toggleExcluded = useTripStore((s) => s.toggleExcluded);
   const setNearbyAnchor = useTripStore((s) => s.setNearbyAnchor);
+  const reload = useTripStore((s) => s.reload);
 
   if (!trip) return null;
 
@@ -70,6 +135,9 @@ export default function LocationSidebar({ isDrawer, onCloseDrawer }: Props) {
                 <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{loc.name}</p>
                 {loc.address && (
                   <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{loc.address}</p>
+                )}
+                {tripId && (
+                  <DurationInput loc={loc} tripId={tripId} reload={reload} />
                 )}
               </div>
               <button

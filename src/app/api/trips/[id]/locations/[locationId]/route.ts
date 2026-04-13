@@ -8,7 +8,7 @@ export async function PATCH(
 ) {
   const { locationId } = await params;
   const body = await req.json();
-  const { excluded, note, name } = body;
+  const { excluded, note, name, visitDuration } = body;
 
   const setClauses: string[] = [];
   const values: unknown[] = [];
@@ -16,6 +16,7 @@ export async function PATCH(
   if (excluded !== undefined) { setClauses.push("excluded = ?"); values.push(excluded ? 1 : 0); }
   if (note !== undefined) { setClauses.push("note = ?"); values.push(note); }
   if (name !== undefined) { setClauses.push("name = ?"); values.push(name); }
+  if (visitDuration !== undefined) { setClauses.push("visitDuration = ?"); values.push(visitDuration); }
 
   if (setClauses.length > 0) {
     values.push(locationId);
