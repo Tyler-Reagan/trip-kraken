@@ -11,6 +11,12 @@
  *   eliminate route crossings. Typical improvement: 8–12% over nearest-
  *   neighbor alone. Good enough for typical trip sizes (≤ 20 stops/day)
  *   and requires no external API.
+ *
+ *   Time-window awareness: if locations carry openTime/closeTime fields,
+ *   both phases add a km-equivalent soft penalty for arriving outside those
+ *   windows. The penalty is large enough to discourage out-of-hours visits
+ *   but never hard-blocks them — the schedule remains feasible even when a
+ *   strict ordering is geometrically impossible.
  */
 
 export interface LocationInput {
@@ -18,6 +24,8 @@ export interface LocationInput {
   lat: number;
   lng: number;
   visitDuration?: number; // minutes; used for day duration balancing
+  openTime?: string;      // "HH:MM" 24-hour; soft time-window constraint
+  closeTime?: string;     // "HH:MM" 24-hour; soft time-window constraint
 }
 
 export interface DayPlan {
@@ -28,7 +36,8 @@ export interface DayPlan {
 export function optimizeItinerary(
   locations: LocationInput[],
   numDays: number,
-  dayBudgetMinutes?: number
+  dayBudgetMinutes?: number,
+  dayStartMins = 9 * 60    // assumed start-of-day for time-window simulation (default 09:00)
 ): DayPlan[] {
   if (locations.length === 0) return [];
 
@@ -61,7 +70,7 @@ export function optimizeItinerary(
   // Phase 2: nearest-neighbor TSP + 2-opt refinement within each cluster
   const plans: DayPlan[] = clusters.map((cluster, i) => ({
     dayNumber: i + 1,
-    locationIds: twoOpt(nearestNeighborOrder(cluster)).map((l) => l.id),
+    locationIds: twoOpt(nearestNeighborOrder(cluster, dayStartMins), dayStartMins).map((l) => l.id),
   }));
 
   // Distribute locations with missing coordinates across days round-robin
@@ -184,30 +193,35 @@ function nearestCentroidIndex(
 // Nearest-neighbor TSP
 // ---------------------------------------------------------------------------
 
-function nearestNeighborOrder(locations: LocationInput[]): LocationInput[] {
+function nearestNeighborOrder(locations: LocationInput[], dayStartMins = 9 * 60): LocationInput[] {
   if (locations.length <= 1) return locations;
 
   const unvisited = [...locations];
   const ordered: LocationInput[] = [];
+  let timeMins = dayStartMins;
 
   // Start from the northernmost location (top of the map feels natural)
   unvisited.sort((a, b) => b.lat - a.lat);
   const first = unvisited.shift();
   if (!first) throw new Error("nearestNeighborOrder: unexpected empty array after length guard");
   ordered.push(first);
+  timeMins += first.visitDuration ?? DEFAULT_VISIT_MINS;
 
   while (unvisited.length > 0) {
     const last = ordered[ordered.length - 1];
     let nearestIdx = 0;
-    let nearestDist = Infinity;
+    let nearestCost = Infinity;
     unvisited.forEach((loc, i) => {
-      const d = haversine(last, loc);
-      if (d < nearestDist) {
-        nearestDist = d;
+      const travelTime = haversine(last, loc) / AVG_SPEED_KM_PER_MIN;
+      const cost = haversine(last, loc) + windowPenaltyKm(timeMins + travelTime, loc);
+      if (cost < nearestCost) {
+        nearestCost = cost;
         nearestIdx = i;
       }
     });
-    ordered.push(unvisited.splice(nearestIdx, 1)[0]);
+    const next = unvisited.splice(nearestIdx, 1)[0];
+    ordered.push(next);
+    timeMins += haversine(last, next) / AVG_SPEED_KM_PER_MIN + (next.visitDuration ?? DEFAULT_VISIT_MINS);
   }
 
   return ordered;
@@ -225,12 +239,19 @@ function nearestNeighborOrder(locations: LocationInput[]): LocationInput[] {
  *
  * Open-path variant: the last node has no outgoing edge, so the cost formula
  * drops the (j, j+1) term when j is the final index.
+ *
+ * Time-window guard: when any location in the route has openTime/closeTime,
+ * a candidate swap is rejected if it worsens the route's total window penalty
+ * (even if it improves distance). This prevents 2-opt from undoing the
+ * time-aware ordering established by nearestNeighborOrder.
  */
-function twoOpt(locations: LocationInput[]): LocationInput[] {
+function twoOpt(locations: LocationInput[], dayStartMins = 9 * 60): LocationInput[] {
   if (locations.length <= 2) return locations;
 
   let route = [...locations];
   const n = route.length;
+  const hasTimeWindows = route.some((l) => l.openTime || l.closeTime);
+  let currentWindowPenalty = hasTimeWindows ? routeWindowPenalty(route, dayStartMins) : 0;
   let improved = true;
 
   while (improved) {
@@ -245,11 +266,20 @@ function twoOpt(locations: LocationInput[]): LocationInput[] {
           (j < n - 1 ? haversine(route[i + 1], route[j + 1]) : 0);
 
         if (newCost < oldCost - 1e-10) {
-          route = [
+          const candidate = [
             ...route.slice(0, i + 1),
             ...route.slice(i + 1, j + 1).reverse(),
             ...route.slice(j + 1),
           ];
+
+          // Reject swaps that worsen time-window compliance
+          if (hasTimeWindows) {
+            const newWindowPenalty = routeWindowPenalty(candidate, dayStartMins);
+            if (newWindowPenalty > currentWindowPenalty + 1e-10) continue;
+            currentWindowPenalty = newWindowPenalty;
+          }
+
+          route = candidate;
           improved = true;
         }
       }
@@ -257,6 +287,65 @@ function twoOpt(locations: LocationInput[]): LocationInput[] {
   }
 
   return route;
+}
+
+// ---------------------------------------------------------------------------
+// Time-window helpers
+// ---------------------------------------------------------------------------
+
+// Assumed visit time when visitDuration is not set (used only for arrival simulation)
+const DEFAULT_VISIT_MINS = 60;
+
+// Average city travel speed for estimating arrival times (20 km/h)
+const AVG_SPEED_KM_PER_MIN = 20 / 60;
+
+// Penalty scale factors (km-equivalent per minute of violation).
+// LATE is 10× EARLY: arriving after close is far worse than arriving before open.
+const WINDOW_EARLY_KM_PER_MIN = 0.5;
+const WINDOW_LATE_KM_PER_MIN  = 5;
+
+/** Parses a "HH:MM" string to minutes from midnight. */
+function timeToMins(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+
+/**
+ * Returns a km-equivalent soft penalty for visiting `loc` when the simulated
+ * clock reads `arrivalMins` minutes from midnight.
+ *
+ * Three cases penalised:
+ *   1. Arriving before open  → waiting cost (mild)
+ *   2. Arriving after close  → missed window (severe)
+ *   3. Visit runs past close → partial overrun (severe)
+ */
+function windowPenaltyKm(arrivalMins: number, loc: LocationInput): number {
+  const vd    = loc.visitDuration ?? DEFAULT_VISIT_MINS;
+  const open  = loc.openTime  ? timeToMins(loc.openTime)  : null;
+  const close = loc.closeTime ? timeToMins(loc.closeTime) : null;
+  let penalty = 0;
+  if (open  !== null && arrivalMins < open)
+    penalty += (open - arrivalMins) * WINDOW_EARLY_KM_PER_MIN;
+  if (close !== null && arrivalMins > close)
+    penalty += (arrivalMins - close) * WINDOW_LATE_KM_PER_MIN;
+  if (close !== null && arrivalMins + vd > close)
+    penalty += (arrivalMins + vd - close) * WINDOW_LATE_KM_PER_MIN;
+  return penalty;
+}
+
+/**
+ * Simulates travel through a route and sums all time-window penalties.
+ * Used by twoOpt to guard against swaps that worsen temporal ordering.
+ */
+function routeWindowPenalty(route: LocationInput[], dayStartMins: number): number {
+  let t = dayStartMins;
+  let p = 0;
+  for (let i = 0; i < route.length; i++) {
+    if (i > 0) t += haversine(route[i - 1], route[i]) / AVG_SPEED_KM_PER_MIN;
+    p += windowPenaltyKm(t, route[i]);
+    t += route[i].visitDuration ?? DEFAULT_VISIT_MINS;
+  }
+  return p;
 }
 
 // ---------------------------------------------------------------------------

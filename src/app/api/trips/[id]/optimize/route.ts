@@ -14,9 +14,9 @@ export async function POST(
     return NextResponse.json({ error: "numDays must be a positive integer" }, { status: 400 });
   }
 
-  type LocationRow = { id: string; lat: number | null; lng: number | null; excluded: number; visitDuration: number | null };
+  type LocationRow = { id: string; lat: number | null; lng: number | null; excluded: number; visitDuration: number | null; openTime: string | null; closeTime: string | null };
   const locations = getDb().prepare(
-    "SELECT id, lat, lng, excluded, visitDuration FROM Location WHERE tripId = ? AND excluded = 0"
+    "SELECT id, lat, lng, excluded, visitDuration, openTime, closeTime FROM Location WHERE tripId = ? AND excluded = 0"
   ).all(tripId) as LocationRow[];
 
   const tripExists = getDb().prepare("SELECT id FROM Trip WHERE id = ?").get(tripId);
@@ -33,6 +33,8 @@ export async function POST(
       lat: l.lat ?? 0,
       lng: l.lng ?? 0,
       ...(l.visitDuration != null ? { visitDuration: l.visitDuration } : {}),
+      ...(l.openTime  != null ? { openTime:  l.openTime  } : {}),
+      ...(l.closeTime != null ? { closeTime: l.closeTime } : {}),
     })),
     numDays,
     dayBudgetMinutes

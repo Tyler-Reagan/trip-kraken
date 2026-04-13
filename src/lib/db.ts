@@ -38,6 +38,8 @@ function openDb(): DatabaseSync {
     "ALTER TABLE Location ADD COLUMN reviewCount INTEGER",
     "ALTER TABLE Location ADD COLUMN categories TEXT",
     "ALTER TABLE Location ADD COLUMN visitDuration INTEGER",
+    "ALTER TABLE Location ADD COLUMN openTime TEXT",
+    "ALTER TABLE Location ADD COLUMN closeTime TEXT",
   ];
   for (const sql of locationAlters) {
     try { database.exec(sql); } catch { /* column already exists */ }
@@ -86,6 +88,8 @@ type LocationRow = {
   excluded: number; note: string | null;
   rating: number | null; reviewCount: number | null; categories: string | null;
   visitDuration: number | null;
+  openTime: string | null;
+  closeTime: string | null;
 };
 type DayRow = {
   id: string; tripId: string; dayNumber: number;
@@ -98,6 +102,8 @@ type StopWithLocRow = StopRow & {
   loc_placeId: string | null; loc_excluded: number; loc_note: string | null;
   loc_rating: number | null; loc_reviewCount: number | null; loc_categories: string | null;
   loc_visitDuration: number | null;
+  loc_openTime: string | null;
+  loc_closeTime: string | null;
 };
 
 // ─── Deserializers ────────────────────────────────────────────────────────────
@@ -131,6 +137,8 @@ function parseStopWithLoc(r: StopWithLocRow): ItineraryStop {
       rating: r.loc_rating, reviewCount: r.loc_reviewCount,
       categories: r.loc_categories ? JSON.parse(r.loc_categories) : null,
       visitDuration: r.loc_visitDuration ?? null,
+      openTime: r.loc_openTime ?? null,
+      closeTime: r.loc_closeTime ?? null,
     },
   };
 }
@@ -184,7 +192,8 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
            l.address as loc_address, l.lat as loc_lat, l.lng as loc_lng,
            l.placeId as loc_placeId, l.excluded as loc_excluded, l.note as loc_note,
            l.rating as loc_rating, l.reviewCount as loc_reviewCount,
-           l.categories as loc_categories, l.visitDuration as loc_visitDuration
+           l.categories as loc_categories, l.visitDuration as loc_visitDuration,
+           l.openTime as loc_openTime, l.closeTime as loc_closeTime
     FROM ItineraryStop s
     JOIN Location l ON l.id = s.locationId
     JOIN ItineraryDay d ON d.id = s.dayId

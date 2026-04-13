@@ -9,7 +9,7 @@ interface Props {
   onCloseDrawer?: () => void;
 }
 
-function DurationInput({ loc, tripId, reload }: { loc: Location; tripId: string; reload: () => Promise<void> }) {
+function LengthOfStayInput({ loc, tripId, reload }: { loc: Location; tripId: string; reload: () => Promise<void> }) {
   // Use loose != null so both null and undefined (pre-migration rows) map to 0
   const savedHours = loc.visitDuration != null ? Math.floor(loc.visitDuration / 60) : 0;
   const savedMins  = loc.visitDuration != null ? loc.visitDuration % 60 : 0;
@@ -39,9 +39,9 @@ function DurationInput({ loc, tripId, reload }: { loc: Location; tripId: string;
   return (
     <div
       className="flex items-center gap-0.5 mt-0.5"
-      title="Estimated time spent at this location — used to balance day lengths when optimizing"
+      title="How long you plan to spend here — used to balance day lengths when optimizing"
     >
-      <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0 select-none cursor-default">Duration:</span>
+      <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0 select-none cursor-default">Length of stay:</span>
       <input
         type="number"
         min={0}
@@ -51,7 +51,7 @@ function DurationInput({ loc, tripId, reload }: { loc: Location; tripId: string;
         onChange={(e) => setHours(Math.min(23, Math.max(0, parseInt(e.target.value) || 0)))}
         onBlur={handleBlur}
         className={inputCls}
-        aria-label={`Hours for ${loc.name} visit duration`}
+        aria-label={`Hours for length of stay at ${loc.name}`}
       />
       <span className="text-xs text-gray-400 dark:text-gray-500 select-none">h</span>
       <input
@@ -63,10 +63,19 @@ function DurationInput({ loc, tripId, reload }: { loc: Location; tripId: string;
         onChange={(e) => setMins(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
         onBlur={handleBlur}
         className={inputCls}
-        aria-label={`Minutes for ${loc.name} visit duration`}
+        aria-label={`Minutes for length of stay at ${loc.name}`}
       />
       <span className="text-xs text-gray-400 dark:text-gray-500 select-none">m</span>
     </div>
+  );
+}
+
+function OpeningHours({ loc }: { loc: Location }) {
+  if (!loc.openTime && !loc.closeTime) return null;
+  return (
+    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+      Hours: {loc.openTime ?? "?"} – {loc.closeTime ?? "?"}
+    </p>
   );
 }
 
@@ -137,8 +146,9 @@ export default function LocationSidebar({ isDrawer, onCloseDrawer }: Props) {
                   <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{loc.address}</p>
                 )}
                 {tripId && (
-                  <DurationInput loc={loc} tripId={tripId} reload={reload} />
+                  <LengthOfStayInput loc={loc} tripId={tripId} reload={reload} />
                 )}
+                <OpeningHours loc={loc} />
               </div>
               <button
                 onClick={() => setNearbyAnchor(loc)}
