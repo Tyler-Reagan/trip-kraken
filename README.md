@@ -52,17 +52,19 @@ Trips, locations, and itineraries are stored in a **SQLite database** (`db/dev.d
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 16 (App Router, Turbopack) |
-| Language | TypeScript |
-| Styling | Tailwind CSS |
-| Map rendering | MapLibre GL + react-map-gl |
-| Drag-and-drop | dnd-kit |
-| Database | SQLite via `node:sqlite` (built-in, no Prisma) |
-| KML parsing | fast-xml-parser + adm-zip |
-| External APIs | Google Maps Geocoding API, Google Places Nearby Search API |
-| Package manager | pnpm |
+
+| Layer           | Technology                                                 |
+| --------------- | ---------------------------------------------------------- |
+| Framework       | Next.js 16 (App Router, Turbopack)                         |
+| Language        | TypeScript                                                 |
+| Styling         | Tailwind CSS                                               |
+| Map rendering   | MapLibre GL + react-map-gl                                 |
+| Drag-and-drop   | dnd-kit                                                    |
+| Database        | SQLite via `node:sqlite` (built-in, no Prisma)             |
+| KML parsing     | fast-xml-parser + adm-zip                                  |
+| External APIs   | Google Maps Geocoding API, Google Places Nearby Search API |
+| Package manager | pnpm                                                       |
+
 
 ---
 
@@ -83,6 +85,7 @@ GOOGLE_MAPS_API_KEY=your_key_here
 ```
 
 The key needs the following APIs enabled in Google Cloud Console:
+
 - Maps JavaScript API (map tiles)
 - Geocoding API (fallback coordinate resolution)
 - Places API (nearby search)
@@ -125,23 +128,29 @@ db/
 ## TODO / Planned Features
 
 ### Transit Recommendations
+
 The current optimizer is distance-only — it has no awareness of actual travel time, public transit routes, or driving conditions. Integrating the Google Routes API (or Directions API) would allow the optimizer to factor in real travel time between stops, produce more practical daily schedules, and surface transit options (bus, metro, walking) between consecutive stops in the itinerary view.
 
 ### Itinerary Optimization Improvements
+
 The nearest-neighbor TSP heuristic is fast but not optimal. Future improvements include:
+
 - 2-opt / 3-opt local search to reduce route length after initial ordering
 - Time-window constraints (e.g., a museum that closes at 5pm should be scheduled earlier)
 - User-defined anchors (e.g., "I'm staying at this hotel — start and end each day here")
 - Multi-layer support for My Maps with multiple layers, treating each layer as a category
 
 ### UI Overhaul
-- Dark mode
-- Full React component audit — reduce prop drilling, introduce context or lightweight state management
-- Layout improvements for mobile viewports
-- DOM and accessibility improvements (keyboard navigation, ARIA labels, focus management)
-- Better loading and error states throughout
+
+- ~~Dark mode~~
+- ~~Full React component audit — reduce prop drilling, introduce context or lightweight state management~~
+- ~~Layout improvements for mobile viewports~~
+- ~~DOM and accessibility improvements (keyboard navigation, ARIA labels, focus management)~~
+- ~~Better loading and error states throughout~~
+- ~~Hide front page instructions behind button toggle~~
 
 ### Persistence Layer Improvements
+
 - User authentication so trips are scoped to an account
 - Cloud-backed storage option (e.g., Turso, PlanetScale, or Supabase) for access from multiple devices
 - Proper schema migration tooling instead of `ALTER TABLE` on startup
@@ -149,12 +158,14 @@ The nearest-neighbor TSP heuristic is fast but not optimal. Future improvements 
 - Export — download itinerary as PDF or back to KML
 
 ### Places API & Recommendation System
+
 - Use Place Details API to enrich imported locations with opening hours, phone numbers, and photos
 - Smarter nearby recommendations: score results by relevance to the trip context (cuisine type, category balance per day)
 - "Fill gaps" feature — automatically suggest nearby places to round out a light day
 - Filter nearby results by open-now, price level, and minimum rating
 
 ### Custom Branding
+
 - Replace placeholder name and logo with final brand identity
 - Custom map style (MapLibre style spec) to match brand palette
 - Favicon, og:image, and metadata
