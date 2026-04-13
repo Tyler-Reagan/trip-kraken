@@ -138,8 +138,8 @@ The nearest-neighbor TSP heuristic is fast but not optimal. Planned improvements
 - ~~2-opt local search post-processing — reverses route segments to eliminate crossings (~8–12% improvement over nearest-neighbor; `optimizer.ts` only, no schema changes)~~
 - ~~Time-window constraints — soft penalties for visiting locations outside their opening hours; requires `openTime`/`closeTime` on `Location` and `visitDuration` to compute simulated arrival times~~
 - ~~Day duration budget modeling — balance days by total visit + travel time rather than stop count; adds `visitDuration` to `Location` and a day budget input to `OptimizeModal`~~
-- User-defined anchor — mark one location (e.g., a hotel) as the daily start/end point; each day's TSP runs anchor → stops → anchor instead of starting at the northernmost point
-- Category balance across days — penalize k-means assignment when the same category concentrates on one day; uses existing `categories` field, no schema changes
+- ~~User-defined anchor — mark one location (e.g., a hotel) as the daily start/end point; each day's TSP runs anchor → stops → anchor instead of starting at the northernmost point~~
+- ~~Category balance across days — penalize k-means assignment when the same category concentrates on one day; uses existing `categories` field, no schema changes~~
 - Multi-layer KML support — parse `<Folder>` elements from My Maps KML as named layers; store `layer` on `Location` and use it as the category source for balance optimization; group locations by layer in the sidebar
 - Silhouette scoring for day count suggestion — compute k-means quality scores for k = 2…14 and surface a recommended day count in `OptimizeModal`
 - Per-stop duration and notes in itinerary — show `visitDuration` and editable stop notes inline in `DayCard`; display total day time in the day header
@@ -164,10 +164,10 @@ The nearest-neighbor TSP heuristic is fast but not optimal. Planned improvements
 
 ### Places API & Recommendation System
 
-- Use Place Details API to enrich imported locations with opening hours, phone numbers, and photos
-- Smarter nearby recommendations: score results by relevance to the trip context (cuisine type, category balance per day)
-- "Fill gaps" feature — automatically suggest nearby places to round out a light day
-- Filter nearby results by open-now, price level, and minimum rating
+- ~~Use Place Details API to enrich imported locations with opening hours, phone numbers, and photos~~
+- ~~Smarter nearby recommendations: score results by relevance to the trip context (cuisine type, category balance per day)~~
+- ~~"Fill gaps" feature — automatically suggest nearby places to round out a light day~~
+- ~~Filter nearby results by open-now, price level, and minimum rating~~
 
 #### Tabelog Integration (Japan)
 

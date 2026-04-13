@@ -45,6 +45,10 @@ export default function TripClient({ trip: initial }: Props) {
   const showAddLocation = useTripStore((s) => s.showAddLocation);
   const showLocationDrawer = useTripStore((s) => s.showLocationDrawer);
 
+  const isEnriching = useTripStore((s) => s.isEnriching);
+  const enrichProgress = useTripStore((s) => s.enrichProgress);
+  const enrich = useTripStore((s) => s.enrich);
+
   const setActiveView = useTripStore((s) => s.setActiveView);
   const setSelectedDayNumber = useTripStore((s) => s.setSelectedDayNumber);
   const setShowOptimize = useTripStore((s) => s.setShowOptimize);
@@ -52,6 +56,9 @@ export default function TripClient({ trip: initial }: Props) {
   const setShowLocationDrawer = useTripStore((s) => s.setShowLocationDrawer);
 
   const hasItinerary = trip?.days.length > 0;
+  const enrichableCount = trip?.locations.filter(
+    (l) => l.lat !== null && l.lng !== null && (l.openTime === null || l.placeId === null)
+  ).length ?? 0;
 
   return (
     <div className="space-y-6">
@@ -67,6 +74,18 @@ export default function TripClient({ trip: initial }: Props) {
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => setShowAddLocation(true)} className="btn-secondary text-sm">
             + Add location
+          </button>
+          <button
+            onClick={enrich}
+            disabled={isEnriching || enrichableCount === 0}
+            className="btn-secondary text-sm disabled:opacity-40"
+            title="Fetch opening hours, phone, and ratings from Google Places"
+          >
+            {isEnriching
+              ? "Enriching…"
+              : enrichProgress
+                ? `${enrichProgress.enriched}/${enrichProgress.total} enriched`
+                : `Enrich (${enrichableCount})`}
           </button>
           <button onClick={() => setShowOptimize(true)} className="btn-primary text-sm">
             {hasItinerary ? "Re-optimize" : "Plan itinerary"}

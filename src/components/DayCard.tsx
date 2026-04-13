@@ -11,12 +11,27 @@ interface Props {
   onDrop: (day: ItineraryDay, order: number) => void;
 }
 
+const LIGHT_DAY_THRESHOLD = 240; // minutes
+
+function formatDuration(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
 export default function DayCard({ day, draggingStop, onDragStart, onDrop }: Props) {
   const tripId = useTripStore((s) => s.tripId);
   const reload = useTripStore((s) => s.reload);
+  const setNearbyAnchor = useTripStore((s) => s.setNearbyAnchor);
   const [dragOver, setDragOver] = useState(false);
   const [editingLabel, setEditingLabel] = useState(false);
   const [label, setLabel] = useState(day.label ?? "");
+
+  const totalMinutes = day.stops.reduce((sum, s) => sum + (s.location.visitDuration ?? 0), 0);
+  const anyHasDuration = day.stops.some((s) => s.location.visitDuration !== null);
+  const isLightDay = anyHasDuration && totalMinutes < LIGHT_DAY_THRESHOLD && day.stops.length > 0;
 
   const dateStr = day.date
     ? new Date(day.date).toLocaleDateString("en-US", {
@@ -90,10 +105,31 @@ export default function DayCard({ day, draggingStop, onDragStart, onDrop }: Prop
             </button>
           )}
         </div>
-        <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">
-          {day.stops.length} stop{day.stops.length !== 1 ? "s" : ""}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          {anyHasDuration && (
+            <span className="text-xs text-gray-400 dark:text-gray-500">
+              {formatDuration(totalMinutes)}
+            </span>
+          )}
+          {isLightDay && (
+            <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+              Light day
+            </span>
+          )}
+          <span className="text-xs text-gray-400 dark:text-gray-500">
+            {day.stops.length} stop{day.stops.length !== 1 ? "s" : ""}
+          </span>
+        </div>
       </div>
+
+      {isLightDay && (
+        <button
+          onClick={() => setNearbyAnchor(day.stops[0].location)}
+          className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 underline underline-offset-2 transition-colors"
+        >
+          Find nearby stops
+        </button>
+      )}
 
       {/* Stops list */}
       {day.stops.length === 0 ? (

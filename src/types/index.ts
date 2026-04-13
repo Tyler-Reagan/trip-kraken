@@ -28,6 +28,7 @@ export type Location = {
   visitDuration: number | null; // estimated visit time in minutes
   openTime: string | null;      // "HH:MM" 24-hour, e.g. "09:00"
   closeTime: string | null;     // "HH:MM" 24-hour, e.g. "17:00"
+  phone: string | null;
 };
 
 export type NearbyPlace = {

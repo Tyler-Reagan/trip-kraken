@@ -41,6 +41,7 @@ function openDb(): DatabaseSync {
     "ALTER TABLE Location ADD COLUMN openTime TEXT",
     "ALTER TABLE Location ADD COLUMN closeTime TEXT",
     "ALTER TABLE Location ADD COLUMN isAnchor INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE Location ADD COLUMN phone TEXT",
   ];
   for (const sql of locationAlters) {
     try { database.exec(sql); } catch { /* column already exists */ }
@@ -91,6 +92,7 @@ type LocationRow = {
   visitDuration: number | null;
   openTime: string | null;
   closeTime: string | null;
+  phone: string | null;
 };
 type DayRow = {
   id: string; tripId: string; dayNumber: number;
@@ -105,6 +107,7 @@ type StopWithLocRow = StopRow & {
   loc_visitDuration: number | null;
   loc_openTime: string | null;
   loc_closeTime: string | null;
+  loc_phone: string | null;
 };
 
 // ─── Deserializers ────────────────────────────────────────────────────────────
@@ -125,6 +128,7 @@ function parseLocation(r: LocationRow): Location {
     excluded: r.excluded !== 0,
     isAnchor: r.isAnchor !== 0,
     categories: r.categories ? JSON.parse(r.categories) : null,
+    phone: r.phone ?? null,
   };
 }
 
@@ -142,6 +146,7 @@ function parseStopWithLoc(r: StopWithLocRow): ItineraryStop {
       openTime: r.loc_openTime ?? null,
       closeTime: r.loc_closeTime ?? null,
       isAnchor: r.loc_isAnchor !== 0,
+      phone: r.loc_phone ?? null,
     },
   };
 }
@@ -197,7 +202,7 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
            l.rating as loc_rating, l.reviewCount as loc_reviewCount,
            l.categories as loc_categories, l.visitDuration as loc_visitDuration,
            l.openTime as loc_openTime, l.closeTime as loc_closeTime,
-           l.isAnchor as loc_isAnchor
+           l.isAnchor as loc_isAnchor, l.phone as loc_phone
     FROM ItineraryStop s
     JOIN Location l ON l.id = s.locationId
     JOIN ItineraryDay d ON d.id = s.dayId

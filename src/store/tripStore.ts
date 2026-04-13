@@ -34,6 +34,11 @@ interface TripStore {
   moveStop: (stopId: string, targetDayId: string, targetOrder: number) => Promise<void>;
   toggleExcluded: (locationId: string, excluded: boolean) => Promise<void>;
   toggleAnchor: (locationId: string, isAnchor: boolean) => Promise<void>;
+  enrich: () => Promise<void>;
+
+  // Enrichment progress
+  isEnriching: boolean;
+  enrichProgress: { enriched: number; total: number; errors: number } | null;
 
   // Composite action: switch to itinerary + highlight, then auto-clear
   handleMapLocationClick: (locationId: string) => void;
@@ -51,6 +56,8 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   showAddLocation: false,
   showLocationDrawer: false,
   showCategoryChips: false,
+  isEnriching: false,
+  enrichProgress: null,
 
   setTrip: (trip) => set({ trip, tripId: trip.id }),
   setActiveView: (v) => set({ activeView: v }),
@@ -100,6 +107,22 @@ export const useTripStore = create<TripStore>()((set, get) => ({
       body: JSON.stringify({ isAnchor }),
     });
     await get().reload();
+  },
+
+  enrich: async () => {
+    const tripId = get().tripId;
+    if (!tripId) return;
+    set({ isEnriching: true, enrichProgress: null });
+    try {
+      const res = await fetch(`/api/trips/${tripId}/enrich`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json() as { enriched: number; total: number; errors: number };
+        set({ enrichProgress: data });
+        await get().reload();
+      }
+    } finally {
+      set({ isEnriching: false });
+    }
   },
 
   handleMapLocationClick: (locationId) => {

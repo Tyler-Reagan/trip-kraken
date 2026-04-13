@@ -6,6 +6,13 @@ import { useTripStore } from "@/store/tripStore";
 
 const PRICE_LABELS = ["Free", "$", "$$", "$$$", "$$$$"];
 
+const RATING_OPTIONS = [
+  { label: "Any",  value: null },
+  { label: "3+",   value: 3    },
+  { label: "4+",   value: 4    },
+  { label: "4.5+", value: 4.5  },
+] as const;
+
 const PLACE_TYPES = [
   { label: "All", value: "" },
   { label: "Restaurants", value: "restaurant" },
@@ -39,19 +46,26 @@ export default function NearbyDrawer() {
   const [radius, setRadius] = useState(1000);
   const [type, setType] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [openNow, setOpenNow] = useState(false);
+  const [minRating, setMinRating] = useState<number | null>(null);
+  const [priceLevels, setPriceLevels] = useState<Set<number>>(new Set());
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set(existingPlaceIds));
   const [addingId, setAddingId] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   if (!tripId || !trip || !anchorLocation) return null;
 
-  const fetchNearby = useCallback(async (r: number, t: string, kw: string) => {
+  const fetchNearby = useCallback(async (
+    r: number, t: string, kw: string, on: boolean, dId: string | null
+  ) => {
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams({ radius: String(r), limit: "20" });
       if (t) params.set("type", t);
       if (kw.trim()) params.set("keyword", kw.trim());
+      if (on) params.set("openNow", "true");
+      if (dId) params.set("dayId", dId);
       const res = await fetch(
         `/api/trips/${tripId}/locations/${anchorLocation.id}/nearby?${params}`
       );
@@ -72,11 +86,14 @@ export default function NearbyDrawer() {
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchNearby(radius, type, keyword), 400);
+    debounceRef.current = setTimeout(
+      () => fetchNearby(radius, type, keyword, openNow, anchorDayId),
+      400
+    );
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [radius, type, keyword, fetchNearby]);
+  }, [radius, type, keyword, openNow, anchorDayId, fetchNearby]);
 
   async function handleAdd(place: NearbyPlace) {
     setAddingId(place.placeId);
@@ -127,6 +144,21 @@ export default function NearbyDrawer() {
     } finally {
       setAddingId(null);
     }
+  }
+
+  // Client-side post-filters (rating and price — not supported as Google API params)
+  const filtered = (results ?? []).filter((p) => {
+    if (minRating !== null && (p.rating === null || p.rating < minRating)) return false;
+    if (priceLevels.size > 0 && (p.priceLevel === null || !priceLevels.has(p.priceLevel))) return false;
+    return true;
+  });
+
+  function togglePriceLevel(level: number) {
+    setPriceLevels((prev) => {
+      const next = new Set(prev);
+      next.has(level) ? next.delete(level) : next.add(level);
+      return next;
+    });
   }
 
   return (
@@ -197,6 +229,57 @@ export default function NearbyDrawer() {
             <span>5km</span>
           </div>
         </div>
+
+        {/* Open now */}
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={openNow}
+            onChange={(e) => setOpenNow(e.target.checked)}
+            className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
+          />
+          <span className="text-xs text-gray-600 dark:text-gray-400">Open now</span>
+        </label>
+
+        {/* Min rating */}
+        <div>
+          <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Min rating</p>
+          <div className="flex gap-1">
+            {RATING_OPTIONS.map((opt) => (
+              <button
+                key={String(opt.value)}
+                onClick={() => setMinRating(opt.value)}
+                className={`px-2 py-0.5 text-xs rounded border transition-colors
+                  ${minRating === opt.value
+                    ? "bg-brand-600 dark:bg-brand-500 text-white border-brand-600 dark:border-brand-500"
+                    : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Price level */}
+        <div>
+          <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Price</p>
+          <div className="flex gap-1">
+            {PRICE_LABELS.map((label, level) => (
+              <button
+                key={level}
+                onClick={() => togglePriceLevel(level)}
+                className={`px-2 py-0.5 text-xs rounded border transition-colors
+                  ${priceLevels.has(level)
+                    ? "bg-brand-600 dark:bg-brand-500 text-white border-brand-600 dark:border-brand-500"
+                    : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Results */}
@@ -213,15 +296,15 @@ export default function NearbyDrawer() {
           </div>
         )}
 
-        {!loading && !error && results !== null && results.length === 0 && (
+        {!loading && !error && results !== null && filtered.length === 0 && (
           <div className="flex items-center justify-center h-32 text-sm text-gray-400 dark:text-gray-500">
-            No results. Try a larger radius or different type.
+            No results. Try a larger radius or adjust filters.
           </div>
         )}
 
-        {!loading && !error && results && results.length > 0 && (
+        {!loading && !error && results && filtered.length > 0 && (
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-            {results.map((place) => {
+            {filtered.map((place) => {
               const isAdded = addedIds.has(place.placeId);
               const isAdding = addingId === place.placeId;
               const displayTypes = place.categories
