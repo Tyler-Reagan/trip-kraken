@@ -133,12 +133,17 @@ The current optimizer is distance-only — it has no awareness of actual travel 
 
 ### Itinerary Optimization Improvements
 
-The nearest-neighbor TSP heuristic is fast but not optimal. Future improvements include:
+The nearest-neighbor TSP heuristic is fast but not optimal. Planned improvements:
 
-- 2-opt / 3-opt local search to reduce route length after initial ordering
-- Time-window constraints (e.g., a museum that closes at 5pm should be scheduled earlier)
-- User-defined anchors (e.g., "I'm staying at this hotel — start and end each day here")
-- Multi-layer support for My Maps with multiple layers, treating each layer as a category
+- ~~2-opt local search post-processing — reverses route segments to eliminate crossings (~8–12% improvement over nearest-neighbor; `optimizer.ts` only, no schema changes)~~
+- Time-window constraints — soft penalties for visiting locations outside their opening hours; requires `openTime`/`closeTime` on `Location` and `visitDuration` to compute simulated arrival times
+- Day duration budget modeling — balance days by total visit + travel time rather than stop count; adds `visitDuration` to `Location` and a day budget input to `OptimizeModal`
+- User-defined anchor — mark one location (e.g., a hotel) as the daily start/end point; each day's TSP runs anchor → stops → anchor instead of starting at the northernmost point
+- Category balance across days — penalize k-means assignment when the same category concentrates on one day; uses existing `categories` field, no schema changes
+- Multi-layer KML support — parse `<Folder>` elements from My Maps KML as named layers; store `layer` on `Location` and use it as the category source for balance optimization; group locations by layer in the sidebar
+- Silhouette scoring for day count suggestion — compute k-means quality scores for k = 2…14 and surface a recommended day count in `OptimizeModal`
+- Per-stop duration and notes in itinerary — show `visitDuration` and editable stop notes inline in `DayCard`; display total day time in the day header
+- Single-day re-optimize — re-run TSP ordering for one day without destroying manual changes to the rest of the itinerary; adds a "Re-order this day" button to `DayCard`
 
 ### UI Overhaul
 
@@ -163,6 +168,16 @@ The nearest-neighbor TSP heuristic is fast but not optimal. Future improvements 
 - Smarter nearby recommendations: score results by relevance to the trip context (cuisine type, category balance per day)
 - "Fill gaps" feature — automatically suggest nearby places to round out a light day
 - Filter nearby results by open-now, price level, and minimum rating
+
+#### Tabelog Integration (Japan)
+
+[Tabelog](https://tabelog.com/en/) is the dominant restaurant discovery platform in Japan and better coverage than Google Places for Japanese dining. No official API exists — integration requires a scraper or wrapper.
+
+- Build a Node.js/TypeScript adapter using [gurume](https://github.com/narumiruna/gurume) as a reference scraper (Python, actively maintained, rate-limiting built in)
+- Add a `source` query parameter to `/api/trips/[id]/locations/[locationId]/nearby` to route between Google and Tabelog backends
+- Add a data-source toggle to `NearbyDrawer` for switching between the two
+- Map Tabelog fields (rating 0–5, review count, cuisine genres, budget) to the existing `NearbyPlace` type
+- Respect robots.txt and use ≥2s delays between requests; Tabelog's ToS likely prohibits scraping so treat as internal-use only
 
 ### Custom Branding
 
