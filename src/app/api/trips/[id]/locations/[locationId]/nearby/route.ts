@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { searchNearby } from "@/lib/places";
+import { searchTabelog } from "@/lib/tabelog";
 import type { NearbyPlace } from "@/types";
 
 export async function GET(
@@ -26,9 +27,12 @@ export async function GET(
   const limit   = Math.max(1, parseInt(searchParams.get("limit")   ?? "20", 10));
   const openNow = searchParams.get("openNow") === "true";
   const dayId   = searchParams.get("dayId")   ?? undefined;
+  const source  = searchParams.get("source") === "tabelog" ? "tabelog" : "google";
 
   try {
-    const places = await searchNearby(loc.lat, loc.lng, { radius, keyword, type, limit, openNow });
+    const places: NearbyPlace[] = source === "tabelog"
+      ? await searchTabelog(loc.lat, loc.lng, { keyword, limit })
+      : await searchNearby(loc.lat, loc.lng, { radius, keyword, type, limit, openNow });
 
     // Build category set for the target day (used for diversity scoring)
     const dayCategorySet = new Set<string>();

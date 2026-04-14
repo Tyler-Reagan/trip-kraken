@@ -73,6 +73,8 @@ export async function searchNearby(
 
 export type LocationEnrichment = {
   placeId: string;
+  lat: number;
+  lng: number;
   rating: number | null;
   reviewCount: number | null;
   categories: string[];
@@ -81,7 +83,7 @@ export type LocationEnrichment = {
   closeTime: string | null;
 };
 
-type PlaceDetails = Omit<LocationEnrichment, "placeId">;
+type PlaceDetails = Omit<LocationEnrichment, "placeId" | "lat" | "lng">;
 
 type DetailsApiResponse = {
   status: string;
@@ -101,7 +103,10 @@ type DetailsApiResponse = {
 
 type TextSearchApiResponse = {
   status: string;
-  results: Array<{ place_id: string }>;
+  results: Array<{
+    place_id: string;
+    geometry: { location: { lat: number; lng: number } };
+  }>;
 };
 
 /** Convert "HHMM" from Places API to "HH:MM". */
@@ -125,24 +130,34 @@ function extractHours(
 }
 
 /**
- * Resolve a placeId for a location using Text Search (name + coords).
+ * Resolve a placeId + coordinates via Text Search.
+ * When lat/lng are null (e.g. Tabelog-sourced locations), searches by name alone.
+ * Pass lat/lng as a geographic bias when you know the approximate area (e.g. the
+ * anchor location) — this prevents name collisions for common restaurant names.
  * Returns null on ZERO_RESULTS or any error — never throws.
  */
-async function findPlaceId(name: string, lat: number, lng: number): Promise<string | null> {
+export async function findPlaceFromText(
+  name: string,
+  lat: number | null,
+  lng: number | null,
+  /** Bias radius in metres. Use ~100 when coords are precise (e.g. from a prior
+   *  geocode); use ~5000 when coords are only approximate (e.g. anchor hotel). */
+  biasRadius = 1000
+): Promise<{ placeId: string; lat: number; lng: number } | null> {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) return null;
   try {
-    const params = new URLSearchParams({
-      query: name,
-      location: `${lat},${lng}`,
-      radius: "100",
-      key: apiKey,
-    });
+    const params = new URLSearchParams({ query: name, key: apiKey });
+    if (lat !== null && lng !== null) {
+      params.set("location", `${lat},${lng}`);
+      params.set("radius", String(biasRadius));
+    }
     const res = await fetch(`${TEXTSEARCH_BASE}?${params}`);
     if (!res.ok) return null;
     const data = (await res.json()) as TextSearchApiResponse;
     if (data.status !== "OK" || !data.results.length) return null;
-    return data.results[0].place_id;
+    const r = data.results[0];
+    return { placeId: r.place_id, lat: r.geometry.location.lat, lng: r.geometry.location.lng };
   } catch {
     return null;
   }
@@ -185,23 +200,44 @@ async function getPlaceDetails(placeId: string): Promise<PlaceDetails | null> {
 }
 
 /**
- * Orchestrates findPlaceId → getPlaceDetails for one location.
- * Returns a partial enrichment object with only fields that were resolved.
- * Never throws — errors surface as an empty object.
+ * Orchestrates Text Search → Place Details for one location.
+ * Handles Tabelog-sourced locations (placeId starts with "tabelog:") by
+ * treating them as if they have no Google placeId — Text Search re-resolves
+ * to a real Google placeId and supplies coordinates.
+ * Returns a partial enrichment object. Never throws.
  */
 export async function enrichLocation(loc: {
   id: string;
   name: string;
-  lat: number;
-  lng: number;
+  lat: number | null;
+  lng: number | null;
   placeId: string | null;
 }): Promise<Partial<LocationEnrichment>> {
   try {
-    const placeId = loc.placeId ?? (await findPlaceId(loc.name, loc.lat, loc.lng));
-    if (!placeId) return {};
-    const details = await getPlaceDetails(placeId);
-    if (!details) return { placeId };
-    return { placeId, ...details };
+    const isTabelog = loc.placeId?.startsWith("tabelog:") ?? false;
+    const googlePlaceId = isTabelog ? null : loc.placeId;
+
+    // Resolve Google placeId + coordinates if needed
+    let resolvedPlaceId = googlePlaceId;
+    let resolvedLat = loc.lat;
+    let resolvedLng = loc.lng;
+
+    if (!resolvedPlaceId) {
+      const found = await findPlaceFromText(loc.name, loc.lat, loc.lng);
+      if (!found) return {};
+      resolvedPlaceId = found.placeId;
+      resolvedLat = found.lat;
+      resolvedLng = found.lng;
+    }
+
+    const details = await getPlaceDetails(resolvedPlaceId);
+    const base: Partial<LocationEnrichment> = {
+      placeId: resolvedPlaceId,
+      ...(resolvedLat !== null ? { lat: resolvedLat } : {}),
+      ...(resolvedLng !== null ? { lng: resolvedLng } : {}),
+    };
+    if (!details) return base;
+    return { ...base, ...details };
   } catch {
     return {};
   }

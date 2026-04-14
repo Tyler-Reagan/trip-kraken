@@ -29,7 +29,12 @@ The result is a day-by-day itinerary that minimizes backtracking. You can re-run
 
 ### 3. Nearby Places
 
-Each location has a "Find Nearby" panel powered by the **Google Places Nearby Search API**. You can search within a configurable radius (500m–5km), filter by place type (restaurant, café, museum, park, etc.), and add results directly to the trip.
+Each location has a "Find Nearby" panel with two backends:
+
+- **Google Places** — search within a configurable radius (500m–5km), filter by place type (restaurant, café, museum, park, etc.), open-now status, minimum rating, and price level. Results are scored by rating quality, review depth, and category diversity relative to the current day.
+- **Tabelog** — Japan's leading restaurant platform, available as an alternative source when searching near Japanese locations. Because Tabelog has no public API, results are fetched via an HTML scraper with a ≥2s rate-limiting delay. Tabelog results don't include coordinates; they are resolved to a Google place via Text Search when added to the trip so they appear on the map immediately.
+
+Add results directly to the trip from either source. Locations without enrichment data (hours, phone, updated coordinates) can be updated in bulk using the **Enrich** button.
 
 ### 4. Manual Editing
 
@@ -62,7 +67,8 @@ Trips, locations, and itineraries are stored in a **SQLite database** (`db/dev.d
 | Drag-and-drop   | dnd-kit                                                    |
 | Database        | SQLite via `node:sqlite` (built-in, no Prisma)             |
 | KML parsing     | fast-xml-parser + adm-zip                                  |
-| External APIs   | Google Maps Geocoding API, Google Places Nearby Search API |
+| HTML parsing    | cheerio (Tabelog scraper)                                  |
+| External APIs   | Google Maps Geocoding API, Google Places (Nearby Search, Text Search, Place Details), Tabelog (scraped) |
 | Package manager | pnpm                                                       |
 
 
@@ -88,7 +94,7 @@ The key needs the following APIs enabled in Google Cloud Console:
 
 - Maps JavaScript API (map tiles)
 - Geocoding API (fallback coordinate resolution)
-- Places API (nearby search)
+- Places API (Nearby Search, Text Search, Place Details)
 
 ### 3. Run
 
@@ -114,8 +120,9 @@ src/
     parsers/
       kml.ts        # KML/KMZ parser (no external geocoding required)
     geocoding.ts    # Google Geocoding API client (fallback only)
-    places.ts       # Google Places Nearby Search client
-    optimizer.ts    # K-means + nearest-neighbor TSP
+    places.ts       # Google Places client (Nearby Search, Text Search, Place Details enrichment)
+    tabelog.ts      # Tabelog HTML scraper (prefecture-scoped, 2s rate limit, cheerio parser)
+    optimizer.ts    # K-means++ + nearest-neighbor TSP + 2-opt + time-window constraints
     db.ts           # SQLite schema, queries, and transaction helpers
   types/
     index.ts        # Shared TypeScript types
@@ -125,65 +132,11 @@ db/
 
 ---
 
-## TODO / Planned Features
+## Roadmap
 
-### Transit Recommendations
+Feature tracking has moved to GitHub Issues: **[Tyler-Reagan/trip-kraken — Project Board](https://github.com/users/Tyler-Reagan/projects/2)**
 
-The current optimizer is distance-only — it has no awareness of actual travel time, public transit routes, or driving conditions. Integrating the Google Routes API (or Directions API) would allow the optimizer to factor in real travel time between stops, produce more practical daily schedules, and surface transit options (bus, metro, walking) between consecutive stops in the itinerary view.
-
-### Itinerary Optimization Improvements
-
-The nearest-neighbor TSP heuristic is fast but not optimal. Planned improvements:
-
-- ~~2-opt local search post-processing — reverses route segments to eliminate crossings (~8–12% improvement over nearest-neighbor; `optimizer.ts` only, no schema changes)~~
-- ~~Time-window constraints — soft penalties for visiting locations outside their opening hours; requires `openTime`/`closeTime` on `Location` and `visitDuration` to compute simulated arrival times~~
-- ~~Day duration budget modeling — balance days by total visit + travel time rather than stop count; adds `visitDuration` to `Location` and a day budget input to `OptimizeModal`~~
-- ~~User-defined anchor — mark one location (e.g., a hotel) as the daily start/end point; each day's TSP runs anchor → stops → anchor instead of starting at the northernmost point~~
-- ~~Category balance across days — penalize k-means assignment when the same category concentrates on one day; uses existing `categories` field, no schema changes~~
-- Multi-layer KML support — parse `<Folder>` elements from My Maps KML as named layers; store `layer` on `Location` and use it as the category source for balance optimization; group locations by layer in the sidebar
-- Silhouette scoring for day count suggestion — compute k-means quality scores for k = 2…14 and surface a recommended day count in `OptimizeModal`
-- Per-stop duration and notes in itinerary — show `visitDuration` and editable stop notes inline in `DayCard`; display total day time in the day header
-- Single-day re-optimize — re-run TSP ordering for one day without destroying manual changes to the rest of the itinerary; adds a "Re-order this day" button to `DayCard`
-
-### UI Overhaul
-
-- ~~Dark mode~~
-- ~~Full React component audit — reduce prop drilling, introduce context or lightweight state management~~
-- ~~Layout improvements for mobile viewports~~
-- ~~DOM and accessibility improvements (keyboard navigation, ARIA labels, focus management)~~
-- ~~Better loading and error states throughout~~
-- ~~Hide front page instructions behind button toggle~~
-
-### Persistence Layer Improvements
-
-- User authentication so trips are scoped to an account
-- Cloud-backed storage option (e.g., Turso, PlanetScale, or Supabase) for access from multiple devices
-- Proper schema migration tooling instead of `ALTER TABLE` on startup
-- Trip sharing — generate a read-only shareable link for an itinerary
-- Export — download itinerary as PDF or back to KML
-
-### Places API & Recommendation System
-
-- ~~Use Place Details API to enrich imported locations with opening hours, phone numbers, and photos~~
-- ~~Smarter nearby recommendations: score results by relevance to the trip context (cuisine type, category balance per day)~~
-- ~~"Fill gaps" feature — automatically suggest nearby places to round out a light day~~
-- ~~Filter nearby results by open-now, price level, and minimum rating~~
-
-#### Tabelog Integration (Japan)
-
-[Tabelog](https://tabelog.com/en/) is the dominant restaurant discovery platform in Japan and better coverage than Google Places for Japanese dining. No official API exists — integration requires a scraper or wrapper.
-
-- Build a Node.js/TypeScript adapter using [gurume](https://github.com/narumiruna/gurume) as a reference scraper (Python, actively maintained, rate-limiting built in)
-- Add a `source` query parameter to `/api/trips/[id]/locations/[locationId]/nearby` to route between Google and Tabelog backends
-- Add a data-source toggle to `NearbyDrawer` for switching between the two
-- Map Tabelog fields (rating 0–5, review count, cuisine genres, budget) to the existing `NearbyPlace` type
-- Respect robots.txt and use ≥2s delays between requests; Tabelog's ToS likely prohibits scraping so treat as internal-use only
-
-### Custom Branding
-
-- Replace placeholder name and logo with final brand identity
-- Custom map style (MapLibre style spec) to match brand palette
-- Favicon, og:image, and metadata
+Open issues cover planned work across optimization, persistence, UI, integrations, and documentation. Closed issues represent completed features with full implementation notes.
 
 ---
 

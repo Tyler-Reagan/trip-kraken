@@ -12,22 +12,31 @@ export async function POST(
   const tripExists = getDb().prepare("SELECT id FROM Trip WHERE id = ?").get(tripId);
   if (!tripExists) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
-  type LocRow = { id: string; name: string; lat: number; lng: number; placeId: string | null };
+  // Eligibility:
+  //   - Standard locations: have coords but missing openTime or placeId
+  //   - Tabelog-sourced locations: have tabelog: placeId (null lat/lng is OK — Text Search will resolve them)
+  type LocRow = { id: string; name: string; lat: number | null; lng: number | null; placeId: string | null };
   const locations = getDb().prepare(`
     SELECT id, name, lat, lng, placeId
     FROM Location
     WHERE tripId = ?
-      AND lat IS NOT NULL AND lng IS NOT NULL
-      AND (openTime IS NULL OR placeId IS NULL)
+      AND (
+        (lat IS NOT NULL AND lng IS NOT NULL AND (openTime IS NULL OR placeId IS NULL))
+        OR placeId LIKE 'tabelog:%'
+      )
   `).all(tripId) as LocRow[];
 
   const total = locations.length;
   let enriched = 0;
   let errors = 0;
 
+  // NOTE: CASE expression overwrites Tabelog placeIds with a real Google placeId.
+  // COALESCE guards preserve user-set values for non-Tabelog rows.
   const updateStmt = getDb().prepare(`
     UPDATE Location SET
-      placeId     = COALESCE(placeId, ?),
+      placeId     = CASE WHEN placeId LIKE 'tabelog:%' THEN ? ELSE COALESCE(placeId, ?) END,
+      lat         = COALESCE(lat, ?),
+      lng         = COALESCE(lng, ?),
       rating      = ?,
       reviewCount = ?,
       categories  = ?,
@@ -45,7 +54,10 @@ export async function POST(
 
       updateStmt.run(
         ...[
-          result.placeId ?? null,
+          result.placeId ?? null,   // CASE: new Google placeId for Tabelog rows
+          result.placeId ?? null,   // COALESCE: fill null placeId for standard rows
+          result.lat ?? null,
+          result.lng ?? null,
           result.rating ?? null,
           result.reviewCount ?? null,
           result.categories ? JSON.stringify(result.categories) : null,

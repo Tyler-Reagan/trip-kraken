@@ -35,8 +35,10 @@ type TooltipState = {
   x: number;
   y: number;
   name: string;
-  dayNumber: number;
-  order: number;
+  isBase: boolean;
+  dayNumber?: number;
+  order?: number;
+  dayNumbers?: number[];
 } | null;
 
 function toRgb(rgb: [number, number, number]): string {
@@ -107,6 +109,10 @@ export default function MapView() {
     const points: FeatureCollection<Point> = { type: "FeatureCollection", features: [] };
     const routes: FeatureCollection<LineString> = { type: "FeatureCollection", features: [] };
 
+    // Collect anchor/base locations across all days before rendering points.
+    // A base appears in every day as stop 0 — we deduplicate into one feature.
+    const anchorMap: Record<string, { locationId: string; name: string; lat: number; lng: number; dayNumbers: number[] }> = {};
+
     for (const day of (trip?.days ?? [])) {
       const rgb = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length];
       const isActive = selectedDayNumber === null || selectedDayNumber === day.dayNumber;
@@ -118,7 +124,28 @@ export default function MapView() {
           s.location.lat !== null && s.location.lng !== null
       );
 
+      // Track non-anchor position within this day for stop numbering.
+      let nonAnchorIndex = 0;
+
       for (const stop of geocodedStops) {
+        if (stop.location.isAnchor) {
+          // Accumulate day membership; will render as a single base feature below.
+          const existing = anchorMap[stop.location.id];
+          if (existing) {
+            existing.dayNumbers.push(day.dayNumber);
+          } else {
+            anchorMap[stop.location.id] = {
+              locationId: stop.location.id,
+              name: stop.location.name,
+              lat: stop.location.lat,
+              lng: stop.location.lng,
+              dayNumbers: [day.dayNumber],
+            };
+          }
+          continue;
+        }
+
+        nonAnchorIndex++;
         points.features.push({
           type: "Feature",
           geometry: { type: "Point", coordinates: [stop.location.lng, stop.location.lat] },
@@ -126,10 +153,11 @@ export default function MapView() {
             locationId: stop.location.id,
             name: stop.location.name,
             dayNumber: day.dayNumber,
-            order: stop.order,
+            order: nonAnchorIndex,
             color,
             alpha,
             isHighlighted: stop.location.id === highlightedLocationId ? 1 : 0,
+            isBase: 0,
           },
         });
       }
@@ -144,6 +172,26 @@ export default function MapView() {
           properties: { color, alpha: isActive ? 0.65 : 0 },
         });
       }
+    }
+
+    // Render each base location as a single neutral-colored feature.
+    const BASE_COLOR = "#e5e7eb"; // gray-200
+    for (const anchor of Object.values(anchorMap)) {
+      const sortedDays = anchor.dayNumbers.slice().sort((a: number, b: number) => a - b);
+      const isActive = selectedDayNumber === null || sortedDays.includes(selectedDayNumber);
+      points.features.push({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [anchor.lng, anchor.lat] },
+        properties: {
+          locationId: anchor.locationId,
+          name: anchor.name,
+          dayNumbers: JSON.stringify(sortedDays),
+          color: BASE_COLOR,
+          alpha: isActive ? 1 : 0.18,
+          isHighlighted: anchor.locationId === highlightedLocationId ? 1 : 0,
+          isBase: 1,
+        },
+      });
     }
 
     return { pointsGeoJSON: points, routesGeoJSON: routes };
@@ -164,11 +212,25 @@ export default function MapView() {
     id: "stops",
     type: "circle",
     paint: {
-      "circle-radius": ["case", ["==", ["get", "isHighlighted"], 1], 18, 11],
+      "circle-radius": [
+        "case",
+        ["==", ["get", "isHighlighted"], 1], 18,
+        ["==", ["get", "isBase"], 1], 13,
+        11,
+      ],
       "circle-color": ["case", ["==", ["get", "isHighlighted"], 1], "#ffffff", ["get", "color"]],
       "circle-opacity": ["get", "alpha"],
-      "circle-stroke-width": 2,
-      "circle-stroke-color": ["case", ["==", ["get", "isHighlighted"], 1], "#16a34a", "rgba(0,0,0,0.3)"],
+      "circle-stroke-width": [
+        "case",
+        ["==", ["get", "isBase"], 1], 3,
+        2,
+      ],
+      "circle-stroke-color": [
+        "case",
+        ["==", ["get", "isHighlighted"], 1], "#16a34a",
+        ["==", ["get", "isBase"], 1], "#374151",
+        "rgba(0,0,0,0.3)",
+      ],
       "circle-stroke-opacity": ["get", "alpha"],
     },
   };
@@ -185,12 +247,16 @@ export default function MapView() {
     const features = mapRef.current?.queryRenderedFeatures(e.point, { layers: ["stops"] });
     const f = features?.[0];
     if (f?.properties) {
+      const isBase = f.properties.isBase === 1;
       setTooltip({
         x: e.point.x,
         y: e.point.y,
         name: f.properties.name as string,
-        dayNumber: f.properties.dayNumber as number,
-        order: f.properties.order as number,
+        isBase,
+        ...(isBase
+          ? { dayNumbers: JSON.parse(f.properties.dayNumbers as string) as number[] }
+          : { dayNumber: f.properties.dayNumber as number, order: f.properties.order as number }
+        ),
       });
     } else {
       setTooltip(null);
@@ -233,7 +299,10 @@ export default function MapView() {
           <div className="bg-gray-900/90 text-white text-xs rounded-lg border border-white/10 px-2.5 py-1.5 leading-snug">
             <strong className="font-semibold">{tooltip.name}</strong>
             <br />
-            <span className="opacity-70">Day {tooltip.dayNumber} · Stop {tooltip.order + 1}</span>
+            {tooltip.isBase
+              ? <span className="opacity-70">Base · Days {tooltip.dayNumbers!.join(", ")}</span>
+              : <span className="opacity-70">Day {tooltip.dayNumber} · Stop {tooltip.order}</span>
+            }
           </div>
         </div>
       )}
@@ -241,6 +310,15 @@ export default function MapView() {
       {/* Legend */}
       {mapReady && (
         <div className="absolute bottom-3 left-3 bg-black/70 text-white text-xs rounded-lg px-3 py-2 space-y-1 backdrop-blur-sm pointer-events-none">
+          {trip.locations.some((l) => l.isAnchor && l.lat !== null) && (
+            <div className="flex items-center gap-2">
+              <span
+                className="inline-block w-3 h-3 rounded-full shrink-0 border-2"
+                style={{ background: "#e5e7eb", borderColor: "#374151" }}
+              />
+              <span>Base</span>
+            </div>
+          )}
           {trip.days.map((day) => {
             const [r, g, b] = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length];
             const isActive = selectedDayNumber === null || selectedDayNumber === day.dayNumber;

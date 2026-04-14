@@ -32,6 +32,10 @@ export default function DayCard({ day, draggingStop, onDragStart, onDrop }: Prop
   const totalMinutes = day.stops.reduce((sum, s) => sum + (s.location.visitDuration ?? 0), 0);
   const anyHasDuration = day.stops.some((s) => s.location.visitDuration !== null);
   const isLightDay = anyHasDuration && totalMinutes < LIGHT_DAY_THRESHOLD && day.stops.length > 0;
+  // Default anchor for "Find nearby stops" — prefer a non-base stop so the
+  // search is centred on an actual destination rather than the hotel.
+  const nearbyDefaultStop =
+    day.stops.find((s) => !s.location.isAnchor) ?? day.stops[0] ?? null;
 
   const dateStr = day.date
     ? new Date(day.date).toLocaleDateString("en-US", {
@@ -122,9 +126,9 @@ export default function DayCard({ day, draggingStop, onDragStart, onDrop }: Prop
         </div>
       </div>
 
-      {isLightDay && (
+      {isLightDay && nearbyDefaultStop && (
         <button
-          onClick={() => setNearbyAnchor(day.stops[0].location)}
+          onClick={() => setNearbyAnchor(nearbyDefaultStop.location)}
           className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 underline underline-offset-2 transition-colors"
         >
           Find nearby stops

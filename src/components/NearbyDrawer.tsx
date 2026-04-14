@@ -32,9 +32,12 @@ export default function NearbyDrawer() {
   const reload = useTripStore((s) => s.reload);
 
   // Derived values — safe with optional chaining since hooks must run first
-  const anchorDayId = trip && anchorLocation
-    ? (trip.days.find((d) => d.stops.some((s) => s.locationId === anchorLocation.id))?.id ?? null)
+  const anchorDay = trip && anchorLocation
+    ? (trip.days.find((d) => d.stops.some((s) => s.locationId === anchorLocation.id)) ?? null)
     : null;
+  const anchorDayId = anchorDay?.id ?? null;
+  // All stops on the anchor's day — used to populate the anchor picker dropdown.
+  const dayStops = anchorDay?.stops ?? [];
 
   const existingPlaceIds = new Set(
     (trip?.locations ?? []).map((l) => l.placeId).filter(Boolean) as string[]
@@ -46,6 +49,7 @@ export default function NearbyDrawer() {
   const [radius, setRadius] = useState(1000);
   const [type, setType] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [source, setSource] = useState<"google" | "tabelog">("google");
   const [openNow, setOpenNow] = useState(false);
   const [minRating, setMinRating] = useState<number | null>(null);
   const [priceLevels, setPriceLevels] = useState<Set<number>>(new Set());
@@ -53,10 +57,18 @@ export default function NearbyDrawer() {
   const [addingId, setAddingId] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Keep addedIds in sync with trip.locations so that removing a location
+  // from the trip (e.g. via the sidebar) clears its "Added" badge here.
+  useEffect(() => {
+    setAddedIds(new Set(
+      (trip?.locations ?? []).map((l) => l.placeId).filter(Boolean) as string[]
+    ));
+  }, [trip?.locations]);
+
   if (!tripId || !trip || !anchorLocation) return null;
 
   const fetchNearby = useCallback(async (
-    r: number, t: string, kw: string, on: boolean, dId: string | null
+    r: number, t: string, kw: string, on: boolean, dId: string | null, src: "google" | "tabelog"
   ) => {
     setLoading(true);
     setError(null);
@@ -66,6 +78,7 @@ export default function NearbyDrawer() {
       if (kw.trim()) params.set("keyword", kw.trim());
       if (on) params.set("openNow", "true");
       if (dId) params.set("dayId", dId);
+      if (src === "tabelog") params.set("source", "tabelog");
       const res = await fetch(
         `/api/trips/${tripId}/locations/${anchorLocation.id}/nearby?${params}`
       );
@@ -87,13 +100,13 @@ export default function NearbyDrawer() {
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(
-      () => fetchNearby(radius, type, keyword, openNow, anchorDayId),
+      () => fetchNearby(radius, type, keyword, openNow, anchorDayId, source),
       400
     );
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [radius, type, keyword, openNow, anchorDayId, fetchNearby]);
+  }, [radius, type, keyword, openNow, anchorDayId, source, fetchNearby]);
 
   async function handleAdd(place: NearbyPlace) {
     setAddingId(place.placeId);
@@ -110,6 +123,10 @@ export default function NearbyDrawer() {
           rating: place.rating,
           reviewCount: place.reviewCount,
           categories: place.categories,
+          // Anchor coordinates used as a Text Search bias when geocoding Tabelog
+          // locations (which have no coordinates in the scraper response).
+          hintLat: anchorLocation?.lat ?? null,
+          hintLng: anchorLocation?.lng ?? null,
         }),
       });
 
@@ -169,9 +186,26 @@ export default function NearbyDrawer() {
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-2 p-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Nearby places</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{anchorLocation.name}</p>
+          {dayStops.length > 1 ? (
+            <select
+              value={anchorLocation.id}
+              onChange={(e) => {
+                const picked = dayStops.find((s) => s.location.id === e.target.value);
+                if (picked) setNearbyAnchor(picked.location);
+              }}
+              className="w-full text-xs text-gray-500 dark:text-gray-400 bg-transparent border-none outline-none cursor-pointer truncate mt-0.5 pr-1"
+            >
+              {dayStops.map((s) => (
+                <option key={s.location.id} value={s.location.id} className="dark:bg-gray-900">
+                  {s.location.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{anchorLocation.name}</p>
+          )}
         </div>
         <button
           onClick={() => setNearbyAnchor(null)}
@@ -184,8 +218,30 @@ export default function NearbyDrawer() {
 
       {/* Controls */}
       <div className="p-4 border-b border-gray-100 dark:border-gray-800 space-y-3 shrink-0">
-        {/* Type filter */}
-        <div className="flex gap-1.5 flex-wrap">
+        {/* Source toggle */}
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden text-xs">
+            {(["google", "tabelog"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setSource(s)}
+                className={`px-3 py-1.5 font-medium transition-colors capitalize
+                  ${source === s
+                    ? "bg-brand-600 dark:bg-brand-500 text-white"
+                    : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  }`}
+              >
+                {s === "google" ? "Google" : "Tabelog"}
+              </button>
+            ))}
+          </div>
+          {source === "tabelog" && (
+            <span className="text-xs text-gray-400 dark:text-gray-500">Japan only</span>
+          )}
+        </div>
+
+        {/* Type filter — Google only */}
+        {source === "google" && <div className="flex gap-1.5 flex-wrap">
           {PLACE_TYPES.map((pt) => (
             <button
               key={pt.value}
@@ -199,7 +255,7 @@ export default function NearbyDrawer() {
               {pt.label}
             </button>
           ))}
-        </div>
+        </div>}
 
         {/* Keyword search */}
         <input
@@ -230,8 +286,8 @@ export default function NearbyDrawer() {
           </div>
         </div>
 
-        {/* Open now */}
-        <label className="flex items-center gap-2 cursor-pointer select-none">
+        {/* Open now — Google only (Tabelog listings don't expose current open status) */}
+        {source === "google" && <label className="flex items-center gap-2 cursor-pointer select-none">
           <input
             type="checkbox"
             checked={openNow}
@@ -239,7 +295,7 @@ export default function NearbyDrawer() {
             className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
           />
           <span className="text-xs text-gray-600 dark:text-gray-400">Open now</span>
-        </label>
+        </label>}
 
         {/* Min rating */}
         <div>

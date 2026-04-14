@@ -191,6 +191,17 @@ export default function LocationSidebar({ isDrawer, onCloseDrawer }: Props) {
                 >
                   Nearby
                 </button>
+                <button
+                  onClick={async () => {
+                    await fetch(`/api/trips/${tripId}/locations/${loc.id}`, { method: "DELETE" });
+                    await reload();
+                  }}
+                  title="Remove location from trip"
+                  className="text-xs opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-gray-300 dark:text-gray-600 hover:text-red-400 dark:hover:text-red-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-400 rounded cursor-pointer"
+                  aria-label={`Remove ${loc.name} from trip`}
+                >
+                  Remove
+                </button>
               </div>
             </li>
           );
