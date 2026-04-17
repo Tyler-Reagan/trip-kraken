@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { searchNearby } from "@/lib/places";
-import { searchTabelog } from "@/lib/tabelog";
+import { searchTabelog, enrichTabelogAddresses } from "@/lib/tabelog";
+import { approximateAnchorDistance } from "@/lib/stations";
 import type { NearbyPlace } from "@/types";
 
 export async function GET(
@@ -27,12 +28,32 @@ export async function GET(
   const limit   = Math.max(1, parseInt(searchParams.get("limit")   ?? "20", 10));
   const openNow = searchParams.get("openNow") === "true";
   const dayId   = searchParams.get("dayId")   ?? undefined;
-  const source  = searchParams.get("source") === "tabelog" ? "tabelog" : "google";
+  const source         = searchParams.get("source") === "tabelog" ? "tabelog" : "google";
+  const enrichAddresses = searchParams.get("enrichAddresses") === "true";
 
   try {
-    const places: NearbyPlace[] = source === "tabelog"
+    let places: NearbyPlace[] = source === "tabelog"
       ? await searchTabelog(loc.lat, loc.lng, { keyword, limit })
       : await searchNearby(loc.lat, loc.lng, { radius, keyword, type, limit, openNow });
+
+    if (source === "tabelog" && enrichAddresses) {
+      places = await enrichTabelogAddresses(places);
+    }
+
+    // For Tabelog results: compute approximate anchor→restaurant distance.
+    // anchor→station (Haversine, static dataset) + station→restaurant (listing text).
+    // Overwrites the station-only distanceMeters set by the parser.
+    if (source === "tabelog") {
+      places = places.map((p) => {
+        const approx = approximateAnchorDistance(
+          p.address, p.distanceMeters, loc.lat!, loc.lng!
+        );
+        // Always overwrite: null means station not in dataset — better to show
+        // nothing than to display the raw station-to-restaurant distance as if
+        // it were anchor proximity.
+        return { ...p, distanceMeters: approx };
+      });
+    }
 
     // Build category set for the target day (used for diversity scoring)
     const dayCategorySet = new Set<string>();

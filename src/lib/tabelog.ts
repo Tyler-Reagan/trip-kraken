@@ -126,7 +126,7 @@ function extractTabelogId(href: string): string | null {
 }
 
 /**
- * Map Tabelog budget string (e.g. "JPY 6,000–8,999") to a 0–4 price level.
+ * Map Tabelog budget string (e.g. "JPY 8,000 - JPY 9,999") to a 0–4 price level.
  * Uses the lower bound of the range as the reference price.
  */
 function budgetToPriceLevel(budget: string | null): number | null {
@@ -143,14 +143,15 @@ function budgetToPriceLevel(budget: string | null): number | null {
 }
 
 /**
- * Parse genres from the area/genre text cell.
- * Tabelog separates genres with the Japanese comma 「、」.
+ * Parse genres from the cuisine portion of the area/genre text cell.
+ * Expects only the text after the "/" separator (e.g. "Yakiniku, Sushi, Izakaya").
+ * Tabelog also uses the Japanese comma 「、」 in Japanese-locale pages.
  */
 function parseGenres(text: string): string[] {
   return text
     .split(/[、,]/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 0 && !/^\d/.test(s) && !s.includes("駅") && !s.includes("m"));
+    .filter((s) => s.length > 0);
 }
 
 // ─── HTML parser ─────────────────────────────────────────────────────────────
@@ -181,18 +182,23 @@ function parseRestaurants(html: string): NearbyPlace[] {
       const reviewText = container.find("em.list-rst__rvw-count-num").first().text().trim();
       const reviewCount = reviewText ? parseInt(reviewText.replace(/,/g, ""), 10) : null;
 
-      // Area + genres
-      const areaGenreText = container.find("div.list-rst__area-genre, span.list-rst__area-genre").first().text();
-      const genreSpanText = container.find("span.list-rst__genre, div.list-rst__genre").text();
-      const rawGenreText = genreSpanText || areaGenreText;
-      const categories = parseGenres(rawGenreText);
+      // Area/genre cell format: "Station Xm / Genre1, Genre2, ..."
+      const areaGenreText = container.find("div.list-rst__area-genre, span.list-rst__area-genre").first().text().trim();
+      const slashIdx = areaGenreText.search(/[/／]/);
+      const address = (slashIdx > -1 ? areaGenreText.slice(0, slashIdx) : areaGenreText).trim();
+      const genreRaw = slashIdx > -1 ? areaGenreText.slice(slashIdx + 1) : "";
+      const categories = parseGenres(genreRaw);
 
-      // Address: use area text as a best-effort address (no street address in listings)
-      const address = areaGenreText.split(/[/／]/)[0].trim() || "";
+      // Station distance: "Shimbashi Sta. 337m" → 337
+      const mMatch = address.match(/(\d+)m$/);
+      const distanceMeters = mMatch ? parseInt(mMatch[1], 10) : null;
 
-      // Budget → price level (prefer dinner budget, fall back to first budget value)
-      const budgetEls = container.find("span.list-rst__budget-val");
-      const dinnerBudget = budgetEls.last().text().trim() || null;
+      // Budget → price level. Dinner icon sibling is the discriminator; fall back
+      // to first price span if no dinner entry is present.
+      const dinnerIcon = container.find("i.c-rating-v3__time--dinner");
+      const dinnerBudget = dinnerIcon.length
+        ? dinnerIcon.closest("li").find("span.c-rating-v3__val").text().trim() || null
+        : container.find("span.c-rating-v3__val").first().text().trim() || null;
       const priceLevel = budgetToPriceLevel(dinnerBudget);
 
       results.push({
@@ -205,7 +211,8 @@ function parseRestaurants(html: string): NearbyPlace[] {
         reviewCount: reviewCount !== null && !isNaN(reviewCount) ? reviewCount : null,
         categories,
         priceLevel,
-        distanceMeters: null,
+        distanceMeters,
+        detailUrl: href || undefined,
       });
     } catch {
       // Skip malformed entries silently
@@ -215,6 +222,18 @@ function parseRestaurants(html: string): NearbyPlace[] {
   return results;
 }
 
+// ─── Sort tab mapping ─────────────────────────────────────────────────────────
+
+// Live-probed from #rstlst-sort ul li[href] on tabelog.com/en.
+// "trend" (travellers) is the default when SrtT is omitted.
+const SRT_T: Partial<Record<TabelogSort, string>> = {
+  "trend-jp": "inbound_vacancy_net_yoyaku",
+  "access":   "inbound_access",
+  "rank":     "rt",
+};
+
+type TabelogSort = "trend" | "trend-jp" | "access" | "rank";
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -223,13 +242,17 @@ function parseRestaurants(html: string): NearbyPlace[] {
  * @param lat     Anchor latitude  (WGS84)
  * @param lng     Anchor longitude (WGS84)
  * @param opts    keyword  — `sk` filter (restaurant name or cuisine type)
- *                radius   — search radius in km passed as `LstRange` (default 3, cap 10)
  *                limit    — max results returned from the parsed page (default 20, cap 30)
+ *                sort     — result ordering tab (default "trend-jp": most reserved by locals)
+ *                           "trend"    most reserved by travellers
+ *                           "trend-jp" most reserved by locals  ← default
+ *                           "access"   most viewed
+ *                           "rank"     highest rated
  *
  * Key URL parameters:
- *   Srt=D        sort by distance (essential — omitting this returns national top list)
+ *   Srt=D        activates the reservation-sort family; required for all four tabs
+ *   SrtT         selects the sub-sort within Srt=D; omit for "trend" (travellers default)
  *   Sokuchi=WGS  declare WGS84 coordinate system so Tabelog interprets lat/lng correctly
- *   LstRange     geographic search radius in km (NOT a result count)
  *   LstCount     results per page
  *
  * Results have null lat/lng. Add to trip and run Enrich to populate coordinates
@@ -238,24 +261,27 @@ function parseRestaurants(html: string): NearbyPlace[] {
 export async function searchTabelog(
   lat: number,
   lng: number,
-  opts: { keyword?: string; limit?: number } = {}
+  opts: { keyword?: string; limit?: number; sort?: TabelogSort } = {}
 ): Promise<NearbyPlace[]> {
   try {
     const limit = Math.min(opts.limit ?? 20, 30);
+    const sort  = opts.sort ?? "trend-jp";
 
     const prefecture = nearestPrefecture(lat, lng);
     const params = new URLSearchParams({
       lat: String(lat),
       lng: String(lng),
-      Sokuchi: "WGS",    // WGS84 coordinate system
+      Srt: "D",
+      Sokuchi: "WGS",
       LstCount: String(limit),
     });
+    const srtT = SRT_T[sort];
+    if (srtT) params.set("SrtT", srtT);
     if (opts.keyword?.trim()) params.set("sk", opts.keyword.trim());
 
     // Prefecture-scoped path is required for location-relevant results.
-    // The national /en/rstLst/ URL ignores lat/lng and returns a popularity
-    // ranking instead. Passing Srt=D has no effect at national scope.
-    const url = `https://tabelog.com/en/${prefecture}/rstLst/RC/?${params}`;
+    // The national /en/rstLst/ URL ignores lat/lng even with Srt=D.
+    const url = `https://tabelog.com/en/${prefecture}/rstLst/?${params}`;
     const html = await tabelogFetch(url);
     return parseRestaurants(html);
   } catch (err) {
@@ -263,4 +289,42 @@ export async function searchTabelog(
     console.error("[tabelog] search failed:", err instanceof Error ? err.message : err);
     return [];
   }
+}
+
+/**
+ * Fetch the street address from a Tabelog restaurant detail page.
+ * The address lives in the 5th row of #rst-data-head > table.
+ * Returns null on any failure (network error, selector miss, rate-limited).
+ */
+export async function fetchTabelogAddress(detailHref: string): Promise<string | null> {
+  try {
+    const html = await tabelogFetch(detailHref);
+    const $ = cheerio.load(html);
+    const addr = $("#rst-data-head > table > tbody > tr:nth-child(5) > td").text().trim();
+    return addr || null;
+  } catch (err) {
+    console.error("[tabelog] address fetch failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/**
+ * Enrich a list of NearbyPlaces by replacing each Tabelog result's station-area
+ * address with the actual street address from its detail page.
+ *
+ * Fetches are sequential and rate-limited (≥2s each via tabelogFetch).
+ * Non-Tabelog places and places without a detailUrl pass through unchanged.
+ * Never throws.
+ */
+export async function enrichTabelogAddresses(places: NearbyPlace[]): Promise<NearbyPlace[]> {
+  const enriched: NearbyPlace[] = [];
+  for (const place of places) {
+    if (!place.detailUrl || !place.placeId.startsWith("tabelog:")) {
+      enriched.push(place);
+      continue;
+    }
+    const street = await fetchTabelogAddress(place.detailUrl);
+    enriched.push(street ? { ...place, address: street } : place);
+  }
+  return enriched;
 }
