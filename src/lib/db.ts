@@ -303,7 +303,10 @@ export function rebuildItinerary(
 export function addStopToDay(
   tripId: string,
   locationId: string,
-  dayId: string
+  dayId: string,
+  /** When provided, insert the new stop immediately after this location's
+   *  existing stop on the day rather than appending to the end. */
+  afterLocationId?: string | null
 ): TripWithDetails {
   const db = getDb();
 
@@ -313,11 +316,34 @@ export function addStopToDay(
   const day = db.prepare("SELECT id FROM ItineraryDay WHERE id = ? AND tripId = ?").get(dayId, tripId);
   if (!day) throw new Error("Day not found in trip");
 
-  const { maxOrd } = db
-    .prepare("SELECT MAX(ord) as maxOrd FROM ItineraryStop WHERE dayId = ?")
-    .get(dayId) as { maxOrd: number | null };
+  let ord: number;
 
-  const ord = (maxOrd ?? -1) + 1;
+  if (afterLocationId) {
+    type AnchorRow = { ord: number } | undefined;
+    const anchor = db.prepare(
+      "SELECT s.ord FROM ItineraryStop s WHERE s.dayId = ? AND s.locationId = ?"
+    ).get(dayId, afterLocationId) as AnchorRow;
+
+    if (anchor) {
+      // Shift all stops that come after the anchor position up by one
+      db.prepare(
+        "UPDATE ItineraryStop SET ord = ord + 1 WHERE dayId = ? AND ord > ?"
+      ).run(dayId, anchor.ord);
+      ord = anchor.ord + 1;
+    } else {
+      // Anchor not found on this day — fall back to appending
+      const { maxOrd } = db
+        .prepare("SELECT MAX(ord) as maxOrd FROM ItineraryStop WHERE dayId = ?")
+        .get(dayId) as { maxOrd: number | null };
+      ord = (maxOrd ?? -1) + 1;
+    }
+  } else {
+    const { maxOrd } = db
+      .prepare("SELECT MAX(ord) as maxOrd FROM ItineraryStop WHERE dayId = ?")
+      .get(dayId) as { maxOrd: number | null };
+    ord = (maxOrd ?? -1) + 1;
+  }
+
   db.prepare(
     "INSERT INTO ItineraryStop (id, dayId, locationId, ord, notes) VALUES (?, ?, ?, ?, NULL)"
   ).run(newId(), dayId, locationId, ord);

@@ -7,7 +7,7 @@ export async function POST(
 ) {
   const { id: tripId } = await params;
   const body = await req.json();
-  const { stopId, locationId, targetDayId, targetOrder } = body;
+  const { stopId, locationId, targetDayId, targetOrder, afterLocationId } = body;
 
   if (!targetDayId) {
     return NextResponse.json({ error: "targetDayId is required" }, { status: 400 });
@@ -16,7 +16,7 @@ export async function POST(
   // Create a new stop from a location
   if (locationId) {
     try {
-      const updated = addStopToDay(tripId, locationId, targetDayId);
+      const updated = addStopToDay(tripId, locationId, targetDayId, afterLocationId ?? null);
       return NextResponse.json(updated, { status: 201 });
     } catch (err) {
       return NextResponse.json({ error: (err as Error).message }, { status: 404 });
