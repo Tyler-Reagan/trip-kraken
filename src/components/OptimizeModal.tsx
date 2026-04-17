@@ -6,7 +6,6 @@ import { useTripStore } from "@/store/tripStore";
 export default function OptimizeModal() {
   const trip = useTripStore((s) => s.trip);
   const setShowOptimize = useTripStore((s) => s.setShowOptimize);
-  const setShowCategoryChips = useTripStore((s) => s.setShowCategoryChips);
   const reload = useTripStore((s) => s.reload);
   // useState initializers use optional chaining so hooks are always called
   const [numDays, setNumDays] = useState<number>(trip?.numDays ?? 3);
@@ -46,7 +45,6 @@ export default function OptimizeModal() {
         return;
       }
 
-      setShowCategoryChips(balanceCategories);
       await reload();
       setShowOptimize(false);
     } catch {

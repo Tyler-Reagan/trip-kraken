@@ -1,0 +1,153 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useTripStore } from "@/store/tripStore";
+import type { Location } from "@/types";
+
+function formatHoursRange(loc: Location): string {
+  if (!loc.openTime && !loc.closeTime) return "No hours set";
+  if (loc.openTime === "00:00" && loc.closeTime === "23:59") return "Always open";
+  return `${loc.openTime ?? "?"}–${loc.closeTime ?? "?"}`;
+}
+
+function formatDuration(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
+function DurationEditor({ loc }: { loc: Location }) {
+  const tripId = useTripStore((s) => s.tripId);
+  const reload = useTripStore((s) => s.reload);
+
+  const savedH = loc.visitDuration != null ? Math.floor(loc.visitDuration / 60) : 0;
+  const savedM = loc.visitDuration != null ? loc.visitDuration % 60 : 0;
+  const [hours, setHours] = useState(savedH);
+  const [mins, setMins] = useState(savedM);
+
+  useEffect(() => {
+    setHours(loc.visitDuration != null ? Math.floor(loc.visitDuration / 60) : 0);
+    setMins(loc.visitDuration != null ? loc.visitDuration % 60 : 0);
+  }, [loc.visitDuration]);
+
+  async function handleBlur() {
+    if (!tripId) return;
+    const total = hours * 60 + mins;
+    if (total === (loc.visitDuration ?? 0)) return;
+    await fetch(`/api/trips/${tripId}/locations/${loc.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visitDuration: total === 0 ? null : total }),
+    });
+    await reload();
+  }
+
+  const inputCls =
+    "w-7 text-sm text-center bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-brand-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
+
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-xs text-gray-500 dark:text-gray-400 w-20">Visit duration</span>
+      <input
+        type="number" min={0} max={23} value={hours}
+        onChange={(e) => setHours(Math.min(23, Math.max(0, parseInt(e.target.value) || 0)))}
+        onBlur={handleBlur}
+        className={inputCls}
+        aria-label="Hours"
+      />
+      <span className="text-xs text-gray-400">h</span>
+      <input
+        type="number" min={0} max={59} value={mins}
+        onChange={(e) => setMins(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
+        onBlur={handleBlur}
+        className={inputCls}
+        aria-label="Minutes"
+      />
+      <span className="text-xs text-gray-400">m</span>
+    </div>
+  );
+}
+
+export default function LocationInspector() {
+  const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
+  const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
+  const trip = useTripStore((s) => s.trip);
+
+  if (!inspectedLocationId || !trip) return null;
+
+  const loc = trip.locations.find((l) => l.id === inspectedLocationId);
+  if (!loc) return null;
+
+  return (
+    <aside className="w-72 shrink-0 card p-4 space-y-4 max-h-[calc(100vh-10rem)] overflow-y-auto">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2">
+        <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200 leading-snug">
+          {loc.name}
+        </h2>
+        <button
+          onClick={() => setInspectedLocationId(null)}
+          className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-lg leading-none shrink-0 transition-colors"
+          aria-label="Close inspector"
+        >
+          ×
+        </button>
+      </div>
+
+      {/* Rating */}
+      {(loc.rating !== null || loc.reviewCount !== null) && (
+        <div className="flex items-center gap-1.5 text-sm">
+          {loc.rating !== null && (
+            <>
+              <span className="text-amber-500">★</span>
+              <span className="font-medium text-gray-800 dark:text-gray-200">{loc.rating.toFixed(1)}</span>
+            </>
+          )}
+          {loc.reviewCount !== null && (
+            <span className="text-gray-400 dark:text-gray-500 text-xs">
+              ({loc.reviewCount.toLocaleString()} reviews)
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Address */}
+      {loc.address && (
+        <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{loc.address}</p>
+      )}
+
+      {/* Hours */}
+      <div className="text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+        <p className="font-medium text-gray-600 dark:text-gray-300 text-xs">Hours</p>
+        <p>{formatHoursRange(loc)}</p>
+      </div>
+
+      {/* Duration editor */}
+      <DurationEditor loc={loc} />
+
+      {/* Categories */}
+      {loc.categories && loc.categories.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {loc.categories.map((cat) => (
+            <span
+              key={cat}
+              className="inline-block text-[10px] leading-tight px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
+            >
+              {cat.replace(/_/g, " ")}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Enrichment status indicators */}
+      {loc.enrichmentStatus === "pending" && (
+        <p className="text-xs text-gray-400 dark:text-gray-500 animate-pulse">Fetching details…</p>
+      )}
+      {loc.enrichmentStatus === "failed" && (
+        <p className="text-xs text-amber-500 dark:text-amber-400">Details unavailable</p>
+      )}
+    </aside>
+  );
+}
