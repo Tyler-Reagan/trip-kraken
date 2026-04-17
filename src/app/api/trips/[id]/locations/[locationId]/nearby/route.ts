@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { searchNearby } from "@/lib/places";
 import { searchTabelog, enrichTabelogAddresses } from "@/lib/tabelog";
-import { approximateAnchorDistance } from "@/lib/stations";
+import { approximateAnchorDistance, haversineMeters } from "@/lib/stations";
 import type { NearbyPlace } from "@/types";
 
 export async function GET(
@@ -38,6 +38,17 @@ export async function GET(
 
     if (source === "tabelog" && enrichAddresses) {
       places = await enrichTabelogAddresses(places);
+    }
+
+    // For Google results: compute exact Haversine anchor→place distance.
+    // searchNearby returns precise lat/lng for every result, so this is a
+    // pure in-process calculation with no additional API calls.
+    if (source === "google") {
+      places = places.map((p) =>
+        p.lat !== null && p.lng !== null
+          ? { ...p, distanceMeters: Math.round(haversineMeters(loc.lat!, loc.lng!, p.lat, p.lng)) }
+          : p
+      );
     }
 
     // For Tabelog results: compute approximate anchor→restaurant distance.

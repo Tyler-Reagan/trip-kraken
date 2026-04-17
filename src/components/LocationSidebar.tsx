@@ -143,7 +143,25 @@ export default function LocationSidebar({ isDrawer, onCloseDrawer }: Props) {
                 aria-label={`Include ${loc.name}`}
               />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{loc.name}</p>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{loc.name}</p>
+                  {loc.enrichmentStatus === "pending" && (
+                    <span
+                      className="text-[10px] text-gray-400 dark:text-gray-500 animate-pulse shrink-0"
+                      title="Fetching details from Google Places…"
+                    >
+                      ···
+                    </span>
+                  )}
+                  {loc.enrichmentStatus === "failed" && (
+                    <span
+                      className="text-[10px] text-amber-500 dark:text-amber-400 shrink-0 font-bold"
+                      title="Could not fetch details — click Retry to try again"
+                    >
+                      !
+                    </span>
+                  )}
+                </div>
                 {loc.address && (
                   <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{loc.address}</p>
                 )}

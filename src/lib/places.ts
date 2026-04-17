@@ -167,7 +167,7 @@ export async function findPlaceFromText(
  * Fetch Place Details for a known placeId.
  * Returns null on failure — never throws.
  */
-async function getPlaceDetails(placeId: string): Promise<PlaceDetails | null> {
+export async function getPlaceDetails(placeId: string): Promise<PlaceDetails | null> {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) return null;
   try {

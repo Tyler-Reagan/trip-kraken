@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import type { TripWithDetails } from "@/types";
 import { useTripStore } from "@/store/tripStore";
@@ -48,6 +48,7 @@ export default function TripClient({ trip: initial }: Props) {
   const isEnriching = useTripStore((s) => s.isEnriching);
   const enrichProgress = useTripStore((s) => s.enrichProgress);
   const enrich = useTripStore((s) => s.enrich);
+  const pollEnrichment = useTripStore((s) => s.pollEnrichment);
 
   const setActiveView = useTripStore((s) => s.setActiveView);
   const setSelectedDayNumber = useTripStore((s) => s.setSelectedDayNumber);
@@ -56,9 +57,15 @@ export default function TripClient({ trip: initial }: Props) {
   const setShowLocationDrawer = useTripStore((s) => s.setShowLocationDrawer);
 
   const hasItinerary = trip?.days.length > 0;
-  const enrichableCount = trip?.locations.filter(
-    (l) => l.lat !== null && l.lng !== null && (l.openTime === null || l.placeId === null)
-  ).length ?? 0;
+  const pendingCount = trip?.locations.filter((l) => l.enrichmentStatus === "pending").length ?? 0;
+  const failedCount = trip?.locations.filter((l) => l.enrichmentStatus === "failed").length ?? 0;
+
+  // Kick off polling on mount for any locations that are already pending
+  // (e.g. imported just before this page loaded).
+  useEffect(() => {
+    pollEnrichment();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -75,18 +82,25 @@ export default function TripClient({ trip: initial }: Props) {
           <button onClick={() => setShowAddLocation(true)} className="btn-secondary text-sm">
             + Add location
           </button>
-          <button
-            onClick={enrich}
-            disabled={isEnriching || enrichableCount === 0}
-            className="btn-secondary text-sm disabled:opacity-40"
-            title="Fetch opening hours, phone, and ratings from Google Places"
-          >
-            {isEnriching
-              ? "Enriching…"
-              : enrichProgress
-                ? `${enrichProgress.enriched}/${enrichProgress.total} enriched`
-                : `Enrich (${enrichableCount})`}
-          </button>
+          {pendingCount > 0 && (
+            <span className="text-sm text-gray-400 dark:text-gray-500 animate-pulse self-center">
+              Enriching {pendingCount}…
+            </span>
+          )}
+          {failedCount > 0 && (
+            <button
+              onClick={enrich}
+              disabled={isEnriching}
+              className="btn-secondary text-sm disabled:opacity-40"
+              title="Retry fetching details for locations where enrichment failed"
+            >
+              {isEnriching
+                ? enrichProgress
+                  ? `${enrichProgress.enriched}/${enrichProgress.total} retried`
+                  : "Retrying…"
+                : `Retry (${failedCount})`}
+            </button>
+          )}
           <button onClick={() => setShowOptimize(true)} className="btn-primary text-sm">
             {hasItinerary ? "Re-optimize" : "Plan itinerary"}
           </button>

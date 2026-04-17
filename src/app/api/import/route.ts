@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createTripWithLocations } from "@/lib/db";
 import { extractMid, fetchKml, extractKmlDocumentName } from "@/lib/myMaps";
 import { parseKml } from "@/lib/parsers/kml";
+import { enqueueLocationEnrichment } from "@/lib/enrichmentQueue";
 
 export async function POST(req: NextRequest) {
   let body: { url?: string; name?: string };
@@ -70,6 +71,12 @@ export async function POST(req: NextRequest) {
       placeId: null,
     })),
   });
+
+  // Enqueue all locations for background enrichment. The trip page loads
+  // immediately; locations will update as enrichment completes.
+  for (const loc of trip.locations) {
+    enqueueLocationEnrichment(loc.id);
+  }
 
   return NextResponse.json(trip, { status: 201 });
 }

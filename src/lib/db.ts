@@ -42,6 +42,7 @@ function openDb(): DatabaseSync {
     "ALTER TABLE Location ADD COLUMN closeTime TEXT",
     "ALTER TABLE Location ADD COLUMN isAnchor INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE Location ADD COLUMN phone TEXT",
+    "ALTER TABLE Location ADD COLUMN enrichmentStatus TEXT NOT NULL DEFAULT 'done'",
   ];
   for (const sql of locationAlters) {
     try { database.exec(sql); } catch { /* column already exists */ }
@@ -93,6 +94,7 @@ type LocationRow = {
   openTime: string | null;
   closeTime: string | null;
   phone: string | null;
+  enrichmentStatus: string;
 };
 type DayRow = {
   id: string; tripId: string; dayNumber: number;
@@ -108,6 +110,7 @@ type StopWithLocRow = StopRow & {
   loc_openTime: string | null;
   loc_closeTime: string | null;
   loc_phone: string | null;
+  loc_enrichmentStatus: string;
 };
 
 // ─── Deserializers ────────────────────────────────────────────────────────────
@@ -129,6 +132,7 @@ function parseLocation(r: LocationRow): Location {
     isAnchor: r.isAnchor !== 0,
     categories: r.categories ? JSON.parse(r.categories) : null,
     phone: r.phone ?? null,
+    enrichmentStatus: (r.enrichmentStatus ?? 'done') as 'done' | 'pending' | 'failed',
   };
 }
 
@@ -147,6 +151,7 @@ function parseStopWithLoc(r: StopWithLocRow): ItineraryStop {
       closeTime: r.loc_closeTime ?? null,
       isAnchor: r.loc_isAnchor !== 0,
       phone: r.loc_phone ?? null,
+      enrichmentStatus: (r.loc_enrichmentStatus ?? 'done') as 'done' | 'pending' | 'failed',
     },
   };
 }
@@ -202,7 +207,8 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
            l.rating as loc_rating, l.reviewCount as loc_reviewCount,
            l.categories as loc_categories, l.visitDuration as loc_visitDuration,
            l.openTime as loc_openTime, l.closeTime as loc_closeTime,
-           l.isAnchor as loc_isAnchor, l.phone as loc_phone
+           l.isAnchor as loc_isAnchor, l.phone as loc_phone,
+           l.enrichmentStatus as loc_enrichmentStatus
     FROM ItineraryStop s
     JOIN Location l ON l.id = s.locationId
     JOIN ItineraryDay d ON d.id = s.dayId
@@ -242,7 +248,7 @@ export function createTripWithLocations(data: {
     "INSERT INTO Trip (id, name, sourceUrl, numDays, startDate, createdAt, updatedAt) VALUES (?, ?, ?, NULL, NULL, datetime('now'), datetime('now'))"
   );
   const insertLoc = getDb().prepare(
-    "INSERT INTO Location (id, tripId, name, address, lat, lng, placeId, excluded, note) VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL)"
+    "INSERT INTO Location (id, tripId, name, address, lat, lng, placeId, excluded, note, enrichmentStatus) VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, 'pending')"
   );
 
   transaction(() => {
@@ -297,7 +303,10 @@ export function rebuildItinerary(
 export function addStopToDay(
   tripId: string,
   locationId: string,
-  dayId: string
+  dayId: string,
+  /** When provided, insert the new stop immediately after this location's
+   *  existing stop on the day rather than appending to the end. */
+  afterLocationId?: string | null
 ): TripWithDetails {
   const db = getDb();
 
@@ -307,11 +316,34 @@ export function addStopToDay(
   const day = db.prepare("SELECT id FROM ItineraryDay WHERE id = ? AND tripId = ?").get(dayId, tripId);
   if (!day) throw new Error("Day not found in trip");
 
-  const { maxOrd } = db
-    .prepare("SELECT MAX(ord) as maxOrd FROM ItineraryStop WHERE dayId = ?")
-    .get(dayId) as { maxOrd: number | null };
+  let ord: number;
 
-  const ord = (maxOrd ?? -1) + 1;
+  if (afterLocationId) {
+    type AnchorRow = { ord: number } | undefined;
+    const anchor = db.prepare(
+      "SELECT s.ord FROM ItineraryStop s WHERE s.dayId = ? AND s.locationId = ?"
+    ).get(dayId, afterLocationId) as AnchorRow;
+
+    if (anchor) {
+      // Shift all stops that come after the anchor position up by one
+      db.prepare(
+        "UPDATE ItineraryStop SET ord = ord + 1 WHERE dayId = ? AND ord > ?"
+      ).run(dayId, anchor.ord);
+      ord = anchor.ord + 1;
+    } else {
+      // Anchor not found on this day — fall back to appending
+      const { maxOrd } = db
+        .prepare("SELECT MAX(ord) as maxOrd FROM ItineraryStop WHERE dayId = ?")
+        .get(dayId) as { maxOrd: number | null };
+      ord = (maxOrd ?? -1) + 1;
+    }
+  } else {
+    const { maxOrd } = db
+      .prepare("SELECT MAX(ord) as maxOrd FROM ItineraryStop WHERE dayId = ?")
+      .get(dayId) as { maxOrd: number | null };
+    ord = (maxOrd ?? -1) + 1;
+  }
+
   db.prepare(
     "INSERT INTO ItineraryStop (id, dayId, locationId, ord, notes) VALUES (?, ?, ?, ?, NULL)"
   ).run(newId(), dayId, locationId, ord);

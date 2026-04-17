@@ -146,12 +146,17 @@ export default function NearbyDrawer() {
       const newLocation = await res.json();
       setAddedIds((prev) => new Set(prev).add(place.placeId));
 
-      // If the anchor is already on a day, append the new stop to that same day
+      // If the anchor is on a day, insert the new stop immediately after the
+      // anchor's position rather than appending to the end of the day.
       if (anchorDayId && newLocation.id) {
         await fetch(`/api/trips/${tripId}/stops`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ locationId: newLocation.id, targetDayId: anchorDayId }),
+          body: JSON.stringify({
+            locationId: newLocation.id,
+            targetDayId: anchorDayId,
+            afterLocationId: anchorLocation?.id ?? null,
+          }),
         });
       }
 

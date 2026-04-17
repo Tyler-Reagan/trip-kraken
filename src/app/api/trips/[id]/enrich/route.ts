@@ -12,37 +12,35 @@ export async function POST(
   const tripExists = getDb().prepare("SELECT id FROM Trip WHERE id = ?").get(tripId);
   if (!tripExists) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
-  // Eligibility:
-  //   - Standard locations: have coords but missing openTime or placeId
-  //   - Tabelog-sourced locations: have tabelog: placeId (null lat/lng is OK — Text Search will resolve them)
+  // Eligibility: locations that have been flagged as needing enrichment.
+  // enrichmentStatus is set to 'pending' at creation time (import, nearby add)
+  // and to 'failed' when a previous enrichment attempt did not succeed.
+  // This endpoint is the retry/recovery path — the happy path is handled
+  // automatically by the enrichment queue on location creation.
   type LocRow = { id: string; name: string; lat: number | null; lng: number | null; placeId: string | null };
   const locations = getDb().prepare(`
     SELECT id, name, lat, lng, placeId
     FROM Location
     WHERE tripId = ?
-      AND (
-        (lat IS NOT NULL AND lng IS NOT NULL AND (openTime IS NULL OR placeId IS NULL))
-        OR placeId LIKE 'tabelog:%'
-      )
+      AND enrichmentStatus IN ('pending', 'failed')
   `).all(tripId) as LocRow[];
 
   const total = locations.length;
   let enriched = 0;
   let errors = 0;
 
-  // NOTE: CASE expression overwrites Tabelog placeIds with a real Google placeId.
-  // COALESCE guards preserve user-set values for non-Tabelog rows.
   const updateStmt = getDb().prepare(`
     UPDATE Location SET
-      placeId     = CASE WHEN placeId LIKE 'tabelog:%' THEN ? ELSE COALESCE(placeId, ?) END,
-      lat         = COALESCE(lat, ?),
-      lng         = COALESCE(lng, ?),
-      rating      = ?,
-      reviewCount = ?,
-      categories  = ?,
-      phone       = ?,
-      openTime    = COALESCE(openTime, ?),
-      closeTime   = COALESCE(closeTime, ?)
+      placeId          = COALESCE(?, placeId),
+      lat              = COALESCE(?, lat),
+      lng              = COALESCE(?, lng),
+      rating           = COALESCE(?, rating),
+      reviewCount      = COALESCE(?, reviewCount),
+      categories       = COALESCE(?, categories),
+      phone            = COALESCE(?, phone),
+      openTime         = COALESCE(?, openTime),
+      closeTime        = COALESCE(?, closeTime),
+      enrichmentStatus = 'done'
     WHERE id = ?
   `);
 
@@ -50,12 +48,17 @@ export async function POST(
     try {
       const result = await enrichLocation(loc);
 
-      if (Object.keys(result).length === 0) continue;
+      if (Object.keys(result).length === 0) {
+        getDb()
+          .prepare("UPDATE Location SET enrichmentStatus = 'failed' WHERE id = ?")
+          .run(loc.id);
+        errors++;
+        continue;
+      }
 
       updateStmt.run(
         ...[
-          result.placeId ?? null,   // CASE: new Google placeId for Tabelog rows
-          result.placeId ?? null,   // COALESCE: fill null placeId for standard rows
+          result.placeId ?? null,
           result.lat ?? null,
           result.lng ?? null,
           result.rating ?? null,
@@ -69,6 +72,9 @@ export async function POST(
       );
       enriched++;
     } catch {
+      getDb()
+        .prepare("UPDATE Location SET enrichmentStatus = 'failed' WHERE id = ?")
+        .run(loc.id);
       errors++;
     }
 
