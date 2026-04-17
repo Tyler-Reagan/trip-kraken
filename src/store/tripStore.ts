@@ -34,11 +34,18 @@ interface TripStore {
   moveStop: (stopId: string, targetDayId: string, targetOrder: number) => Promise<void>;
   toggleExcluded: (locationId: string, excluded: boolean) => Promise<void>;
   toggleAnchor: (locationId: string, isAnchor: boolean) => Promise<void>;
+  // Retry enrichment for locations with enrichmentStatus 'pending' or 'failed'.
+  // In the happy path this is never needed — enrichment is automatic on add/import.
   enrich: () => Promise<void>;
 
-  // Enrichment progress
+  // Enrichment progress (shown during manual retry)
   isEnriching: boolean;
   enrichProgress: { enriched: number; total: number; errors: number } | null;
+
+  // Polls every 2s while any location has enrichmentStatus='pending'.
+  // Called automatically after each reload(); stops when none are pending.
+  pollEnrichment: () => void;
+  _pollTimer: ReturnType<typeof setTimeout> | null;
 
   // Composite action: switch to itinerary + highlight, then auto-clear
   handleMapLocationClick: (locationId: string) => void;
@@ -58,6 +65,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   showCategoryChips: false,
   isEnriching: false,
   enrichProgress: null,
+  _pollTimer: null,
 
   setTrip: (trip) => set({ trip, tripId: trip.id }),
   setActiveView: (v) => set({ activeView: v }),
@@ -73,7 +81,28 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     const tripId = get().tripId;
     if (!tripId) return;
     const res = await fetch(`/api/trips/${tripId}`);
-    if (res.ok) set({ trip: await res.json() });
+    if (res.ok) {
+      set({ trip: await res.json() });
+      // Auto-start polling if any locations are still being enriched
+      get().pollEnrichment();
+    }
+  },
+
+  pollEnrichment: () => {
+    const { trip, _pollTimer } = get();
+    // Cancel any existing timer to avoid stacking polls
+    if (_pollTimer !== null) clearTimeout(_pollTimer);
+    const hasPending = trip?.locations.some(
+      (l) => l.enrichmentStatus === "pending"
+    ) ?? false;
+    if (!hasPending) {
+      set({ _pollTimer: null });
+      return;
+    }
+    const timer = setTimeout(async () => {
+      await get().reload();
+    }, 2000);
+    set({ _pollTimer: timer });
   },
 
   moveStop: async (stopId, targetDayId, targetOrder) => {

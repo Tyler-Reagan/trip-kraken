@@ -29,6 +29,7 @@ export type Location = {
   openTime: string | null;      // "HH:MM" 24-hour, e.g. "09:00"
   closeTime: string | null;     // "HH:MM" 24-hour, e.g. "17:00"
   phone: string | null;
+  enrichmentStatus: "done" | "pending" | "failed";
 };
 
 export type NearbyPlace = {
