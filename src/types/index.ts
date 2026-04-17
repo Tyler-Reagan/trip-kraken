@@ -42,6 +42,7 @@ export type NearbyPlace = {
   categories: string[];
   priceLevel: number | null;  // 0–4
   distanceMeters: number | null;
+  detailUrl?: string;         // Tabelog detail page href; absent for Google results
 };
 
 export type ItineraryDay = {

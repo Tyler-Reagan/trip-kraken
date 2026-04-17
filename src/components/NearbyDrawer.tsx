@@ -366,6 +366,11 @@ export default function NearbyDrawer() {
               const displayTypes = place.categories
                 .slice(0, 2)
                 .map((t) => t.replace(/_/g, " "));
+              const distLabel = place.distanceMeters !== null
+                ? place.distanceMeters >= 1000
+                  ? `~${(place.distanceMeters / 1000).toFixed(1)}km`
+                  : `~${place.distanceMeters}m`
+                : null;
               return (
                 <li key={place.placeId} className="p-4 space-y-1.5">
                   <div className="flex items-start justify-between gap-2">
@@ -378,7 +383,14 @@ export default function NearbyDrawer() {
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{place.address}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{place.address}</p>
+                        {distLabel && (
+                          <span className="text-xs text-brand-500 dark:text-brand-400 shrink-0 font-medium">
+                            {distLabel}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <button
                       onClick={() => handleAdd(place)}
