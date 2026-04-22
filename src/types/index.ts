@@ -26,8 +26,9 @@ export type Location = {
   reviewCount: number | null;
   categories: string[] | null;
   visitDuration: number | null; // estimated visit time in minutes
-  openTime: string | null;      // "HH:MM" 24-hour, e.g. "09:00"
-  closeTime: string | null;     // "HH:MM" 24-hour, e.g. "17:00"
+  openTime: string | null;      // "HH:MM" 24-hour, e.g. "09:00" — Monday representative, used by optimizer
+  closeTime: string | null;     // "HH:MM" 24-hour, e.g. "17:00" — Monday representative, used by optimizer
+  hoursJson: Record<string, { open: string; close: string | null }> | null; // keys "0"–"6" (Sun–Sat)
   phone: string | null;
   enrichmentStatus: "done" | "pending" | "failed";
 };

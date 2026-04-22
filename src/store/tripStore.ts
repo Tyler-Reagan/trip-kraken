@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { TripWithDetails, Location } from "@/types";
 
 type ActiveView = "itinerary" | "map";
+export type ScheduleFilter = number | "unassigned" | null;
 
 interface TripStore {
   // Data
@@ -10,44 +11,38 @@ interface TripStore {
 
   // UI state
   activeView: ActiveView;
-  selectedDayNumber: number | null;
+  selectedDayNumber: ScheduleFilter;
   highlightedLocationId: string | null;
+  inspectedLocationId: string | null;
   nearbyAnchor: Location | null;
   showOptimize: boolean;
   showAddLocation: boolean;
-  showLocationDrawer: boolean;
-  showCategoryChips: boolean;
 
   // Setters
   setTrip: (trip: TripWithDetails) => void;
   setActiveView: (v: ActiveView) => void;
-  setSelectedDayNumber: (n: number | null) => void;
+  setSelectedDayNumber: (n: ScheduleFilter) => void;
   setHighlightedLocationId: (id: string | null) => void;
+  setInspectedLocationId: (id: string | null) => void;
   setNearbyAnchor: (loc: Location | null) => void;
   setShowOptimize: (v: boolean) => void;
   setShowAddLocation: (v: boolean) => void;
-  setShowLocationDrawer: (v: boolean) => void;
-  setShowCategoryChips: (v: boolean) => void;
 
   // Async mutations — use get().tripId internally
   reload: () => Promise<void>;
   moveStop: (stopId: string, targetDayId: string, targetOrder: number) => Promise<void>;
-  toggleExcluded: (locationId: string, excluded: boolean) => Promise<void>;
+  removeStop: (stopId: string) => Promise<void>;
+  addLocationToDay: (locationId: string, dayId: string) => Promise<void>;
   toggleAnchor: (locationId: string, isAnchor: boolean) => Promise<void>;
-  // Retry enrichment for locations with enrichmentStatus 'pending' or 'failed'.
-  // In the happy path this is never needed — enrichment is automatic on add/import.
   enrich: () => Promise<void>;
 
   // Enrichment progress (shown during manual retry)
   isEnriching: boolean;
   enrichProgress: { enriched: number; total: number; errors: number } | null;
 
-  // Polls every 2s while any location has enrichmentStatus='pending'.
-  // Called automatically after each reload(); stops when none are pending.
   pollEnrichment: () => void;
   _pollTimer: ReturnType<typeof setTimeout> | null;
 
-  // Composite action: switch to itinerary + highlight, then auto-clear
   handleMapLocationClick: (locationId: string) => void;
 }
 
@@ -58,24 +53,22 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   activeView: "itinerary",
   selectedDayNumber: null,
   highlightedLocationId: null,
+  inspectedLocationId: null,
   nearbyAnchor: null,
   showOptimize: false,
   showAddLocation: false,
-  showLocationDrawer: false,
-  showCategoryChips: false,
   isEnriching: false,
   enrichProgress: null,
   _pollTimer: null,
 
   setTrip: (trip) => set({ trip, tripId: trip.id }),
-  setActiveView: (v) => set({ activeView: v }),
-  setSelectedDayNumber: (n) => set({ selectedDayNumber: n }),
+  setActiveView: (v) => set({ activeView: v, inspectedLocationId: null }),
+  setSelectedDayNumber: (n) => set({ selectedDayNumber: n, inspectedLocationId: null }),
   setHighlightedLocationId: (id) => set({ highlightedLocationId: id }),
+  setInspectedLocationId: (id) => set({ inspectedLocationId: id }),
   setNearbyAnchor: (loc) => set({ nearbyAnchor: loc }),
   setShowOptimize: (v) => set({ showOptimize: v }),
   setShowAddLocation: (v) => set({ showAddLocation: v }),
-  setShowLocationDrawer: (v) => set({ showLocationDrawer: v }),
-  setShowCategoryChips: (v) => set({ showCategoryChips: v }),
 
   reload: async () => {
     const tripId = get().tripId;
@@ -83,25 +76,16 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     const res = await fetch(`/api/trips/${tripId}`);
     if (res.ok) {
       set({ trip: await res.json() });
-      // Auto-start polling if any locations are still being enriched
       get().pollEnrichment();
     }
   },
 
   pollEnrichment: () => {
     const { trip, _pollTimer } = get();
-    // Cancel any existing timer to avoid stacking polls
     if (_pollTimer !== null) clearTimeout(_pollTimer);
-    const hasPending = trip?.locations.some(
-      (l) => l.enrichmentStatus === "pending"
-    ) ?? false;
-    if (!hasPending) {
-      set({ _pollTimer: null });
-      return;
-    }
-    const timer = setTimeout(async () => {
-      await get().reload();
-    }, 2000);
+    const hasPending = trip?.locations.some((l) => l.enrichmentStatus === "pending") ?? false;
+    if (!hasPending) { set({ _pollTimer: null }); return; }
+    const timer = setTimeout(async () => { await get().reload(); }, 2000);
     set({ _pollTimer: timer });
   },
 
@@ -116,13 +100,20 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     await get().reload();
   },
 
-  toggleExcluded: async (locationId, excluded) => {
+  removeStop: async (stopId) => {
     const tripId = get().tripId;
     if (!tripId) return;
-    await fetch(`/api/trips/${tripId}/locations/${locationId}`, {
-      method: "PATCH",
+    await fetch(`/api/trips/${tripId}/stops/${stopId}?keepLocation=true`, { method: "DELETE" });
+    await get().reload();
+  },
+
+  addLocationToDay: async (locationId, dayId) => {
+    const tripId = get().tripId;
+    if (!tripId) return;
+    await fetch(`/api/trips/${tripId}/stops`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ excluded }),
+      body: JSON.stringify({ locationId, targetDayId: dayId }),
     });
     await get().reload();
   },

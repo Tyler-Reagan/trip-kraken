@@ -5,8 +5,8 @@ import dynamic from "next/dynamic";
 import type { TripWithDetails } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import OptimizeModal from "./OptimizeModal";
-import LocationSidebar from "./LocationSidebar";
-import ItineraryView from "./ItineraryView";
+import ScheduleView from "./ScheduleView";
+import LocationInspector from "./LocationInspector";
 import AddLocationModal from "./AddLocationModal";
 import NearbyDrawer from "./NearbyDrawer";
 
@@ -19,8 +19,6 @@ interface Props {
 }
 
 export default function TripClient({ trip: initial }: Props) {
-  // Initialise the store synchronously on first render so children see
-  // the correct trip data without waiting for a useEffect.
   const initialized = useRef(false);
   if (!initialized.current) {
     initialized.current = true;
@@ -32,18 +30,17 @@ export default function TripClient({ trip: initial }: Props) {
       selectedDayNumber: null,
       nearbyAnchor: null,
       highlightedLocationId: null,
-      showLocationDrawer: false,
+      inspectedLocationId: null,
     });
   }
 
-  // Use initial as fallback — store is set synchronously above but guard for SSR edge cases
   const trip = useTripStore((s) => s.trip) ?? initial;
   const activeView = useTripStore((s) => s.activeView);
   const selectedDayNumber = useTripStore((s) => s.selectedDayNumber);
   const nearbyAnchor = useTripStore((s) => s.nearbyAnchor);
+  const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
   const showOptimize = useTripStore((s) => s.showOptimize);
   const showAddLocation = useTripStore((s) => s.showAddLocation);
-  const showLocationDrawer = useTripStore((s) => s.showLocationDrawer);
 
   const isEnriching = useTripStore((s) => s.isEnriching);
   const enrichProgress = useTripStore((s) => s.enrichProgress);
@@ -54,14 +51,18 @@ export default function TripClient({ trip: initial }: Props) {
   const setSelectedDayNumber = useTripStore((s) => s.setSelectedDayNumber);
   const setShowOptimize = useTripStore((s) => s.setShowOptimize);
   const setShowAddLocation = useTripStore((s) => s.setShowAddLocation);
-  const setShowLocationDrawer = useTripStore((s) => s.setShowLocationDrawer);
 
   const hasItinerary = trip?.days.length > 0;
   const pendingCount = trip?.locations.filter((l) => l.enrichmentStatus === "pending").length ?? 0;
   const failedCount = trip?.locations.filter((l) => l.enrichmentStatus === "failed").length ?? 0;
 
-  // Kick off polling on mount for any locations that are already pending
-  // (e.g. imported just before this page loaded).
+  const unscheduledCount = hasItinerary
+    ? (() => {
+        const scheduled = new Set(trip.days.flatMap((d) => d.stops.map((s) => s.locationId)));
+        return trip.locations.filter((l) => !scheduled.has(l.id)).length;
+      })()
+    : 0;
+
   useEffect(() => {
     pollEnrichment();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -127,6 +128,19 @@ export default function TripClient({ trip: initial }: Props) {
           </div>
 
           <div className="flex gap-1.5 flex-wrap">
+            {/* Unassigned filter */}
+            <button
+              onClick={() => setSelectedDayNumber(selectedDayNumber === "unassigned" ? null : "unassigned")}
+              className={`px-3 py-1 text-xs rounded-full border transition-colors
+                ${selectedDayNumber === "unassigned"
+                  ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100"
+                  : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                }`}
+            >
+              Unassigned{unscheduledCount > 0 ? ` ●${unscheduledCount}` : ""}
+            </button>
+
+            {/* All filter */}
             <button
               onClick={() => setSelectedDayNumber(null)}
               className={`px-3 py-1 text-xs rounded-full border transition-colors
@@ -135,8 +149,10 @@ export default function TripClient({ trip: initial }: Props) {
                   : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
                 }`}
             >
-              All days
+              All
             </button>
+
+            {/* Per-day filters */}
             {trip?.days.map((day) => (
               <button
                 key={day.id}
@@ -150,6 +166,7 @@ export default function TripClient({ trip: initial }: Props) {
                   }`}
               >
                 Day {day.dayNumber}
+                {day.stops.length > 0 ? ` ●${day.stops.length}` : ""}
                 {day.label ? ` – ${day.label}` : ""}
               </button>
             ))}
@@ -170,49 +187,13 @@ export default function TripClient({ trip: initial }: Props) {
 
       <div className="flex gap-4 items-start">
         <div className="flex-1 min-w-0 space-y-4">
-          {hasItinerary && activeView === "itinerary" && (
-            <div className="flex gap-6 items-start">
-              {/* Desktop sidebar */}
-              <aside className="hidden lg:block w-72 shrink-0">
-                <LocationSidebar />
-              </aside>
-
-              <div className="flex-1 min-w-0 space-y-4">
-                <ItineraryView />
-
-                {/* Mobile: open location drawer */}
-                <button
-                  onClick={() => setShowLocationDrawer(true)}
-                  className="lg:hidden w-full btn-secondary text-sm"
-                >
-                  View locations
-                </button>
-              </div>
-            </div>
-          )}
-
+          {hasItinerary && activeView === "itinerary" && <ScheduleView />}
           {hasItinerary && activeView === "map" && <MapView />}
         </div>
 
-        {/* Nearby drawer — inline side panel */}
+        {/* Right panels — both mount independently; Inspector shifts inward when Nearby opens */}
+        {inspectedLocationId && <LocationInspector />}
         {nearbyAnchor && <NearbyDrawer />}
-      </div>
-
-      {/* Mobile location drawer */}
-      {showLocationDrawer && (
-        <div
-          className="fixed inset-0 z-40 lg:hidden"
-          onClick={() => setShowLocationDrawer(false)}
-          aria-hidden="true"
-        >
-          <div className="absolute inset-0 bg-black/50" />
-        </div>
-      )}
-      <div
-        className={`fixed inset-x-0 bottom-0 z-50 lg:hidden transition-transform duration-300
-          ${showLocationDrawer ? "translate-y-0" : "translate-y-full"}`}
-      >
-        <LocationSidebar isDrawer onCloseDrawer={() => setShowLocationDrawer(false)} />
       </div>
 
       {showOptimize && <OptimizeModal />}

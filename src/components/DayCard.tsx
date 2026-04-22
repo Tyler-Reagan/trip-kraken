@@ -1,17 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ItineraryDay, ItineraryStop } from "@/types";
+import type { ItineraryDay, ItineraryStop, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
+import { FlagIcon, FlagFilledIcon, SearchIcon, TrashIcon } from "./icons";
 
 interface Props {
   day: ItineraryDay;
   draggingStop: ItineraryStop | null;
+  draggingLocation: Location | null;
   onDragStart: (stop: ItineraryStop) => void;
   onDrop: (day: ItineraryDay, order: number) => void;
 }
 
-const LIGHT_DAY_THRESHOLD = 240; // minutes
+const LIGHT_DAY_THRESHOLD = 240;
 
 function formatDuration(mins: number): string {
   const h = Math.floor(mins / 60);
@@ -21,19 +23,30 @@ function formatDuration(mins: number): string {
   return `${h}h ${m}m`;
 }
 
-export default function DayCard({ day, draggingStop, onDragStart, onDrop }: Props) {
+function formatHoursSubtext(loc: Location, dayOfWeek?: number): string {
+  if (dayOfWeek !== undefined && loc.hoursJson) {
+    const entry = loc.hoursJson[String(dayOfWeek)];
+    if (!entry) return "Closed";
+    if (entry.open === "00:00" && entry.close === "23:59") return "Always open";
+    return `${entry.open}–${entry.close ?? "?"}`;
+  }
+  if (!loc.openTime && !loc.closeTime) return "No hours";
+  if (loc.openTime === "00:00" && loc.closeTime === "23:59") return "Always open";
+  return `${loc.openTime ?? "?"}–${loc.closeTime ?? "?"}`;
+}
+
+export default function DayCard({ day, draggingStop, draggingLocation, onDragStart, onDrop }: Props) {
   const tripId = useTripStore((s) => s.tripId);
   const reload = useTripStore((s) => s.reload);
   const setNearbyAnchor = useTripStore((s) => s.setNearbyAnchor);
   const [dragOver, setDragOver] = useState(false);
+  const dayOfWeek = day.date ? new Date(day.date).getDay() : undefined;
   const [editingLabel, setEditingLabel] = useState(false);
   const [label, setLabel] = useState(day.label ?? "");
 
   const totalMinutes = day.stops.reduce((sum, s) => sum + (s.location.visitDuration ?? 0), 0);
   const anyHasDuration = day.stops.some((s) => s.location.visitDuration !== null);
   const isLightDay = anyHasDuration && totalMinutes < LIGHT_DAY_THRESHOLD && day.stops.length > 0;
-  // Default anchor for "Find nearby stops" — prefer a non-base stop so the
-  // search is centred on an actual destination rather than the hotel.
   const nearbyDefaultStop =
     day.stops.find((s) => !s.location.isAnchor) ?? day.stops[0] ?? null;
 
@@ -70,10 +83,12 @@ export default function DayCard({ day, draggingStop, onDragStart, onDrop }: Prop
     onDrop(day, day.stops.length);
   }
 
+  const isDragTarget = dragOver && (draggingStop !== null || draggingLocation !== null);
+
   return (
     <div
       className={`card p-4 space-y-3 transition-all
-        ${dragOver && draggingStop ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/20" : ""}`}
+        ${isDragTarget ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/20" : ""}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -116,24 +131,23 @@ export default function DayCard({ day, draggingStop, onDragStart, onDrop }: Prop
             </span>
           )}
           {isLightDay && (
-            <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-              Light day
-            </span>
+            <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Light day</span>
           )}
           <span className="text-xs text-gray-400 dark:text-gray-500">
             {day.stops.length} stop{day.stops.length !== 1 ? "s" : ""}
           </span>
+          {nearbyDefaultStop && (
+            <button
+              onClick={() => setNearbyAnchor(nearbyDefaultStop.location)}
+              disabled={nearbyDefaultStop.location.lat === null}
+              title="Find nearby stops for this day"
+              className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 disabled:text-gray-300 dark:disabled:text-gray-600 transition-colors"
+            >
+              Nearby
+            </button>
+          )}
         </div>
       </div>
-
-      {isLightDay && nearbyDefaultStop && (
-        <button
-          onClick={() => setNearbyAnchor(nearbyDefaultStop.location)}
-          className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 underline underline-offset-2 transition-colors"
-        >
-          Find nearby stops
-        </button>
-      )}
 
       {/* Stops list */}
       {day.stops.length === 0 ? (
@@ -147,8 +161,8 @@ export default function DayCard({ day, draggingStop, onDragStart, onDrop }: Prop
               key={stop.id}
               stop={stop}
               index={idx}
-              day={day}
               isDragging={draggingStop?.id === stop.id}
+              dayOfWeek={dayOfWeek}
               onDragStart={onDragStart}
               onDropBefore={() => onDrop(day, idx)}
             />
@@ -162,20 +176,30 @@ export default function DayCard({ day, draggingStop, onDragStart, onDrop }: Prop
 interface StopRowProps {
   stop: ItineraryStop;
   index: number;
-  day: ItineraryDay;
   isDragging: boolean;
+  dayOfWeek?: number;
   onDragStart: (stop: ItineraryStop) => void;
   onDropBefore: () => void;
 }
 
-function StopRow({ stop, index, isDragging, onDragStart, onDropBefore }: StopRowProps) {
+function StopRow({ stop, index, isDragging, dayOfWeek, onDragStart, onDropBefore }: StopRowProps) {
   const tripId = useTripStore((s) => s.tripId);
   const reload = useTripStore((s) => s.reload);
   const highlightedLocationId = useTripStore((s) => s.highlightedLocationId);
   const setHighlightedLocationId = useTripStore((s) => s.setHighlightedLocationId);
+  const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
+  const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
+  const toggleAnchor = useTripStore((s) => s.toggleAnchor);
+  const setNearbyAnchor = useTripStore((s) => s.setNearbyAnchor);
+
   const isHighlighted = highlightedLocationId === stop.locationId;
+  const isInspected = inspectedLocationId === stop.locationId;
   const [dropTarget, setDropTarget] = useState(false);
   const rowRef = useRef<HTMLLIElement>(null);
+
+  const loc = stop.location;
+  const hoursText = formatHoursSubtext(loc, dayOfWeek);
+  const durText = loc.visitDuration !== null ? formatDuration(loc.visitDuration) : "—";
 
   useEffect(() => {
     if (isHighlighted && rowRef.current) {
@@ -191,57 +215,85 @@ function StopRow({ stop, index, isDragging, onDragStart, onDropBefore }: StopRow
   return (
     <>
       <div
-        className={`h-1 rounded-full transition-all ${
-          dropTarget ? "bg-brand-400 h-2" : "bg-transparent"
-        }`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setDropTarget(true);
-        }}
+        className={`h-1 rounded-full transition-all ${dropTarget ? "bg-brand-400 h-2" : "bg-transparent"}`}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropTarget(true); }}
         onDragLeave={() => setDropTarget(false)}
-        onDrop={(e) => {
-          e.stopPropagation();
-          setDropTarget(false);
-          onDropBefore();
-        }}
+        onDrop={(e) => { e.stopPropagation(); setDropTarget(false); onDropBefore(); }}
       />
 
       <li
         ref={rowRef}
         draggable
         onDragStart={() => onDragStart(stop)}
-        onClick={() => isHighlighted && setHighlightedLocationId(null)}
-        className={`flex items-start gap-3 p-2 rounded-lg border cursor-grab active:cursor-grabbing
-          transition-all select-none
+        className={`group flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none
           ${isDragging ? "opacity-40" : ""}
           ${isHighlighted
             ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/30 border-brand-200 dark:border-brand-800"
-            : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
+            : isInspected
+              ? "bg-gray-100 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700"
+              : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
           }`}
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest("button")) return;
+          if (isHighlighted) { setHighlightedLocationId(null); return; }
+          setInspectedLocationId(isInspected ? null : stop.locationId);
+        }}
       >
+        {/* Stop number */}
         <span className="shrink-0 w-5 h-5 rounded-full bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-400 text-xs flex items-center justify-center font-semibold mt-0.5">
           {index + 1}
         </span>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-            {stop.location.name}
-          </p>
-          {stop.location.address && (
-            <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{stop.location.address}</p>
-          )}
-        </div>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            removeStop();
-          }}
-          className="shrink-0 text-gray-300 dark:text-gray-600 hover:text-red-400 dark:hover:text-red-400 transition-colors text-lg leading-none mt-0.5"
-          title="Remove from this day"
-          aria-label="Remove stop"
+
+        {/* Drag handle */}
+        <span
+          className="shrink-0 text-gray-300 dark:text-gray-600 cursor-grab active:cursor-grabbing mt-0.5 text-base leading-none select-none"
+          title="Drag to reorder"
+          onMouseDown={(e) => e.stopPropagation()}
         >
-          ×
-        </button>
+          ≡
+        </span>
+
+        {/* Name + subtext */}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{loc.name}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+            {hoursText} · {durText}
+          </p>
+        </div>
+
+        {/* Actions */}
+        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => { e.stopPropagation(); toggleAnchor(loc.id, !loc.isAnchor); }}
+            title={loc.isAnchor ? "Unmark as base (hotel / start point)" : "Mark as base — prepended to every day during optimization"}
+            aria-label={loc.isAnchor ? "Unmark as base" : "Mark as base"}
+            aria-pressed={loc.isAnchor}
+            className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
+              loc.isAnchor
+                ? "text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                : "text-gray-400 dark:text-gray-500 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+            }`}
+          >
+            {loc.isAnchor ? <FlagFilledIcon /> : <FlagIcon />}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setNearbyAnchor(loc); }}
+            disabled={loc.lat === null}
+            title={loc.lat === null ? "No coordinates — run Enrich first" : "Find nearby places anchored to this location"}
+            aria-label="Find nearby places"
+            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <SearchIcon />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); removeStop(); }}
+            title="Remove location from trip"
+            aria-label="Remove location"
+            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+          >
+            <TrashIcon />
+          </button>
+        </div>
       </li>
     </>
   );

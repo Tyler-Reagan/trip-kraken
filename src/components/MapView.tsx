@@ -178,7 +178,7 @@ export default function MapView() {
     const BASE_COLOR = "#e5e7eb"; // gray-200
     for (const anchor of Object.values(anchorMap)) {
       const sortedDays = anchor.dayNumbers.slice().sort((a: number, b: number) => a - b);
-      const isActive = selectedDayNumber === null || sortedDays.includes(selectedDayNumber);
+      const isActive = selectedDayNumber === null || (typeof selectedDayNumber === "number" && sortedDays.includes(selectedDayNumber));
       points.features.push({
         type: "Feature",
         geometry: { type: "Point", coordinates: [anchor.lng, anchor.lat] },
