@@ -40,6 +40,7 @@ function openDb(): DatabaseSync {
     "ALTER TABLE Location ADD COLUMN visitDuration INTEGER",
     "ALTER TABLE Location ADD COLUMN openTime TEXT",
     "ALTER TABLE Location ADD COLUMN closeTime TEXT",
+    "ALTER TABLE Location ADD COLUMN hoursJson TEXT",
     "ALTER TABLE Location ADD COLUMN isAnchor INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE Location ADD COLUMN phone TEXT",
     "ALTER TABLE Location ADD COLUMN enrichmentStatus TEXT NOT NULL DEFAULT 'done'",
@@ -93,6 +94,7 @@ type LocationRow = {
   visitDuration: number | null;
   openTime: string | null;
   closeTime: string | null;
+  hoursJson: string | null;
   phone: string | null;
   enrichmentStatus: string;
 };
@@ -109,6 +111,7 @@ type StopWithLocRow = StopRow & {
   loc_visitDuration: number | null;
   loc_openTime: string | null;
   loc_closeTime: string | null;
+  loc_hoursJson: string | null;
   loc_phone: string | null;
   loc_enrichmentStatus: string;
 };
@@ -131,6 +134,7 @@ function parseLocation(r: LocationRow): Location {
     excluded: r.excluded !== 0,
     isAnchor: r.isAnchor !== 0,
     categories: r.categories ? JSON.parse(r.categories) : null,
+    hoursJson: r.hoursJson ? JSON.parse(r.hoursJson) : null,
     phone: r.phone ?? null,
     enrichmentStatus: (r.enrichmentStatus ?? 'done') as 'done' | 'pending' | 'failed',
   };
@@ -149,6 +153,7 @@ function parseStopWithLoc(r: StopWithLocRow): ItineraryStop {
       visitDuration: r.loc_visitDuration ?? null,
       openTime: r.loc_openTime ?? null,
       closeTime: r.loc_closeTime ?? null,
+      hoursJson: r.loc_hoursJson ? JSON.parse(r.loc_hoursJson) : null,
       isAnchor: r.loc_isAnchor !== 0,
       phone: r.loc_phone ?? null,
       enrichmentStatus: (r.loc_enrichmentStatus ?? 'done') as 'done' | 'pending' | 'failed',
@@ -207,6 +212,7 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
            l.rating as loc_rating, l.reviewCount as loc_reviewCount,
            l.categories as loc_categories, l.visitDuration as loc_visitDuration,
            l.openTime as loc_openTime, l.closeTime as loc_closeTime,
+           l.hoursJson as loc_hoursJson,
            l.isAnchor as loc_isAnchor, l.phone as loc_phone,
            l.enrichmentStatus as loc_enrichmentStatus
     FROM ItineraryStop s

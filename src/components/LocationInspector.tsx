@@ -4,10 +4,54 @@ import { useState, useEffect } from "react";
 import { useTripStore } from "@/store/tripStore";
 import type { Location } from "@/types";
 
-function formatHoursRange(loc: Location): string {
-  if (!loc.openTime && !loc.closeTime) return "No hours set";
-  if (loc.openTime === "00:00" && loc.closeTime === "23:59") return "Always open";
-  return `${loc.openTime ?? "?"}–${loc.closeTime ?? "?"}`;
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Mon–Sun display order
+
+function timeStr(entry: { open: string; close: string | null } | undefined): string {
+  if (!entry) return "Closed";
+  if (entry.open === "00:00" && entry.close === "23:59") return "Open 24h";
+  return `${entry.open}–${entry.close ?? "?"}`;
+}
+
+/** Collapse consecutive days with identical hours into ranges like "Mon–Wed". */
+function groupHours(
+  hoursJson: Record<string, { open: string; close: string | null }>
+): Array<{ label: string; hours: string }> {
+  const days = DAY_ORDER.map((d) => ({ day: d, hours: timeStr(hoursJson[String(d)]) }));
+
+  const groups: Array<{ label: string; hours: string }> = [];
+  let i = 0;
+  while (i < days.length) {
+    let j = i + 1;
+    while (j < days.length && days[j].hours === days[i].hours) j++;
+    const span = j - i;
+    const label =
+      span === 1
+        ? DAY_NAMES[days[i].day]
+        : `${DAY_NAMES[days[i].day]}–${DAY_NAMES[days[j - 1].day]}`;
+    groups.push({ label, hours: days[i].hours });
+    i = j;
+  }
+  return groups;
+}
+
+function HoursDisplay({ loc }: { loc: Location }) {
+  if (loc.hoursJson && Object.keys(loc.hoursJson).length > 0) {
+    const groups = groupHours(loc.hoursJson);
+    return (
+      <div className="space-y-0.5">
+        {groups.map(({ label, hours }) => (
+          <div key={label} className="flex justify-between text-xs gap-3">
+            <span className="text-gray-500 dark:text-gray-400 shrink-0">{label}</span>
+            <span className="text-gray-600 dark:text-gray-300 text-right">{hours}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (!loc.openTime && !loc.closeTime) return <p className="text-xs">No hours set</p>;
+  if (loc.openTime === "00:00" && loc.closeTime === "23:59") return <p className="text-xs">Always open</p>;
+  return <p className="text-xs">{loc.openTime ?? "?"}–{loc.closeTime ?? "?"}</p>;
 }
 
 function formatDuration(mins: number): string {
@@ -121,7 +165,7 @@ export default function LocationInspector() {
       {/* Hours */}
       <div className="text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
         <p className="font-medium text-gray-600 dark:text-gray-300 text-xs">Hours</p>
-        <p>{formatHoursRange(loc)}</p>
+        <HoursDisplay loc={loc} />
       </div>
 
       {/* Duration editor */}

@@ -33,6 +33,7 @@ export async function POST(
   let inlinePhone: string | null = null;
   let inlineOpenTime: string | null = null;
   let inlineCloseTime: string | null = null;
+  let inlineHoursJson: string | null = null;
   let inlineRating: number | null = rating ?? null;
   let inlineReviewCount: number | null = reviewCount ?? null;
   let inlineCategories: string[] | null = categories ?? null;
@@ -69,6 +70,7 @@ export async function POST(
       inlinePhone = details.phone;
       inlineOpenTime = details.openTime;
       inlineCloseTime = details.closeTime;
+      inlineHoursJson = details.hoursJson ? JSON.stringify(details.hoursJson) : null;
       // Prefer details values over the partial data from searchNearby
       if (details.rating !== null) inlineRating = details.rating;
       if (details.reviewCount !== null) inlineReviewCount = details.reviewCount;
@@ -89,8 +91,8 @@ export async function POST(
     .prepare(
       `INSERT INTO Location
         (id, tripId, name, address, lat, lng, placeId, excluded, note,
-         rating, reviewCount, categories, phone, openTime, closeTime, enrichmentStatus)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?)`
+         rating, reviewCount, categories, phone, openTime, closeTime, hoursJson, enrichmentStatus)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       id,
@@ -106,6 +108,7 @@ export async function POST(
       inlinePhone,
       inlineOpenTime,
       inlineCloseTime,
+      inlineHoursJson,
       enrichmentStatus,
     );
 

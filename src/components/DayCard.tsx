@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ItineraryDay, ItineraryStop, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
+import { FlagIcon, FlagFilledIcon, SearchIcon, TrashIcon } from "./icons";
 
 interface Props {
   day: ItineraryDay;
@@ -22,7 +23,13 @@ function formatDuration(mins: number): string {
   return `${h}h ${m}m`;
 }
 
-function formatHoursSubtext(loc: Location): string {
+function formatHoursSubtext(loc: Location, dayOfWeek?: number): string {
+  if (dayOfWeek !== undefined && loc.hoursJson) {
+    const entry = loc.hoursJson[String(dayOfWeek)];
+    if (!entry) return "Closed";
+    if (entry.open === "00:00" && entry.close === "23:59") return "Always open";
+    return `${entry.open}–${entry.close ?? "?"}`;
+  }
   if (!loc.openTime && !loc.closeTime) return "No hours";
   if (loc.openTime === "00:00" && loc.closeTime === "23:59") return "Always open";
   return `${loc.openTime ?? "?"}–${loc.closeTime ?? "?"}`;
@@ -33,6 +40,7 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
   const reload = useTripStore((s) => s.reload);
   const setNearbyAnchor = useTripStore((s) => s.setNearbyAnchor);
   const [dragOver, setDragOver] = useState(false);
+  const dayOfWeek = day.date ? new Date(day.date).getDay() : undefined;
   const [editingLabel, setEditingLabel] = useState(false);
   const [label, setLabel] = useState(day.label ?? "");
 
@@ -154,6 +162,7 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
               stop={stop}
               index={idx}
               isDragging={draggingStop?.id === stop.id}
+              dayOfWeek={dayOfWeek}
               onDragStart={onDragStart}
               onDropBefore={() => onDrop(day, idx)}
             />
@@ -168,11 +177,12 @@ interface StopRowProps {
   stop: ItineraryStop;
   index: number;
   isDragging: boolean;
+  dayOfWeek?: number;
   onDragStart: (stop: ItineraryStop) => void;
   onDropBefore: () => void;
 }
 
-function StopRow({ stop, index, isDragging, onDragStart, onDropBefore }: StopRowProps) {
+function StopRow({ stop, index, isDragging, dayOfWeek, onDragStart, onDropBefore }: StopRowProps) {
   const tripId = useTripStore((s) => s.tripId);
   const reload = useTripStore((s) => s.reload);
   const highlightedLocationId = useTripStore((s) => s.highlightedLocationId);
@@ -188,7 +198,7 @@ function StopRow({ stop, index, isDragging, onDragStart, onDropBefore }: StopRow
   const rowRef = useRef<HTMLLIElement>(null);
 
   const loc = stop.location;
-  const hoursText = formatHoursSubtext(loc);
+  const hoursText = formatHoursSubtext(loc, dayOfWeek);
   const durText = loc.visitDuration !== null ? formatDuration(loc.visitDuration) : "—";
 
   useEffect(() => {
@@ -252,34 +262,36 @@ function StopRow({ stop, index, isDragging, onDragStart, onDropBefore }: StopRow
         </div>
 
         {/* Actions */}
-        <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           <button
             onClick={(e) => { e.stopPropagation(); toggleAnchor(loc.id, !loc.isAnchor); }}
-            title={loc.isAnchor ? "Unmark as base" : "Mark as base — first stop every day"}
-            className={`text-sm leading-none px-0.5 transition-colors ${
-              loc.isAnchor
-                ? "text-amber-500 dark:text-amber-400 hover:text-amber-600"
-                : "text-gray-300 dark:text-gray-600 hover:text-amber-500 dark:hover:text-amber-400"
-            }`}
+            title={loc.isAnchor ? "Unmark as base (hotel / start point)" : "Mark as base — prepended to every day during optimization"}
+            aria-label={loc.isAnchor ? "Unmark as base" : "Mark as base"}
             aria-pressed={loc.isAnchor}
+            className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
+              loc.isAnchor
+                ? "text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                : "text-gray-400 dark:text-gray-500 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+            }`}
           >
-            ⚑
+            {loc.isAnchor ? <FlagFilledIcon /> : <FlagIcon />}
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); setNearbyAnchor(loc); }}
             disabled={loc.lat === null}
-            title="Find nearby"
-            className="text-sm leading-none px-0.5 text-gray-300 dark:text-gray-600 hover:text-brand-500 dark:hover:text-brand-400 disabled:cursor-not-allowed transition-colors"
+            title={loc.lat === null ? "No coordinates — run Enrich first" : "Find nearby places anchored to this location"}
+            aria-label="Find nearby places"
+            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
-            🔍
+            <SearchIcon />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); removeStop(); }}
-            title="Remove from trip"
-            className="text-base leading-none px-0.5 text-gray-300 dark:text-gray-600 hover:text-red-400 transition-colors"
-            aria-label="Remove stop"
+            title="Remove location from trip"
+            aria-label="Remove location"
+            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
           >
-            ×
+            <TrashIcon />
           </button>
         </div>
       </li>

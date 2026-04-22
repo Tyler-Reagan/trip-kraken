@@ -40,6 +40,7 @@ export async function POST(
       phone            = COALESCE(?, phone),
       openTime         = COALESCE(?, openTime),
       closeTime        = COALESCE(?, closeTime),
+      hoursJson        = COALESCE(?, hoursJson),
       enrichmentStatus = 'done'
     WHERE id = ?
   `);
@@ -67,6 +68,7 @@ export async function POST(
           result.phone ?? null,
           result.openTime ?? null,
           result.closeTime ?? null,
+          result.hoursJson ? JSON.stringify(result.hoursJson) : null,
           loc.id,
         ] as SQLInputValue[]
       );

@@ -191,12 +191,9 @@ export default function TripClient({ trip: initial }: Props) {
           {hasItinerary && activeView === "map" && <MapView />}
         </div>
 
-        {/* Right panel: NearbyDrawer takes priority over Inspector */}
-        {nearbyAnchor ? (
-          <NearbyDrawer />
-        ) : inspectedLocationId ? (
-          <LocationInspector />
-        ) : null}
+        {/* Right panels — both mount independently; Inspector shifts inward when Nearby opens */}
+        {inspectedLocationId && <LocationInspector />}
+        {nearbyAnchor && <NearbyDrawer />}
       </div>
 
       {showOptimize && <OptimizeModal />}

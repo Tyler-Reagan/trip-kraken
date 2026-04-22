@@ -81,6 +81,7 @@ export type LocationEnrichment = {
   phone: string | null;
   openTime: string | null;
   closeTime: string | null;
+  hoursJson: Record<string, { open: string; close: string | null }> | null;
 };
 
 type PlaceDetails = Omit<LocationEnrichment, "placeId" | "lat" | "lng">;
@@ -115,17 +116,34 @@ function toHHMM(time: string): string {
 }
 
 /**
- * Extract a representative openTime/closeTime from Place Details periods.
- * Prefers Monday (day = 1); falls back to the first available period.
+ * Build a full weekly hours map from Place Details periods.
+ * Also derives openTime/closeTime (Monday preferred) for the optimizer.
  */
-function extractHours(
+function extractWeeklyHours(
   periods: Array<{ open: { day: number; time: string }; close?: { day: number; time: string } }>
-): { openTime: string | null; closeTime: string | null } {
-  const weekday = periods.find((p) => p.open.day === 1) ?? periods[0];
-  if (!weekday) return { openTime: null, closeTime: null };
+): { openTime: string | null; closeTime: string | null; hoursJson: Record<string, { open: string; close: string | null }> | null } {
+  if (!periods.length) return { openTime: null, closeTime: null, hoursJson: null };
+
+  // 24/7: single period, day=0, time="0000", no close
+  if (periods.length === 1 && periods[0].open.time === "0000" && !periods[0].close) {
+    const allDay = { open: "00:00", close: "23:59" };
+    const hoursJson = Object.fromEntries([0,1,2,3,4,5,6].map((d) => [String(d), allDay]));
+    return { openTime: "00:00", closeTime: "23:59", hoursJson };
+  }
+
+  const hoursJson: Record<string, { open: string; close: string | null }> = {};
+  for (const period of periods) {
+    hoursJson[String(period.open.day)] = {
+      open: toHHMM(period.open.time),
+      close: period.close ? toHHMM(period.close.time) : null,
+    };
+  }
+
+  const rep = hoursJson["1"] ?? hoursJson[Object.keys(hoursJson).sort()[0]];
   return {
-    openTime: toHHMM(weekday.open.time),
-    closeTime: weekday.close ? toHHMM(weekday.close.time) : null,
+    openTime: rep?.open ?? null,
+    closeTime: rep?.close ?? null,
+    hoursJson: Object.keys(hoursJson).length > 0 ? hoursJson : null,
   };
 }
 
@@ -181,9 +199,9 @@ export async function getPlaceDetails(placeId: string): Promise<PlaceDetails | n
     const data = (await res.json()) as DetailsApiResponse;
     if (data.status !== "OK" || !data.result) return null;
     const r = data.result;
-    const { openTime, closeTime } = r.opening_hours?.periods
-      ? extractHours(r.opening_hours.periods)
-      : { openTime: null, closeTime: null };
+    const { openTime, closeTime, hoursJson } = r.opening_hours?.periods
+      ? extractWeeklyHours(r.opening_hours.periods)
+      : { openTime: null, closeTime: null, hoursJson: null };
     return {
       rating: r.rating ?? null,
       reviewCount: r.user_ratings_total ?? null,
@@ -193,6 +211,7 @@ export async function getPlaceDetails(placeId: string): Promise<PlaceDetails | n
       phone: r.formatted_phone_number ?? null,
       openTime,
       closeTime,
+      hoursJson,
     };
   } catch {
     return null;

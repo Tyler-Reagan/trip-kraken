@@ -62,8 +62,8 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   _pollTimer: null,
 
   setTrip: (trip) => set({ trip, tripId: trip.id }),
-  setActiveView: (v) => set({ activeView: v }),
-  setSelectedDayNumber: (n) => set({ selectedDayNumber: n }),
+  setActiveView: (v) => set({ activeView: v, inspectedLocationId: null }),
+  setSelectedDayNumber: (n) => set({ selectedDayNumber: n, inspectedLocationId: null }),
   setHighlightedLocationId: (id) => set({ highlightedLocationId: id }),
   setInspectedLocationId: (id) => set({ inspectedLocationId: id }),
   setNearbyAnchor: (loc) => set({ nearbyAnchor: loc }),
