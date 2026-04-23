@@ -17,10 +17,10 @@ export async function POST(
   type LocationRow = {
     id: string; lat: number | null; lng: number | null; excluded: number;
     visitDuration: number | null; openTime: string | null; closeTime: string | null;
-    isAnchor: number; categories: string | null;
+    isLodging: number; categories: string | null;
   };
   const locations = getDb().prepare(
-    "SELECT id, lat, lng, excluded, visitDuration, openTime, closeTime, isAnchor, categories FROM Location WHERE tripId = ? AND excluded = 0"
+    "SELECT id, lat, lng, excluded, visitDuration, openTime, closeTime, isLodging, categories FROM Location WHERE tripId = ? AND excluded = 0"
   ).all(tripId) as LocationRow[];
 
   const tripExists = getDb().prepare("SELECT id FROM Trip WHERE id = ?").get(tripId);
@@ -39,7 +39,7 @@ export async function POST(
       ...(l.visitDuration != null ? { visitDuration: l.visitDuration } : {}),
       ...(l.openTime     != null ? { openTime:      l.openTime      } : {}),
       ...(l.closeTime    != null ? { closeTime:     l.closeTime     } : {}),
-      ...(l.isAnchor                                   ? { isAnchor: true }                                       : {}),
+      ...(l.isLodging                                  ? { isLodging: true }                                      : {}),
       ...(balanceCategories && l.categories != null ? { categories: JSON.parse(l.categories) as string[] } : {}),
     })),
     numDays,

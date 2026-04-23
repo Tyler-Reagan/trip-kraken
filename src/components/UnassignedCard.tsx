@@ -86,8 +86,8 @@ function UnassignedRow({ loc, onDragStart }: { loc: Location; onDragStart: () =>
   const tripId = useTripStore((s) => s.tripId);
   const trip = useTripStore((s) => s.trip);
   const reload = useTripStore((s) => s.reload);
-  const toggleAnchor = useTripStore((s) => s.toggleAnchor);
-  const setNearbyAnchor = useTripStore((s) => s.setNearbyAnchor);
+  const toggleLodging = useTripStore((s) => s.toggleLodging);
+  const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
 
@@ -108,7 +108,7 @@ function UnassignedRow({ loc, onDragStart }: { loc: Location; onDragStart: () =>
 
   function doUnmark() {
     setConfirmAction(null);
-    toggleAnchor(loc.id, false);
+    toggleLodging(loc.id, false);
   }
 
   return (
@@ -150,15 +150,15 @@ function UnassignedRow({ loc, onDragStart }: { loc: Location; onDragStart: () =>
         </p>
       </div>
 
-      {/* Inline confirmation — replaces action buttons for destructive base-location actions */}
+      {/* Inline confirmation — replaces action buttons for destructive lodging actions */}
       {confirmAction !== null ? (
         <div className="shrink-0 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
           <span className="text-xs text-amber-700 dark:text-amber-400 font-medium">
             {confirmAction === "delete"
-              ? "Permanently delete base location?"
+              ? "Permanently delete lodging?"
               : affectedDayNums.length > 0
-                ? `Unmark base? Affects Day${affectedDayNums.length > 1 ? "s " + affectedDayNums.join(", ") : " " + affectedDayNums[0]}.`
-                : "Unmark base?"}
+                ? `Remove lodging? Affects Day${affectedDayNums.length > 1 ? "s " + affectedDayNums.join(", ") : " " + affectedDayNums[0]}.`
+                : "Remove lodging?"}
           </span>
           <button
             onClick={confirmAction === "delete" ? doRemoveLocation : doUnmark}
@@ -179,21 +179,21 @@ function UnassignedRow({ loc, onDragStart }: { loc: Location; onDragStart: () =>
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (loc.isAnchor) { setConfirmAction("unmark"); } else { toggleAnchor(loc.id, true); }
+              if (loc.isLodging) { setConfirmAction("unmark"); } else { toggleLodging(loc.id, true); }
             }}
-            title={loc.isAnchor ? "Unmark as base (hotel / start point)" : "Mark as base — prepended to every day during optimization"}
-            aria-label={loc.isAnchor ? "Unmark as base" : "Mark as base"}
-            aria-pressed={loc.isAnchor}
+            title={loc.isLodging ? "Remove lodging status" : "Set as lodging — your hotel for this leg"}
+            aria-label={loc.isLodging ? "Remove lodging" : "Set as lodging"}
+            aria-pressed={loc.isLodging}
             className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
-              loc.isAnchor
+              loc.isLodging
                 ? "text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
                 : "text-gray-400 dark:text-gray-500 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-gray-100 dark:hover:bg-gray-800"
             }`}
           >
-            {loc.isAnchor ? <FlagFilledIcon /> : <FlagIcon />}
+            {loc.isLodging ? <FlagFilledIcon /> : <FlagIcon />}
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); setNearbyAnchor(loc, null); }}
+            onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, null); }}
             disabled={loc.lat === null}
             title={loc.lat === null ? "No coordinates — run Enrich first" : "Find nearby places anchored to this location"}
             aria-label="Find nearby places"
@@ -204,7 +204,7 @@ function UnassignedRow({ loc, onDragStart }: { loc: Location; onDragStart: () =>
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (loc.isAnchor) { setConfirmAction("delete"); } else { doRemoveLocation(); }
+              if (loc.isLodging) { setConfirmAction("delete"); } else { doRemoveLocation(); }
             }}
             title="Remove location from trip"
             aria-label="Remove location"

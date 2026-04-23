@@ -38,7 +38,7 @@ function formatHoursSubtext(loc: Location, dayOfWeek?: number): string {
 export default function DayCard({ day, draggingStop, draggingLocation, onDragStart, onDrop }: Props) {
   const tripId = useTripStore((s) => s.tripId);
   const reload = useTripStore((s) => s.reload);
-  const setNearbyAnchor = useTripStore((s) => s.setNearbyAnchor);
+  const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
   const [dragOver, setDragOver] = useState(false);
   const dayOfWeek = day.date ? new Date(day.date).getDay() : undefined;
   const [editingLabel, setEditingLabel] = useState(false);
@@ -47,8 +47,7 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
   const totalMinutes = day.stops.reduce((sum, s) => sum + (s.location.visitDuration ?? 0), 0);
   const anyHasDuration = day.stops.some((s) => s.location.visitDuration !== null);
   const isLightDay = anyHasDuration && totalMinutes < LIGHT_DAY_THRESHOLD && day.stops.length > 0;
-  const nearbyDefaultStop =
-    day.stops.find((s) => !s.location.isAnchor) ?? day.stops[0] ?? null;
+  const nearbyDefaultStop = day.stops[0] ?? null;
 
   const dateStr = day.date
     ? new Date(day.date).toLocaleDateString("en-US", {
@@ -138,7 +137,7 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
           </span>
           {nearbyDefaultStop && (
             <button
-              onClick={() => setNearbyAnchor(nearbyDefaultStop.location, day.id)}
+              onClick={() => setNearbySearchLocation(nearbyDefaultStop.location, day.id)}
               disabled={nearbyDefaultStop.location.lat === null}
               title="Find nearby stops for this day"
               className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 disabled:text-gray-300 dark:disabled:text-gray-600 transition-colors"
@@ -192,8 +191,8 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
   const setHighlightedLocationId = useTripStore((s) => s.setHighlightedLocationId);
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
-  const toggleAnchor = useTripStore((s) => s.toggleAnchor);
-  const setNearbyAnchor = useTripStore((s) => s.setNearbyAnchor);
+  const toggleLodging = useTripStore((s) => s.toggleLodging);
+  const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
 
   const isHighlighted = highlightedLocationId === stop.locationId;
   const isInspected = inspectedLocationId === stop.locationId;
@@ -223,7 +222,7 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
 
   function doUnmark() {
     setConfirmAction(null);
-    toggleAnchor(loc.id, false);
+    toggleLodging(loc.id, false);
   }
 
   return (
@@ -245,7 +244,7 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
             ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/30 border-brand-200 dark:border-brand-800"
             : isInspected
               ? "bg-gray-100 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700"
-              : loc.isAnchor
+              : loc.isLodging
                 ? "bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-900/30"
                 : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
           }`}
@@ -278,13 +277,13 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
           </p>
         </div>
 
-        {/* Inline confirmation — replaces action buttons for destructive base-location actions */}
+        {/* Inline confirmation — replaces action buttons for destructive lodging actions */}
         {confirmAction !== null ? (
           <div className="shrink-0 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
             <span className="text-xs text-amber-700 dark:text-amber-400 font-medium">
               {confirmAction === "delete"
-                ? `Remove base from Day${affectedDayNums.length > 1 ? "s " + affectedDayNums.join(", ") : " " + affectedDayNums[0]}?`
-                : `Unmark base? Affects Day${affectedDayNums.length > 1 ? "s " + affectedDayNums.join(", ") : " " + affectedDayNums[0]}.`}
+                ? `Remove lodging from Day${affectedDayNums.length > 1 ? "s " + affectedDayNums.join(", ") : " " + affectedDayNums[0]}?`
+                : `Remove lodging? Affects Day${affectedDayNums.length > 1 ? "s " + affectedDayNums.join(", ") : " " + affectedDayNums[0]}.`}
             </span>
             <button
               onClick={confirmAction === "delete" ? doRemoveStop : doUnmark}
@@ -305,21 +304,21 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (loc.isAnchor) { setConfirmAction("unmark"); } else { toggleAnchor(loc.id, true); }
+                if (loc.isLodging) { setConfirmAction("unmark"); } else { toggleLodging(loc.id, true); }
               }}
-              title={loc.isAnchor ? "Unmark as base (hotel / start point)" : "Mark as base — prepended to every day during optimization"}
-              aria-label={loc.isAnchor ? "Unmark as base" : "Mark as base"}
-              aria-pressed={loc.isAnchor}
+              title={loc.isLodging ? "Remove lodging status" : "Set as lodging — your hotel for this leg"}
+              aria-label={loc.isLodging ? "Remove lodging" : "Set as lodging"}
+              aria-pressed={loc.isLodging}
               className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
-                loc.isAnchor
+                loc.isLodging
                   ? "text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
                   : "text-gray-400 dark:text-gray-500 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-gray-100 dark:hover:bg-gray-800"
               }`}
             >
-              {loc.isAnchor ? <FlagFilledIcon /> : <FlagIcon />}
+              {loc.isLodging ? <FlagFilledIcon /> : <FlagIcon />}
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); setNearbyAnchor(loc, dayId); }}
+              onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, dayId); }}
               disabled={loc.lat === null}
               title={loc.lat === null ? "No coordinates — run Enrich first" : "Find nearby places anchored to this location"}
               aria-label="Find nearby places"
@@ -330,7 +329,7 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (loc.isAnchor) { setConfirmAction("delete"); } else { doRemoveStop(); }
+                if (loc.isLodging) { setConfirmAction("delete"); } else { doRemoveStop(); }
               }}
               title="Remove location from this day"
               aria-label="Remove location"

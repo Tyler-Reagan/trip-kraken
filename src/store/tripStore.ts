@@ -14,8 +14,8 @@ interface TripStore {
   selectedDayNumber: ScheduleFilter;
   highlightedLocationId: string | null;
   inspectedLocationId: string | null;
-  nearbyAnchor: Location | null;
-  nearbyAnchorDayId: string | null;
+  nearbySearchLocation: Location | null;
+  nearbySearchDayId: string | null;
   showOptimize: boolean;
   showAddLocation: boolean;
 
@@ -25,7 +25,7 @@ interface TripStore {
   setSelectedDayNumber: (n: ScheduleFilter) => void;
   setHighlightedLocationId: (id: string | null) => void;
   setInspectedLocationId: (id: string | null) => void;
-  setNearbyAnchor: (loc: Location | null, dayId?: string | null) => void;
+  setNearbySearchLocation: (loc: Location | null, dayId?: string | null) => void;
   setShowOptimize: (v: boolean) => void;
   setShowAddLocation: (v: boolean) => void;
 
@@ -34,7 +34,7 @@ interface TripStore {
   moveStop: (stopId: string, targetDayId: string, targetOrder: number) => Promise<void>;
   removeStop: (stopId: string) => Promise<void>;
   addLocationToDay: (locationId: string, dayId: string) => Promise<void>;
-  toggleAnchor: (locationId: string, isAnchor: boolean) => Promise<void>;
+  toggleLodging: (locationId: string, isLodging: boolean) => Promise<void>;
   enrich: () => Promise<void>;
 
   // Enrichment progress (shown during manual retry)
@@ -55,8 +55,8 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   selectedDayNumber: null,
   highlightedLocationId: null,
   inspectedLocationId: null,
-  nearbyAnchor: null,
-  nearbyAnchorDayId: null,
+  nearbySearchLocation: null,
+  nearbySearchDayId: null,
   showOptimize: false,
   showAddLocation: false,
   isEnriching: false,
@@ -68,7 +68,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   setSelectedDayNumber: (n) => set({ selectedDayNumber: n, inspectedLocationId: null }),
   setHighlightedLocationId: (id) => set({ highlightedLocationId: id }),
   setInspectedLocationId: (id) => set({ inspectedLocationId: id }),
-  setNearbyAnchor: (loc, dayId) => set({ nearbyAnchor: loc, nearbyAnchorDayId: dayId ?? null }),
+  setNearbySearchLocation: (loc, dayId) => set({ nearbySearchLocation: loc, nearbySearchDayId: dayId ?? null }),
   setShowOptimize: (v) => set({ showOptimize: v }),
   setShowAddLocation: (v) => set({ showAddLocation: v }),
 
@@ -120,13 +120,13 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     await get().reload();
   },
 
-  toggleAnchor: async (locationId, isAnchor) => {
+  toggleLodging: async (locationId, isLodging) => {
     const tripId = get().tripId;
     if (!tripId) return;
     await fetch(`/api/trips/${tripId}/locations/${locationId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isAnchor, ...(isAnchor ? { visitDuration: null } : {}) }),
+      body: JSON.stringify({ isLodging, ...(isLodging ? { visitDuration: null } : {}) }),
     });
     await get().reload();
   },

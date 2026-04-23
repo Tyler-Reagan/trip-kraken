@@ -109,9 +109,9 @@ export default function MapView() {
     const points: FeatureCollection<Point> = { type: "FeatureCollection", features: [] };
     const routes: FeatureCollection<LineString> = { type: "FeatureCollection", features: [] };
 
-    // Collect anchor/base locations across all days before rendering points.
-    // A base appears in every day as stop 0 — we deduplicate into one feature.
-    const anchorMap: Record<string, { locationId: string; name: string; lat: number; lng: number; dayNumbers: number[] }> = {};
+    // Collect lodging locations across all days before rendering points.
+    // Lodging appears in every day as stop 0 — we deduplicate into one feature.
+    const lodgingMap: Record<string, { locationId: string; name: string; lat: number; lng: number; dayNumbers: number[] }> = {};
 
     for (const day of (trip?.days ?? [])) {
       const rgb = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length];
@@ -124,17 +124,17 @@ export default function MapView() {
           s.location.lat !== null && s.location.lng !== null
       );
 
-      // Track non-anchor position within this day for stop numbering.
-      let nonAnchorIndex = 0;
+      // Track non-lodging position within this day for stop numbering.
+      let nonLodgingIndex = 0;
 
       for (const stop of geocodedStops) {
-        if (stop.location.isAnchor) {
-          // Accumulate day membership; will render as a single base feature below.
-          const existing = anchorMap[stop.location.id];
+        if (stop.location.isLodging) {
+          // Accumulate day membership; will render as a single lodging feature below.
+          const existing = lodgingMap[stop.location.id];
           if (existing) {
             existing.dayNumbers.push(day.dayNumber);
           } else {
-            anchorMap[stop.location.id] = {
+            lodgingMap[stop.location.id] = {
               locationId: stop.location.id,
               name: stop.location.name,
               lat: stop.location.lat,
@@ -145,7 +145,7 @@ export default function MapView() {
           continue;
         }
 
-        nonAnchorIndex++;
+        nonLodgingIndex++;
         points.features.push({
           type: "Feature",
           geometry: { type: "Point", coordinates: [stop.location.lng, stop.location.lat] },
@@ -153,7 +153,7 @@ export default function MapView() {
             locationId: stop.location.id,
             name: stop.location.name,
             dayNumber: day.dayNumber,
-            order: nonAnchorIndex,
+            order: nonLodgingIndex,
             color,
             alpha,
             isHighlighted: stop.location.id === highlightedLocationId ? 1 : 0,
@@ -174,21 +174,21 @@ export default function MapView() {
       }
     }
 
-    // Render each base location as a single neutral-colored feature.
+    // Render each lodging location as a single neutral-colored feature.
     const BASE_COLOR = "#e5e7eb"; // gray-200
-    for (const anchor of Object.values(anchorMap)) {
-      const sortedDays = anchor.dayNumbers.slice().sort((a: number, b: number) => a - b);
+    for (const lodging of Object.values(lodgingMap)) {
+      const sortedDays = lodging.dayNumbers.slice().sort((a: number, b: number) => a - b);
       const isActive = selectedDayNumber === null || (typeof selectedDayNumber === "number" && sortedDays.includes(selectedDayNumber));
       points.features.push({
         type: "Feature",
-        geometry: { type: "Point", coordinates: [anchor.lng, anchor.lat] },
+        geometry: { type: "Point", coordinates: [lodging.lng, lodging.lat] },
         properties: {
-          locationId: anchor.locationId,
-          name: anchor.name,
+          locationId: lodging.locationId,
+          name: lodging.name,
           dayNumbers: JSON.stringify(sortedDays),
           color: BASE_COLOR,
           alpha: isActive ? 1 : 0.18,
-          isHighlighted: anchor.locationId === highlightedLocationId ? 1 : 0,
+          isHighlighted: lodging.locationId === highlightedLocationId ? 1 : 0,
           isBase: 1,
         },
       });
@@ -300,7 +300,7 @@ export default function MapView() {
             <strong className="font-semibold">{tooltip.name}</strong>
             <br />
             {tooltip.isBase
-              ? <span className="opacity-70">Base · Days {tooltip.dayNumbers!.join(", ")}</span>
+              ? <span className="opacity-70">Lodging · Days {tooltip.dayNumbers!.join(", ")}</span>
               : <span className="opacity-70">Day {tooltip.dayNumber} · Stop {tooltip.order}</span>
             }
           </div>
@@ -310,13 +310,13 @@ export default function MapView() {
       {/* Legend */}
       {mapReady && (
         <div className="absolute bottom-3 left-3 bg-black/70 text-white text-xs rounded-lg px-3 py-2 space-y-1 backdrop-blur-sm pointer-events-none">
-          {trip.locations.some((l) => l.isAnchor && l.lat !== null) && (
+          {trip.locations.some((l) => l.isLodging && l.lat !== null) && (
             <div className="flex items-center gap-2">
               <span
                 className="inline-block w-3 h-3 rounded-full shrink-0 border-2"
                 style={{ background: "#e5e7eb", borderColor: "#374151" }}
               />
-              <span>Base</span>
+              <span>Lodging</span>
             </div>
           )}
           {trip.days.map((day) => {

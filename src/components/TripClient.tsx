@@ -28,7 +28,7 @@ export default function TripClient({ trip: initial }: Props) {
       showOptimize: !initial.numDays,
       activeView: "itinerary",
       selectedDayNumber: null,
-      nearbyAnchor: null,
+      nearbySearchLocation: null,
       highlightedLocationId: null,
       inspectedLocationId: null,
     });
@@ -37,7 +37,7 @@ export default function TripClient({ trip: initial }: Props) {
   const trip = useTripStore((s) => s.trip) ?? initial;
   const activeView = useTripStore((s) => s.activeView);
   const selectedDayNumber = useTripStore((s) => s.selectedDayNumber);
-  const nearbyAnchor = useTripStore((s) => s.nearbyAnchor);
+  const nearbySearchLocation = useTripStore((s) => s.nearbySearchLocation);
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
   const showOptimize = useTripStore((s) => s.showOptimize);
   const showAddLocation = useTripStore((s) => s.showAddLocation);
@@ -193,7 +193,7 @@ export default function TripClient({ trip: initial }: Props) {
 
         {/* Right panels — both mount independently; Inspector shifts inward when Nearby opens */}
         {inspectedLocationId && <LocationInspector />}
-        {nearbyAnchor && <NearbyDrawer />}
+        {nearbySearchLocation && <NearbyDrawer />}
       </div>
 
       {showOptimize && <OptimizeModal />}

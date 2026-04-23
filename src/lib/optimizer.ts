@@ -26,7 +26,7 @@ export interface LocationInput {
   visitDuration?: number;   // minutes; used for day duration balancing
   openTime?: string;        // "HH:MM" 24-hour; soft time-window constraint
   closeTime?: string;       // "HH:MM" 24-hour; soft time-window constraint
-  isAnchor?: boolean;       // hotel/base: prepended to every day; excluded from clustering
+  isLodging?: boolean;      // hotel/lodging: prepended to every day; excluded from clustering
   categories?: string[];    // Google Places categories; used for cross-day balance
 }
 
@@ -45,23 +45,23 @@ export function optimizeItinerary(
 
   const days = numDays > 0 ? numDays : 1;
 
-  // Extract anchor (hotel/base) — excluded from clustering, prepended to every day
-  const anchor = locations.find((l) => l.isAnchor);
-  const nonAnchor = locations.filter((l) => !l.isAnchor);
+  // Extract lodging — excluded from clustering, prepended to every day
+  const lodging = locations.find((l) => l.isLodging);
+  const nonLodging = locations.filter((l) => !l.isLodging);
 
   // Filter out locations without valid coordinates
-  const valid = nonAnchor.filter((l) => l.lat !== 0 || l.lng !== 0);
-  const invalid = nonAnchor.filter((l) => l.lat === 0 && l.lng === 0);
+  const valid = nonLodging.filter((l) => l.lat !== 0 || l.lng !== 0);
+  const invalid = nonLodging.filter((l) => l.lat === 0 && l.lng === 0);
 
-  // If fewer non-anchor locations than days, each gets its own day
+  // If fewer non-lodging locations than days, each gets its own day
   if (valid.length <= days) {
     const plans: DayPlan[] = valid.map((loc, i) => ({
       dayNumber: i + 1,
-      locationIds: anchor ? [anchor.id, loc.id] : [loc.id],
+      locationIds: lodging ? [lodging.id, loc.id] : [loc.id],
     }));
-    // Pad remaining days as empty (still include anchor)
+    // Pad remaining days as empty (still include lodging)
     for (let d = valid.length + 1; d <= days; d++) {
-      plans.push({ dayNumber: d, locationIds: anchor ? [anchor.id] : [] });
+      plans.push({ dayNumber: d, locationIds: lodging ? [lodging.id] : [] });
     }
     // Append invalid locations to last day
     if (invalid.length > 0 && plans.length > 0) {
@@ -70,17 +70,17 @@ export function optimizeItinerary(
     return plans;
   }
 
-  // Phase 1: k-means clustering (non-anchor locations only)
+  // Phase 1: k-means clustering (non-lodging locations only)
   const clusters = kMeans(valid, days, dayBudgetMinutes);
 
   // Phase 2: nearest-neighbor TSP + 2-opt refinement within each cluster
-  // Anchor is passed to nearestNeighborOrder so it starts the route from the anchor
+  // Lodging is passed to nearestNeighborOrder so it starts the route from there
   const plans: DayPlan[] = clusters.map((cluster, i) => {
-    const ordered = twoOpt(nearestNeighborOrder(cluster, dayStartMins, anchor), dayStartMins);
+    const ordered = twoOpt(nearestNeighborOrder(cluster, dayStartMins, lodging), dayStartMins);
     const stopIds = ordered.map((l) => l.id);
     return {
       dayNumber: i + 1,
-      locationIds: anchor ? [anchor.id, ...stopIds] : stopIds,
+      locationIds: lodging ? [lodging.id, ...stopIds] : stopIds,
     };
   });
 
@@ -246,7 +246,7 @@ function nearestCentroidIndex(
 function nearestNeighborOrder(
   locations: LocationInput[],
   dayStartMins = 9 * 60,
-  anchor?: LocationInput
+  lodging?: LocationInput
 ): LocationInput[] {
   if (locations.length <= 1) return locations;
 
@@ -254,10 +254,10 @@ function nearestNeighborOrder(
   const ordered: LocationInput[] = [];
   let timeMins = dayStartMins;
 
-  if (anchor) {
-    // Start greedy walk from anchor's position (anchor itself is not in the stop list)
-    ordered.push({ ...anchor, id: "__anchor_start__" });
-    timeMins += anchor.visitDuration ?? DEFAULT_VISIT_MINS;
+  if (lodging) {
+    // Start greedy walk from lodging's position (lodging itself is not in the stop list)
+    ordered.push({ ...lodging, id: "__lodging_start__" });
+    timeMins += lodging.visitDuration ?? DEFAULT_VISIT_MINS;
   } else {
     // Fall back to northernmost heuristic
     unvisited.sort((a, b) => b.lat - a.lat);
@@ -284,8 +284,8 @@ function nearestNeighborOrder(
     timeMins += haversine(last, next) / AVG_SPEED_KM_PER_MIN + (next.visitDuration ?? DEFAULT_VISIT_MINS);
   }
 
-  // Remove the sentinel anchor entry used only as a starting position
-  return ordered.filter((l) => l.id !== "__anchor_start__");
+  // Remove the sentinel lodging entry used only as a starting position
+  return ordered.filter((l) => l.id !== "__lodging_start__");
 }
 
 // ---------------------------------------------------------------------------
