@@ -168,8 +168,8 @@ export default function LocationInspector() {
         <HoursDisplay loc={loc} />
       </div>
 
-      {/* Duration editor */}
-      <DurationEditor loc={loc} />
+      {/* Duration editor — hidden for base/anchor locations */}
+      {!loc.isAnchor && <DurationEditor loc={loc} />}
 
       {/* Categories */}
       {loc.categories && loc.categories.length > 0 && (

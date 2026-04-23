@@ -138,7 +138,7 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
           </span>
           {nearbyDefaultStop && (
             <button
-              onClick={() => setNearbyAnchor(nearbyDefaultStop.location)}
+              onClick={() => setNearbyAnchor(nearbyDefaultStop.location, day.id)}
               disabled={nearbyDefaultStop.location.lat === null}
               title="Find nearby stops for this day"
               className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 disabled:text-gray-300 dark:disabled:text-gray-600 transition-colors"
@@ -163,6 +163,7 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
               index={idx}
               isDragging={draggingStop?.id === stop.id}
               dayOfWeek={dayOfWeek}
+              dayId={day.id}
               onDragStart={onDragStart}
               onDropBefore={() => onDrop(day, idx)}
             />
@@ -178,12 +179,14 @@ interface StopRowProps {
   index: number;
   isDragging: boolean;
   dayOfWeek?: number;
+  dayId: string;
   onDragStart: (stop: ItineraryStop) => void;
   onDropBefore: () => void;
 }
 
-function StopRow({ stop, index, isDragging, dayOfWeek, onDragStart, onDropBefore }: StopRowProps) {
+function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDropBefore }: StopRowProps) {
   const tripId = useTripStore((s) => s.tripId);
+  const trip = useTripStore((s) => s.trip);
   const reload = useTripStore((s) => s.reload);
   const highlightedLocationId = useTripStore((s) => s.highlightedLocationId);
   const setHighlightedLocationId = useTripStore((s) => s.setHighlightedLocationId);
@@ -195,11 +198,16 @@ function StopRow({ stop, index, isDragging, dayOfWeek, onDragStart, onDropBefore
   const isHighlighted = highlightedLocationId === stop.locationId;
   const isInspected = inspectedLocationId === stop.locationId;
   const [dropTarget, setDropTarget] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<"delete" | "unmark" | null>(null);
   const rowRef = useRef<HTMLLIElement>(null);
 
   const loc = stop.location;
   const hoursText = formatHoursSubtext(loc, dayOfWeek);
   const durText = loc.visitDuration !== null ? formatDuration(loc.visitDuration) : "—";
+
+  const affectedDayNums = trip
+    ? trip.days.filter((d) => d.stops.some((s) => s.locationId === loc.id)).map((d) => d.dayNumber)
+    : [];
 
   useEffect(() => {
     if (isHighlighted && rowRef.current) {
@@ -207,9 +215,15 @@ function StopRow({ stop, index, isDragging, dayOfWeek, onDragStart, onDropBefore
     }
   }, [isHighlighted]);
 
-  async function removeStop() {
+  async function doRemoveStop() {
+    setConfirmAction(null);
     await fetch(`/api/trips/${tripId}/stops/${stop.id}`, { method: "DELETE" });
     reload();
+  }
+
+  function doUnmark() {
+    setConfirmAction(null);
+    toggleAnchor(loc.id, false);
   }
 
   return (
@@ -223,7 +237,7 @@ function StopRow({ stop, index, isDragging, dayOfWeek, onDragStart, onDropBefore
 
       <li
         ref={rowRef}
-        draggable
+        draggable={confirmAction === null}
         onDragStart={() => onDragStart(stop)}
         className={`group flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none
           ${isDragging ? "opacity-40" : ""}
@@ -231,10 +245,13 @@ function StopRow({ stop, index, isDragging, dayOfWeek, onDragStart, onDropBefore
             ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/30 border-brand-200 dark:border-brand-800"
             : isInspected
               ? "bg-gray-100 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700"
-              : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
+              : loc.isAnchor
+                ? "bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-900/30"
+                : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
           }`}
         onClick={(e) => {
           if ((e.target as HTMLElement).closest("button")) return;
+          if (confirmAction) { setConfirmAction(null); return; }
           if (isHighlighted) { setHighlightedLocationId(null); return; }
           setInspectedLocationId(isInspected ? null : stop.locationId);
         }}
@@ -261,39 +278,68 @@ function StopRow({ stop, index, isDragging, dayOfWeek, onDragStart, onDropBefore
           </p>
         </div>
 
-        {/* Actions */}
-        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-          <button
-            onClick={(e) => { e.stopPropagation(); toggleAnchor(loc.id, !loc.isAnchor); }}
-            title={loc.isAnchor ? "Unmark as base (hotel / start point)" : "Mark as base — prepended to every day during optimization"}
-            aria-label={loc.isAnchor ? "Unmark as base" : "Mark as base"}
-            aria-pressed={loc.isAnchor}
-            className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
-              loc.isAnchor
-                ? "text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-                : "text-gray-400 dark:text-gray-500 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-            }`}
-          >
-            {loc.isAnchor ? <FlagFilledIcon /> : <FlagIcon />}
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); setNearbyAnchor(loc); }}
-            disabled={loc.lat === null}
-            title={loc.lat === null ? "No coordinates — run Enrich first" : "Find nearby places anchored to this location"}
-            aria-label="Find nearby places"
-            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          >
-            <SearchIcon />
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); removeStop(); }}
-            title="Remove location from trip"
-            aria-label="Remove location"
-            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-          >
-            <TrashIcon />
-          </button>
-        </div>
+        {/* Inline confirmation — replaces action buttons for destructive base-location actions */}
+        {confirmAction !== null ? (
+          <div className="shrink-0 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <span className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+              {confirmAction === "delete"
+                ? `Remove base from Day${affectedDayNums.length > 1 ? "s " + affectedDayNums.join(", ") : " " + affectedDayNums[0]}?`
+                : `Unmark base? Affects Day${affectedDayNums.length > 1 ? "s " + affectedDayNums.join(", ") : " " + affectedDayNums[0]}.`}
+            </span>
+            <button
+              onClick={confirmAction === "delete" ? doRemoveStop : doUnmark}
+              className="text-xs px-2 py-0.5 rounded bg-red-500 text-white hover:bg-red-600 transition-colors font-medium"
+            >
+              Yes
+            </button>
+            <button
+              onClick={() => setConfirmAction(null)}
+              className="text-xs px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          /* Normal action buttons */
+          <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (loc.isAnchor) { setConfirmAction("unmark"); } else { toggleAnchor(loc.id, true); }
+              }}
+              title={loc.isAnchor ? "Unmark as base (hotel / start point)" : "Mark as base — prepended to every day during optimization"}
+              aria-label={loc.isAnchor ? "Unmark as base" : "Mark as base"}
+              aria-pressed={loc.isAnchor}
+              className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
+                loc.isAnchor
+                  ? "text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                  : "text-gray-400 dark:text-gray-500 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+              }`}
+            >
+              {loc.isAnchor ? <FlagFilledIcon /> : <FlagIcon />}
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setNearbyAnchor(loc, dayId); }}
+              disabled={loc.lat === null}
+              title={loc.lat === null ? "No coordinates — run Enrich first" : "Find nearby places anchored to this location"}
+              aria-label="Find nearby places"
+              className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              <SearchIcon />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (loc.isAnchor) { setConfirmAction("delete"); } else { doRemoveStop(); }
+              }}
+              title="Remove location from this day"
+              aria-label="Remove location"
+              className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+            >
+              <TrashIcon />
+            </button>
+          </div>
+        )}
       </li>
     </>
   );

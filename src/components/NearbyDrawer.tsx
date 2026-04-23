@@ -28,13 +28,17 @@ export default function NearbyDrawer() {
   const tripId = useTripStore((s) => s.tripId);
   const trip = useTripStore((s) => s.trip);
   const anchorLocation = useTripStore((s) => s.nearbyAnchor);
+  const nearbyAnchorDayId = useTripStore((s) => s.nearbyAnchorDayId);
   const setNearbyAnchor = useTripStore((s) => s.setNearbyAnchor);
   const reload = useTripStore((s) => s.reload);
 
   // Derived values — safe with optional chaining since hooks must run first
-  const anchorDay = trip && anchorLocation
-    ? (trip.days.find((d) => d.stops.some((s) => s.locationId === anchorLocation.id)) ?? null)
-    : null;
+  // Use the stored dayId when available (avoids picking Day 1 for base locations that appear on every day)
+  const anchorDay = trip && nearbyAnchorDayId
+    ? (trip.days.find((d) => d.id === nearbyAnchorDayId) ?? null)
+    : trip && anchorLocation
+      ? (trip.days.find((d) => d.stops.some((s) => s.locationId === anchorLocation.id)) ?? null)
+      : null;
   const anchorDayId = anchorDay?.id ?? null;
   // All stops on the anchor's day — used to populate the anchor picker dropdown.
   const dayStops = anchorDay?.stops ?? [];
@@ -198,7 +202,7 @@ export default function NearbyDrawer() {
               value={anchorLocation.id}
               onChange={(e) => {
                 const picked = dayStops.find((s) => s.location.id === e.target.value);
-                if (picked) setNearbyAnchor(picked.location);
+                if (picked) setNearbyAnchor(picked.location, nearbyAnchorDayId);
               }}
               className="w-full text-xs text-gray-500 dark:text-gray-400 bg-transparent border-none outline-none cursor-pointer truncate mt-0.5 pr-1"
             >
