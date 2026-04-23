@@ -42,6 +42,7 @@ function openDb(): DatabaseSync {
     "ALTER TABLE Location ADD COLUMN closeTime TEXT",
     "ALTER TABLE Location ADD COLUMN hoursJson TEXT",
     "ALTER TABLE Location ADD COLUMN isAnchor INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE Location RENAME COLUMN isAnchor TO isLodging",
     "ALTER TABLE Location ADD COLUMN phone TEXT",
     "ALTER TABLE Location ADD COLUMN enrichmentStatus TEXT NOT NULL DEFAULT 'done'",
   ];
@@ -89,7 +90,7 @@ type TripRow = {
 type LocationRow = {
   id: string; tripId: string; name: string; address: string | null;
   lat: number | null; lng: number | null; placeId: string | null;
-  excluded: number; isAnchor: number; note: string | null;
+  excluded: number; isLodging: number; note: string | null;
   rating: number | null; reviewCount: number | null; categories: string | null;
   visitDuration: number | null;
   openTime: string | null;
@@ -106,7 +107,7 @@ type StopRow = { id: string; dayId: string; locationId: string; ord: number; not
 type StopWithLocRow = StopRow & {
   loc_id: string; loc_tripId: string; loc_name: string;
   loc_address: string | null; loc_lat: number | null; loc_lng: number | null;
-  loc_placeId: string | null; loc_excluded: number; loc_isAnchor: number; loc_note: string | null;
+  loc_placeId: string | null; loc_excluded: number; loc_isLodging: number; loc_note: string | null;
   loc_rating: number | null; loc_reviewCount: number | null; loc_categories: string | null;
   loc_visitDuration: number | null;
   loc_openTime: string | null;
@@ -132,7 +133,7 @@ function parseLocation(r: LocationRow): Location {
   return {
     ...r,
     excluded: r.excluded !== 0,
-    isAnchor: r.isAnchor !== 0,
+    isLodging: r.isLodging !== 0,
     categories: r.categories ? JSON.parse(r.categories) : null,
     hoursJson: r.hoursJson ? JSON.parse(r.hoursJson) : null,
     phone: r.phone ?? null,
@@ -154,7 +155,7 @@ function parseStopWithLoc(r: StopWithLocRow): ItineraryStop {
       openTime: r.loc_openTime ?? null,
       closeTime: r.loc_closeTime ?? null,
       hoursJson: r.loc_hoursJson ? JSON.parse(r.loc_hoursJson) : null,
-      isAnchor: r.loc_isAnchor !== 0,
+      isLodging: r.loc_isLodging !== 0,
       phone: r.loc_phone ?? null,
       enrichmentStatus: (r.loc_enrichmentStatus ?? 'done') as 'done' | 'pending' | 'failed',
     },
@@ -213,7 +214,7 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
            l.categories as loc_categories, l.visitDuration as loc_visitDuration,
            l.openTime as loc_openTime, l.closeTime as loc_closeTime,
            l.hoursJson as loc_hoursJson,
-           l.isAnchor as loc_isAnchor, l.phone as loc_phone,
+           l.isLodging as loc_isLodging, l.phone as loc_phone,
            l.enrichmentStatus as loc_enrichmentStatus
     FROM ItineraryStop s
     JOIN Location l ON l.id = s.locationId

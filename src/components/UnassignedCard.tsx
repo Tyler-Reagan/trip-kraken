@@ -84,24 +84,36 @@ export default function UnassignedCard({ locations, draggingStop, onDragStartLoc
 
 function UnassignedRow({ loc, onDragStart }: { loc: Location; onDragStart: () => void }) {
   const tripId = useTripStore((s) => s.tripId);
+  const trip = useTripStore((s) => s.trip);
   const reload = useTripStore((s) => s.reload);
-  const toggleAnchor = useTripStore((s) => s.toggleAnchor);
-  const setNearbyAnchor = useTripStore((s) => s.setNearbyAnchor);
+  const toggleLodging = useTripStore((s) => s.toggleLodging);
+  const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
 
   const isInspected = inspectedLocationId === loc.id;
+  const [confirmAction, setConfirmAction] = useState<"delete" | "unmark" | null>(null);
   const hoursText = formatHoursSubtext(loc);
   const durText = loc.visitDuration !== null ? formatDuration(loc.visitDuration) : "—";
 
-  async function removeLocation() {
+  const affectedDayNums = trip
+    ? trip.days.filter((d) => d.stops.some((s) => s.locationId === loc.id)).map((d) => d.dayNumber)
+    : [];
+
+  async function doRemoveLocation() {
+    setConfirmAction(null);
     await fetch(`/api/trips/${tripId}/locations/${loc.id}`, { method: "DELETE" });
     reload();
   }
 
+  function doUnmark() {
+    setConfirmAction(null);
+    toggleLodging(loc.id, false);
+  }
+
   return (
     <li
-      draggable
+      draggable={confirmAction === null}
       onDragStart={onDragStart}
       className={`group flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none
         ${isInspected
@@ -110,6 +122,7 @@ function UnassignedRow({ loc, onDragStart }: { loc: Location; onDragStart: () =>
         }`}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("button")) return;
+        if (confirmAction) { setConfirmAction(null); return; }
         setInspectedLocationId(isInspected ? null : loc.id);
       }}
     >
@@ -137,39 +150,70 @@ function UnassignedRow({ loc, onDragStart }: { loc: Location; onDragStart: () =>
         </p>
       </div>
 
-      {/* Actions */}
-      <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-        <button
-          onClick={(e) => { e.stopPropagation(); toggleAnchor(loc.id, !loc.isAnchor); }}
-          title={loc.isAnchor ? "Unmark as base (hotel / start point)" : "Mark as base — prepended to every day during optimization"}
-          aria-label={loc.isAnchor ? "Unmark as base" : "Mark as base"}
-          aria-pressed={loc.isAnchor}
-          className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
-            loc.isAnchor
-              ? "text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-              : "text-gray-400 dark:text-gray-500 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-          }`}
-        >
-          {loc.isAnchor ? <FlagFilledIcon /> : <FlagIcon />}
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); setNearbyAnchor(loc); }}
-          disabled={loc.lat === null}
-          title={loc.lat === null ? "No coordinates — run Enrich first" : "Find nearby places anchored to this location"}
-          aria-label="Find nearby places"
-          className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-        >
-          <SearchIcon />
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); removeLocation(); }}
-          title="Remove location from trip"
-          aria-label="Remove location"
-          className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-        >
-          <TrashIcon />
-        </button>
-      </div>
+      {/* Inline confirmation — replaces action buttons for destructive lodging actions */}
+      {confirmAction !== null ? (
+        <div className="shrink-0 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <span className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+            {confirmAction === "delete"
+              ? "Permanently delete lodging?"
+              : affectedDayNums.length > 0
+                ? `Remove lodging? Affects Day${affectedDayNums.length > 1 ? "s " + affectedDayNums.join(", ") : " " + affectedDayNums[0]}.`
+                : "Remove lodging?"}
+          </span>
+          <button
+            onClick={confirmAction === "delete" ? doRemoveLocation : doUnmark}
+            className="text-xs px-2 py-0.5 rounded bg-red-500 text-white hover:bg-red-600 transition-colors font-medium"
+          >
+            Yes
+          </button>
+          <button
+            onClick={() => setConfirmAction(null)}
+            className="text-xs px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        /* Normal action buttons */
+        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (loc.isLodging) { setConfirmAction("unmark"); } else { toggleLodging(loc.id, true); }
+            }}
+            title={loc.isLodging ? "Remove lodging status" : "Set as lodging — your hotel for this leg"}
+            aria-label={loc.isLodging ? "Remove lodging" : "Set as lodging"}
+            aria-pressed={loc.isLodging}
+            className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
+              loc.isLodging
+                ? "text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                : "text-gray-400 dark:text-gray-500 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+            }`}
+          >
+            {loc.isLodging ? <FlagFilledIcon /> : <FlagIcon />}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, null); }}
+            disabled={loc.lat === null}
+            title={loc.lat === null ? "No coordinates — run Enrich first" : "Find nearby places anchored to this location"}
+            aria-label="Find nearby places"
+            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <SearchIcon />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (loc.isLodging) { setConfirmAction("delete"); } else { doRemoveLocation(); }
+            }}
+            title="Remove location from trip"
+            aria-label="Remove location"
+            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+          >
+            <TrashIcon />
+          </button>
+        </div>
+      )}
     </li>
   );
 }

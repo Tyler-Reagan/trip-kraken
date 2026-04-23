@@ -16,7 +16,7 @@ export async function DELETE(
   db.prepare("DELETE FROM ItineraryStop WHERE id = ?").run(stopId);
 
   // Orphan-delete the location unless caller requested keepLocation (unschedule use-case).
-  // Anchors are never orphan-deleted.
+  // Lodging is never orphan-deleted.
   if (!keepLocation && stop) {
     const { remaining } = db
       .prepare("SELECT COUNT(*) as remaining FROM ItineraryStop WHERE locationId = ?")
@@ -24,10 +24,10 @@ export async function DELETE(
 
     if (remaining === 0) {
       const loc = db
-        .prepare("SELECT isAnchor FROM Location WHERE id = ? AND tripId = ?")
-        .get(stop.locationId, tripId) as { isAnchor: number } | undefined;
+        .prepare("SELECT isLodging FROM Location WHERE id = ? AND tripId = ?")
+        .get(stop.locationId, tripId) as { isLodging: number } | undefined;
 
-      if (loc && !loc.isAnchor) {
+      if (loc && !loc.isLodging) {
         db.prepare("DELETE FROM Location WHERE id = ?").run(stop.locationId);
       }
     }

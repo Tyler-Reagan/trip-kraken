@@ -75,6 +75,7 @@ export type LocationEnrichment = {
   placeId: string;
   lat: number;
   lng: number;
+  address: string | null;
   rating: number | null;
   reviewCount: number | null;
   categories: string[];
@@ -89,6 +90,7 @@ type PlaceDetails = Omit<LocationEnrichment, "placeId" | "lat" | "lng">;
 type DetailsApiResponse = {
   status: string;
   result?: {
+    formatted_address?: string;
     rating?: number;
     user_ratings_total?: number;
     types?: string[];
@@ -191,7 +193,7 @@ export async function getPlaceDetails(placeId: string): Promise<PlaceDetails | n
   try {
     const params = new URLSearchParams({
       place_id: placeId,
-      fields: "rating,user_ratings_total,types,formatted_phone_number,opening_hours",
+      fields: "formatted_address,rating,user_ratings_total,types,formatted_phone_number,opening_hours",
       key: apiKey,
     });
     const res = await fetch(`${DETAILS_BASE}?${params}`);
@@ -203,6 +205,7 @@ export async function getPlaceDetails(placeId: string): Promise<PlaceDetails | n
       ? extractWeeklyHours(r.opening_hours.periods)
       : { openTime: null, closeTime: null, hoursJson: null };
     return {
+      address: r.formatted_address ?? null,
       rating: r.rating ?? null,
       reviewCount: r.user_ratings_total ?? null,
       categories: (r.types ?? []).filter(

@@ -30,6 +30,7 @@ export async function POST(
   let enrichmentStatus: "done" | "pending" | "failed" = "done";
 
   // Inline enrichment data for Path B (resolved immediately)
+  let inlineAddress: string | null = address ?? null;
   let inlinePhone: string | null = null;
   let inlineOpenTime: string | null = null;
   let inlineCloseTime: string | null = null;
@@ -67,6 +68,7 @@ export async function POST(
     // when the response arrives. Fall back to queued enrichment on failure.
     const details = await getPlaceDetails(placeId);
     if (details) {
+      if (details.address) inlineAddress = details.address;
       inlinePhone = details.phone;
       inlineOpenTime = details.openTime;
       inlineCloseTime = details.closeTime;
@@ -98,7 +100,7 @@ export async function POST(
       id,
       tripId,
       name,
-      address ?? null,
+      inlineAddress,
       resolvedLat,
       resolvedLng,
       resolvedPlaceId,

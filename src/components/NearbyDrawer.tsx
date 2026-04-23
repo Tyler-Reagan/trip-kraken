@@ -27,17 +27,20 @@ const PLACE_TYPES = [
 export default function NearbyDrawer() {
   const tripId = useTripStore((s) => s.tripId);
   const trip = useTripStore((s) => s.trip);
-  const anchorLocation = useTripStore((s) => s.nearbyAnchor);
-  const setNearbyAnchor = useTripStore((s) => s.setNearbyAnchor);
+  const searchLocation = useTripStore((s) => s.nearbySearchLocation);
+  const searchDayId = useTripStore((s) => s.nearbySearchDayId);
+  const setSearchLocation = useTripStore((s) => s.setNearbySearchLocation);
   const reload = useTripStore((s) => s.reload);
 
-  // Derived values — safe with optional chaining since hooks must run first
-  const anchorDay = trip && anchorLocation
-    ? (trip.days.find((d) => d.stops.some((s) => s.locationId === anchorLocation.id)) ?? null)
-    : null;
-  const anchorDayId = anchorDay?.id ?? null;
-  // All stops on the anchor's day — used to populate the anchor picker dropdown.
-  const dayStops = anchorDay?.stops ?? [];
+  // Use the stored dayId when available (avoids picking Day 1 for lodging that appears on every day)
+  const searchDay = trip && searchDayId
+    ? (trip.days.find((d) => d.id === searchDayId) ?? null)
+    : trip && searchLocation
+      ? (trip.days.find((d) => d.stops.some((s) => s.locationId === searchLocation.id)) ?? null)
+      : null;
+  const anchorDayId = searchDay?.id ?? null;
+  // All stops on the search day — used to populate the location picker dropdown.
+  const dayStops = searchDay?.stops ?? [];
 
   const existingPlaceIds = new Set(
     (trip?.locations ?? []).map((l) => l.placeId).filter(Boolean) as string[]
@@ -65,7 +68,7 @@ export default function NearbyDrawer() {
     ));
   }, [trip?.locations]);
 
-  if (!tripId || !trip || !anchorLocation) return null;
+  if (!tripId || !trip || !searchLocation) return null;
 
   const fetchNearby = useCallback(async (
     r: number, t: string, kw: string, on: boolean, dId: string | null, src: "google" | "tabelog"
@@ -80,7 +83,7 @@ export default function NearbyDrawer() {
       if (dId) params.set("dayId", dId);
       if (src === "tabelog") params.set("source", "tabelog");
       const res = await fetch(
-        `/api/trips/${tripId}/locations/${anchorLocation.id}/nearby?${params}`
+        `/api/trips/${tripId}/locations/${searchLocation.id}/nearby?${params}`
       );
       const data = await res.json();
       if (!res.ok) {
@@ -95,7 +98,7 @@ export default function NearbyDrawer() {
     } finally {
       setLoading(false);
     }
-  }, [tripId, anchorLocation.id]);
+  }, [tripId, searchLocation.id]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -125,8 +128,8 @@ export default function NearbyDrawer() {
           categories: place.categories,
           // Anchor coordinates used as a Text Search bias when geocoding Tabelog
           // locations (which have no coordinates in the scraper response).
-          hintLat: anchorLocation?.lat ?? null,
-          hintLng: anchorLocation?.lng ?? null,
+          hintLat: searchLocation?.lat ?? null,
+          hintLng: searchLocation?.lng ?? null,
         }),
       });
 
@@ -155,7 +158,7 @@ export default function NearbyDrawer() {
           body: JSON.stringify({
             locationId: newLocation.id,
             targetDayId: anchorDayId,
-            afterLocationId: anchorLocation?.id ?? null,
+            afterLocationId: searchLocation?.id ?? null,
           }),
         });
       }
@@ -195,10 +198,10 @@ export default function NearbyDrawer() {
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Nearby places</h2>
           {dayStops.length > 1 ? (
             <select
-              value={anchorLocation.id}
+              value={searchLocation.id}
               onChange={(e) => {
                 const picked = dayStops.find((s) => s.location.id === e.target.value);
-                if (picked) setNearbyAnchor(picked.location);
+                if (picked) setSearchLocation(picked.location, searchDayId);
               }}
               className="w-full text-xs text-gray-500 dark:text-gray-400 bg-transparent border-none outline-none cursor-pointer truncate mt-0.5 pr-1"
             >
@@ -209,11 +212,11 @@ export default function NearbyDrawer() {
               ))}
             </select>
           ) : (
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{anchorLocation.name}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{searchLocation.name}</p>
           )}
         </div>
         <button
-          onClick={() => setNearbyAnchor(null)}
+          onClick={() => setSearchLocation(null)}
           className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors shrink-0 mt-0.5"
           aria-label="Close"
         >

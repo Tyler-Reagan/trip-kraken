@@ -3,12 +3,19 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+type ImportedLocation = { id: string; name: string };
+
 export default function ImportForm() {
   const router = useRouter();
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Step 2: lodging picker state
+  const [pendingTrip, setPendingTrip] = useState<{ id: string; locations: ImportedLocation[] } | null>(null);
+  const [selectedLodgingId, setSelectedLodgingId] = useState<string | null>(null);
+  const [savingLodging, setSavingLodging] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,7 +35,8 @@ export default function ImportForm() {
         return;
       }
 
-      router.push(`/trips/${data.id}`);
+      // Show lodging picker before navigating
+      setPendingTrip({ id: data.id, locations: data.locations ?? [] });
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -36,6 +44,88 @@ export default function ImportForm() {
     }
   }
 
+  async function handleLodgingConfirm() {
+    if (!pendingTrip) return;
+
+    if (selectedLodgingId) {
+      setSavingLodging(true);
+      try {
+        await fetch(`/api/trips/${pendingTrip.id}/locations/${selectedLodgingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isLodging: true }),
+        });
+      } catch {
+        // Non-fatal: user can set it manually after navigating
+      } finally {
+        setSavingLodging(false);
+      }
+    }
+
+    router.push(`/trips/${pendingTrip.id}`);
+  }
+
+  // ── Lodging picker (step 2) ───────────────────────────────────────────────
+  if (pendingTrip) {
+    return (
+      <div className="card p-6 space-y-5 max-w-2xl mx-auto">
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+            Which location is your base / lodging?
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Trip Kraken prepends your lodging to every day so the optimizer always routes from there.
+            You can change this later.
+          </p>
+        </div>
+
+        <ul className="space-y-1.5 max-h-72 overflow-y-auto">
+          {pendingTrip.locations.map((loc) => (
+            <li key={loc.id}>
+              <label className="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                <input
+                  type="radio"
+                  name="lodging"
+                  value={loc.id}
+                  checked={selectedLodgingId === loc.id}
+                  onChange={() => setSelectedLodgingId(loc.id)}
+                  className="accent-brand-600 h-4 w-4 flex-shrink-0"
+                />
+                <span className="text-sm text-gray-800 dark:text-gray-200">{loc.name}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+
+        <div className="flex items-center justify-between pt-1">
+          <button
+            type="button"
+            onClick={() => router.push(`/trips/${pendingTrip.id}`)}
+            className="text-sm text-gray-500 dark:text-gray-400 hover:underline"
+          >
+            Skip for now
+          </button>
+          <button
+            type="button"
+            onClick={handleLodgingConfirm}
+            disabled={savingLodging || !selectedLodgingId}
+            className="btn-primary"
+          >
+            {savingLodging ? (
+              <span className="flex items-center gap-2">
+                <Spinner />
+                Saving…
+              </span>
+            ) : (
+              "Confirm & open trip"
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Import form (step 1) ──────────────────────────────────────────────────
   return (
     <div className="card p-6 space-y-5 max-w-2xl mx-auto">
       <form onSubmit={handleSubmit} className="space-y-4">

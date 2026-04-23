@@ -66,12 +66,14 @@ async function runConsumer(): Promise<void> {
                 placeId      = COALESCE(?, placeId),
                 lat          = COALESCE(?, lat),
                 lng          = COALESCE(?, lng),
+                address      = COALESCE(?, address),
                 rating       = COALESCE(?, rating),
                 reviewCount  = COALESCE(?, reviewCount),
                 categories   = COALESCE(?, categories),
                 phone        = COALESCE(?, phone),
                 openTime     = COALESCE(?, openTime),
                 closeTime    = COALESCE(?, closeTime),
+                hoursJson    = COALESCE(?, hoursJson),
                 enrichmentStatus = 'done'
               WHERE id = ?`
             )
@@ -79,12 +81,14 @@ async function runConsumer(): Promise<void> {
               enrichment.placeId ?? null,
               enrichment.lat ?? null,
               enrichment.lng ?? null,
+              enrichment.address ?? null,
               enrichment.rating ?? null,
               enrichment.reviewCount ?? null,
               enrichment.categories ? JSON.stringify(enrichment.categories) : null,
               enrichment.phone ?? null,
               enrichment.openTime ?? null,
               enrichment.closeTime ?? null,
+              enrichment.hoursJson ? JSON.stringify(enrichment.hoursJson) : null,
               item.locationId,
             );
         } else {
