@@ -58,9 +58,16 @@ fresh and upgraded databases converge because they apply the same ordered migrat
 
 - **`Stay`** *(new)* — `id, tripId → Trip, lodgingLocationId → Location, ord,
   startNight, endNight`. A Stay reuses a `Location` row as its Lodging (inheriting
-  enrichment); a Trip's Stays are ordered with contiguous, non-overlapping night
-  ranges. "Is this Location a Lodging?" = "is it referenced by a Stay?", replacing the
-  `isLodging` boolean.
+  enrichment); a Trip's Stays are ordered with non-overlapping night ranges (lodging is
+  optional — a Trip may have zero Stays). "Is this Location a Lodging?" = "is it
+  referenced by a Stay?", replacing the `isLodging` boolean.
+  - **`lodgingLocationId` uses `ON DELETE RESTRICT`**, not cascade: a Location that is a
+    Stay's Lodging cannot be deleted out from under it (which would orphan the Stay's
+    Days). The escape hatch is **relegation** — dissolve the Stay first (the multi-Stay
+    form of today's "toggle lodging off"), which reverts the Location to an ordinary
+    candidate that then deletes normally. Uncovered nights left by a removed Stay fall
+    back to the anchor-less optimizer path (self-healing; multi-Stay gap absorption is a
+    later concern).
 - **Day → Stay is derived, not stored.** A Day's Stay is the one whose
   `[startNight, endNight]` contains that night (ADR-0002 invariant 1). Night ranges
   work before calendar `startDate` exists.
