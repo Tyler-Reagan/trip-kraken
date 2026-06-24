@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, getTripWithDetails } from "@/lib/db";
-import { SQLInputValue } from "node:sqlite";
 
 export async function GET(
   _req: NextRequest,
@@ -31,7 +30,7 @@ export async function PATCH(
   }
 
   values.push(id);
-  getDb().prepare(`UPDATE Trip SET ${setClauses.join(", ")} WHERE id = ?`).run(...(values as SQLInputValue[]));
+  getDb().prepare(`UPDATE Trip SET ${setClauses.join(", ")} WHERE id = ?`).run(...values);
 
   const trip = getTripWithDetails(id);
   return NextResponse.json(trip);

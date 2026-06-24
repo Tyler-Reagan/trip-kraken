@@ -1,13 +1,24 @@
 export type TripWithDetails = {
   id: string;
   name: string;
-  sourceUrl: string;
+  sourceUrl: string | null; // nullable for blank-slate trips (ADR-0010)
   numDays: number | null;
   startDate: Date | null;
   createdAt: Date;
   updatedAt: Date;
   locations: Location[];
+  stays: Stay[];
   days: ItineraryDay[];
+};
+
+/** A Lodging occupied for a contiguous night-range (ADR-0002/0005). */
+export type Stay = {
+  id: string;
+  tripId: string;
+  lodgingLocationId: string;
+  ord: number;
+  startNight: number;
+  endNight: number;
 };
 
 export type Location = {

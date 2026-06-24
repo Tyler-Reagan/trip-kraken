@@ -17,11 +17,18 @@ export async function POST(
   type LocationRow = {
     id: string; lat: number | null; lng: number | null; excluded: number;
     visitDuration: number | null; openTime: string | null; closeTime: string | null;
-    isLodging: number; categories: string | null;
+    categories: string | null;
   };
   const locations = getDb().prepare(
-    "SELECT id, lat, lng, excluded, visitDuration, openTime, closeTime, isLodging, categories FROM Location WHERE tripId = ? AND excluded = 0"
+    "SELECT id, lat, lng, excluded, visitDuration, openTime, closeTime, categories FROM Location WHERE tripId = ? AND excluded = 0"
   ).all(tripId) as LocationRow[];
+
+  // Lodging is derived from Stay membership (ADR-0005), not a Location column.
+  const lodgingIds = new Set(
+    (getDb().prepare("SELECT lodgingLocationId FROM Stay WHERE tripId = ?").all(tripId) as {
+      lodgingLocationId: string;
+    }[]).map((r) => r.lodgingLocationId)
+  );
 
   const tripExists = getDb().prepare("SELECT id FROM Trip WHERE id = ?").get(tripId);
   if (!tripExists) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
@@ -39,7 +46,7 @@ export async function POST(
       ...(l.visitDuration != null ? { visitDuration: l.visitDuration } : {}),
       ...(l.openTime     != null ? { openTime:      l.openTime      } : {}),
       ...(l.closeTime    != null ? { closeTime:     l.closeTime     } : {}),
-      ...(l.isLodging                                  ? { isLodging: true }                                      : {}),
+      ...(lodgingIds.has(l.id)                      ? { isLodging: true }                                      : {}),
       ...(balanceCategories && l.categories != null ? { categories: JSON.parse(l.categories) as string[] } : {}),
     })),
     numDays,

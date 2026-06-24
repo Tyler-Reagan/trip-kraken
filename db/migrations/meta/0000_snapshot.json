@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f3f03808-756a-4426-a310-6dd000a088f6",
+  "id": "9ab53c8d-f86a-4b45-bb1a-fc772183e01a",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "ItineraryDay": {
@@ -366,7 +366,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },

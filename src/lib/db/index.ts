@@ -1,81 +1,21 @@
-import { DatabaseSync } from "node:sqlite";
-import path from "path";
+import type DatabaseType from "better-sqlite3";
 import { randomUUID } from "crypto";
-import type { TripWithDetails, Location, ItineraryDay, ItineraryStop } from "@/types";
+import { getSqlite } from "./client";
+import type { TripWithDetails, Location, ItineraryDay, ItineraryStop, Stay } from "@/types";
 
-const DB_PATH = path.join(process.cwd(), "db", "dev.db");
+/**
+ * Repository layer (ADR-0008). The schema lives in ./schema.ts and is applied by the
+ * migration runner in ./client.ts — there is no CREATE/ALTER bootstrap here anymore.
+ *
+ * These helpers still use hand-written SQL over the raw better-sqlite3 handle during the
+ * incremental migration off node:sqlite; converting them to typed Drizzle queries is a
+ * tracked fast-follow. `isLodging` is no longer a column — it is derived from Stay
+ * membership (ADR-0002/0005): a Location is lodging iff a Stay references it.
+ */
 
-function openDb(): DatabaseSync {
-  const database = new DatabaseSync(DB_PATH);
-  database.exec("PRAGMA journal_mode = WAL");
-  database.exec("PRAGMA foreign_keys = ON");
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS Trip (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      sourceUrl TEXT NOT NULL,
-      numDays INTEGER,
-      startDate TEXT,
-      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
-      updatedAt TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS Location (
-      id TEXT PRIMARY KEY,
-      tripId TEXT NOT NULL REFERENCES Trip(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      address TEXT,
-      lat REAL,
-      lng REAL,
-      placeId TEXT,
-      excluded INTEGER NOT NULL DEFAULT 0,
-      note TEXT
-    )
-  `);
-  const locationAlters = [
-    "ALTER TABLE Location ADD COLUMN rating REAL",
-    "ALTER TABLE Location ADD COLUMN reviewCount INTEGER",
-    "ALTER TABLE Location ADD COLUMN categories TEXT",
-    "ALTER TABLE Location ADD COLUMN visitDuration INTEGER",
-    "ALTER TABLE Location ADD COLUMN openTime TEXT",
-    "ALTER TABLE Location ADD COLUMN closeTime TEXT",
-    "ALTER TABLE Location ADD COLUMN hoursJson TEXT",
-    "ALTER TABLE Location ADD COLUMN isAnchor INTEGER NOT NULL DEFAULT 0",
-    "ALTER TABLE Location RENAME COLUMN isAnchor TO isLodging",
-    "ALTER TABLE Location ADD COLUMN phone TEXT",
-    "ALTER TABLE Location ADD COLUMN enrichmentStatus TEXT NOT NULL DEFAULT 'done'",
-  ];
-  for (const sql of locationAlters) {
-    try { database.exec(sql); } catch { /* column already exists */ }
-  }
-
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS ItineraryDay (
-      id TEXT PRIMARY KEY,
-      tripId TEXT NOT NULL REFERENCES Trip(id) ON DELETE CASCADE,
-      dayNumber INTEGER NOT NULL,
-      date TEXT,
-      label TEXT
-    )
-  `);
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS ItineraryStop (
-      id TEXT PRIMARY KEY,
-      dayId TEXT NOT NULL REFERENCES ItineraryDay(id) ON DELETE CASCADE,
-      locationId TEXT NOT NULL REFERENCES Location(id) ON DELETE CASCADE,
-      ord INTEGER NOT NULL,
-      notes TEXT
-    )
-  `);
-  return database;
-}
-
-const g = globalThis as unknown as { _db?: DatabaseSync };
-
-export function getDb(): DatabaseSync {
-  if (!g._db) g._db = openDb();
-  return g._db;
+/** Raw better-sqlite3 handle. Drop-in for the old node:sqlite `getDb()` (same API). */
+export function getDb(): DatabaseType.Database {
+  return getSqlite();
 }
 
 export const newId = () => randomUUID();
@@ -83,14 +23,14 @@ export const newId = () => randomUUID();
 // ─── Row shapes returned by SQLite ───────────────────────────────────────────
 
 type TripRow = {
-  id: string; name: string; sourceUrl: string;
+  id: string; name: string; sourceUrl: string | null;
   numDays: number | null; startDate: string | null;
   createdAt: string; updatedAt: string;
 };
 type LocationRow = {
   id: string; tripId: string; name: string; address: string | null;
   lat: number | null; lng: number | null; placeId: string | null;
-  excluded: number; isLodging: number; note: string | null;
+  excluded: number; note: string | null;
   rating: number | null; reviewCount: number | null; categories: string | null;
   visitDuration: number | null;
   openTime: string | null;
@@ -98,6 +38,10 @@ type LocationRow = {
   hoursJson: string | null;
   phone: string | null;
   enrichmentStatus: string;
+};
+type StayRow = {
+  id: string; tripId: string; lodgingLocationId: string;
+  ord: number; startNight: number; endNight: number;
 };
 type DayRow = {
   id: string; tripId: string; dayNumber: number;
@@ -107,7 +51,7 @@ type StopRow = { id: string; dayId: string; locationId: string; ord: number; not
 type StopWithLocRow = StopRow & {
   loc_id: string; loc_tripId: string; loc_name: string;
   loc_address: string | null; loc_lat: number | null; loc_lng: number | null;
-  loc_placeId: string | null; loc_excluded: number; loc_isLodging: number; loc_note: string | null;
+  loc_placeId: string | null; loc_excluded: number; loc_note: string | null;
   loc_rating: number | null; loc_reviewCount: number | null; loc_categories: string | null;
   loc_visitDuration: number | null;
   loc_openTime: string | null;
@@ -129,11 +73,12 @@ function parseTrip(r: TripRow) {
   };
 }
 
-function parseLocation(r: LocationRow): Location {
+/** `lodgingIds` is the set of Location ids referenced by a Stay (derives isLodging). */
+function parseLocation(r: LocationRow, lodgingIds: Set<string>): Location {
   return {
     ...r,
     excluded: r.excluded !== 0,
-    isLodging: r.isLodging !== 0,
+    isLodging: lodgingIds.has(r.id),
     categories: r.categories ? JSON.parse(r.categories) : null,
     hoursJson: r.hoursJson ? JSON.parse(r.hoursJson) : null,
     phone: r.phone ?? null,
@@ -141,7 +86,11 @@ function parseLocation(r: LocationRow): Location {
   };
 }
 
-function parseStopWithLoc(r: StopWithLocRow): ItineraryStop {
+function parseStay(r: StayRow): Stay {
+  return { ...r };
+}
+
+function parseStopWithLoc(r: StopWithLocRow, lodgingIds: Set<string>): ItineraryStop {
   return {
     id: r.id, dayId: r.dayId, locationId: r.locationId,
     order: r.ord, notes: r.notes,
@@ -155,7 +104,7 @@ function parseStopWithLoc(r: StopWithLocRow): ItineraryStop {
       openTime: r.loc_openTime ?? null,
       closeTime: r.loc_closeTime ?? null,
       hoursJson: r.loc_hoursJson ? JSON.parse(r.loc_hoursJson) : null,
-      isLodging: r.loc_isLodging !== 0,
+      isLodging: lodgingIds.has(r.loc_id),
       phone: r.loc_phone ?? null,
       enrichmentStatus: (r.loc_enrichmentStatus ?? 'done') as 'done' | 'pending' | 'failed',
     },
@@ -197,6 +146,11 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
   const tripRow = getDb().prepare("SELECT * FROM Trip WHERE id = ?").get(id) as TripRow | undefined;
   if (!tripRow) return null;
 
+  const stayRows = getDb().prepare(
+    "SELECT * FROM Stay WHERE tripId = ? ORDER BY ord ASC"
+  ).all(id) as StayRow[];
+  const lodgingIds = new Set(stayRows.map((s) => s.lodgingLocationId));
+
   const locationRows = getDb().prepare(
     "SELECT * FROM Location WHERE tripId = ? ORDER BY name ASC"
   ).all(id) as LocationRow[];
@@ -214,7 +168,7 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
            l.categories as loc_categories, l.visitDuration as loc_visitDuration,
            l.openTime as loc_openTime, l.closeTime as loc_closeTime,
            l.hoursJson as loc_hoursJson,
-           l.isLodging as loc_isLodging, l.phone as loc_phone,
+           l.phone as loc_phone,
            l.enrichmentStatus as loc_enrichmentStatus
     FROM ItineraryStop s
     JOIN Location l ON l.id = s.locationId
@@ -227,10 +181,15 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
     id: day.id, tripId: day.tripId, dayNumber: day.dayNumber,
     date: day.date ? new Date(day.date) : null,
     label: day.label,
-    stops: stopRows.filter((s) => s.dayId === day.id).map(parseStopWithLoc),
+    stops: stopRows.filter((s) => s.dayId === day.id).map((s) => parseStopWithLoc(s, lodgingIds)),
   }));
 
-  return { ...parseTrip(tripRow), locations: locationRows.map(parseLocation), days };
+  return {
+    ...parseTrip(tripRow),
+    locations: locationRows.map((l) => parseLocation(l, lodgingIds)),
+    stays: stayRows.map(parseStay),
+    days,
+  };
 }
 
 function requireTrip(tripId: string): TripWithDetails {

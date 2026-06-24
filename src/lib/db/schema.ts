@@ -55,9 +55,12 @@ export const stay = sqliteTable("Stay", {
   tripId: text("tripId")
     .notNull()
     .references(() => trip.id, { onDelete: "cascade" }),
+  // RESTRICT, not cascade: a Location serving as a Stay's Lodging can't be deleted out
+  // from under it (would orphan the Stay's Days). Escape hatch = relegation: dissolve
+  // the Stay first, then the Location is an ordinary candidate and deletes normally.
   lodgingLocationId: text("lodgingLocationId")
     .notNull()
-    .references(() => location.id, { onDelete: "cascade" }),
+    .references(() => location.id, { onDelete: "restrict" }),
   ord: integer("ord").notNull(),
   startNight: integer("startNight").notNull(),
   endNight: integer("endNight").notNull(),

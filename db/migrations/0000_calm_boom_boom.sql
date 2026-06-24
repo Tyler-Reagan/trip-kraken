@@ -48,7 +48,7 @@ CREATE TABLE `Stay` (
 	`startNight` integer NOT NULL,
 	`endNight` integer NOT NULL,
 	FOREIGN KEY (`tripId`) REFERENCES `Trip`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`lodgingLocationId`) REFERENCES `Location`(`id`) ON UPDATE no action ON DELETE cascade
+	FOREIGN KEY (`lodgingLocationId`) REFERENCES `Location`(`id`) ON UPDATE no action ON DELETE restrict
 );
 --> statement-breakpoint
 CREATE TABLE `Trip` (
