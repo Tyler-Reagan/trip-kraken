@@ -36,6 +36,6 @@ status to **Superseded by ADR-NNNN**.
 | [0007](0007-pipeline-shape-and-compute.md) | Phased pipeline, server-side compute | Accepted |
 | [0008](0008-persistence-and-state-model.md) | Persistence & schema management (Drizzle) | Accepted |
 | [0009](0009-enrichment-and-data-sources.md) | Enrichment & external data sources | Accepted |
-| [0010](0010-import-strategy.md) | Import strategy (My Maps + blank-slate) | Accepted |
+| [0010](0010-import-strategy.md) | Trip creation: blank-slate + search; My Maps accelerator | Accepted |
 | [0011](0011-transit-integration.md) | Transit integration (pluggable, handoff) | Accepted |
 | [0012](0012-export.md) | Export (pluggable, Markdown baseline) | Accepted |

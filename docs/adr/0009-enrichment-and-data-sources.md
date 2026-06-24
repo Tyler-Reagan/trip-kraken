@@ -44,6 +44,10 @@ data-loss limitation with no new schema. Manual "Retry" becomes automatic recove
   (Japan) and is skipped where it doesn't apply — replacing the incidental
   `nearestPrefecture` gating with an explicit contract. The stations table is a helper a
   provider may use for distance approximation without spending API calls.
+- **Discovery has two modes:** *anchored* (nearby an existing Location) and *unanchored*
+  (text/keyword Places search with no anchor — used to seed an empty trip, ADR-0010's
+  blank-slate foundation). Providers may support either or both; Google supports both,
+  Tabelog is anchored-regional.
 - All providers return the common `NearbyPlace` shape. A candidate from a regional
   provider (e.g. a Tabelog result, which has no coordinates) is **resolved to canonical
   Google identity when added to a trip** — so once committed, every Location is

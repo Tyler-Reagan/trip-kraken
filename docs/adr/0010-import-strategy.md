@@ -1,59 +1,68 @@
-# ADR-0010: Import strategy
+# ADR-0010: Import strategy & trip-creation entry points
 
 - **Status:** Accepted
 - **Date:** 2026-06-24
 - **Supersedes:** —
 - **Superseded by:** —
-- **Constrained by:** ADR-0002 (Location), ADR-0009 (enrichment on import)
-- **Note:** Decided in the 2026-06-24 grilling session.
+- **Constrained by:** ADR-0002 (Location), ADR-0009 (discovery + enrichment)
+- **Note:** Reframed in the 2026-06-24 grilling session — the foundation is
+  create-and-discover, not bulk import; My Maps demoted from "primary" to accelerator.
 
 ## Context
 
-The original plan (recorded in project memory) was a Phase 1 with three import methods
-— a shared-list scraper, Google Takeout CSV, and KML/KMZ upload — to be unified later in
-Phase 2. In practice the code converged on a single path: **Google My Maps URL**. A My
-Maps link carries a `mid`; Google exposes a stable public KML export
-(`/maps/d/kml?forcekml=1&mid=…`) with **exact embedded coordinates** — no scraping, no
-geocoding. That made the other two methods redundant, so Phase 2's "find a single stable
-input" was effectively answered by the My Maps choice.
+Three Google-flavored things get conflated and must be kept distinct:
 
-One gap remains: trip *creation* requires a `sourceUrl` (`createTripWithLocations`), so
-there is no way to start an empty trip — even though the discovery features
-(nearby search, manual add) assume you can build one from scratch.
+- **Google My Maps** — a custom map the user *authors* and publishes; exposes a clean
+  public KML with exact coordinates. This is what the existing `/api/import` consumes.
+- **Google Maps saved/starred lists** — the "Want to go" lists users actually keep in the
+  Maps app. The north star's original "saved list" phrasing. No clean public export, but
+  reachable via Google **Takeout** (GeoJSON/CSV).
+- **Google Places** — the POI *search* API. Not a list import at all — it is discovery
+  (ADR-0009).
+
+The earlier draft made **My Maps the primary import**. That optimizes for data quality
+(exact coords, no scraping) but not for what users arrive with: the median traveler has a
+saved list, not a published custom map, so "paste your My Maps URL" as the front door is
+an onboarding cliff. The foundation entry point should match what users have and lean on
+the discovery the app is already built around.
 
 ## Decision
 
-Two trip-creation entry points; nothing else for now:
+Trip creation is **create-and-discover first; bulk import is an accelerator.**
 
-1. **My Maps URL** — the primary bulk import. Extract `mid` → fetch the public KML →
-   parse placemarks into Locations with exact coordinates, then enqueue background
-   enrichment (ADR-0009). Requires the map be public ("Anyone with the link can view").
-2. **Blank-slate** — create an **empty trip** and build it via manual add and discovery.
-   `sourceUrl` becomes optional/nullable.
+1. **Blank-slate + in-app Places search (the foundation).** Create an **empty trip**, then
+   add Locations by searching Google Places in-app — both **unanchored** (text/keyword
+   search to seed an empty trip) and **anchored** (nearby an existing Location). This is
+   ADR-0009 discovery applied at build time; `findPlaceFromText` and `searchNearby` already
+   exist. Requires no file or map authoring. `sourceUrl` becomes nullable.
+2. **My Maps URL (accelerator).** Retained for users who already maintain a public custom
+   map: extract `mid` → fetch public KML → parse placemarks into Locations with exact
+   coordinates, then enqueue enrichment (ADR-0009). No longer the primary path — a
+   power-user fast-track.
 
-Other formats (Takeout CSV, KML/KMZ upload, GPX) are **deferred**, not designed out —
-re-add one only when a real need appears.
+Saved-list-via-Takeout and other file formats (CSV/KML/KMZ/GPX) remain **deferred** —
+re-add via Takeout only if bulk saved-list import proves wanted.
 
 ## Alternatives considered
 
-- **My Maps URL only (status quo).** Rejected: forces map authoring even for a hand-built
-  itinerary and contradicts the discovery half of the product, which assumes you can start
-  empty.
-- **Multi-format import (re-add CSV/KML/GPX).** Rejected for now: each parser is ongoing
-  maintenance, and My Maps' clean KML already covers the bulk-import case those methods
-  existed for.
-- **Google Maps *saved list* (the north star's original phrasing).** Rejected: saved
-  lists have no stable public KML export and would require fragile scraping — the very
-  thing the My Maps endpoint lets us avoid. My Maps is the deliberate substitute.
+- **My Maps as primary (earlier draft).** Rejected: best data quality, but assumes the
+  user authored a published map — wrong default for the app's front door.
+- **Saved/starred lists via Takeout as the primary.** Rejected for now: matches user data
+  but needs geocoding/resolution (messier coords) and a file-upload flow; kept as the
+  deferred path if bulk saved-list import is later prioritized.
+- **My Maps only (status quo).** Rejected: no empty trips; contradicts the discovery half
+  of the product.
 
 ## Consequences
 
-- `createTripWithLocations` / the schema must allow a null `sourceUrl`; a new "new empty
-  trip" action is added alongside the URL import.
-- The import step-2 lodging picker (currently PATCHing `isLodging`) becomes **Stay
-  creation** (ADR-0005/0008); its copy ("base / lodging", "prepends lodging to every day")
-  updates to the Stay model.
-- My Maps' public-map requirement stays a user-facing precondition; the clear error when a
-  map isn't public is retained.
-- Blank-slate trips lean harder on Discovery (ADR-0009) and manual add as the way to
-  populate Locations.
+- `createTripWithLocations` / schema allow a null `sourceUrl`; a "new empty trip" action is
+  added, and the foundation onboarding is *create → search → add*, not *paste a URL*.
+- **Discovery must support an unanchored mode** (Places text search with no anchor) for
+  seeding an empty trip — a refinement to ADR-0009, which had framed discovery as
+  anchored-nearby only.
+- My Maps import remains but moves out of the primary onboarding path (e.g. a secondary
+  "Import from My Maps" affordance).
+- The import step-2 lodging picker becomes **Stay creation** (ADR-0005/0008); its
+  single-lodging copy updates to the Stay model.
+- Build priority follows the reframe: blank-slate + search is foundational (right after the
+  ADR-0008 schema); the My Maps accelerator is lower priority.

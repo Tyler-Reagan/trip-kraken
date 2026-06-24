@@ -62,7 +62,8 @@ a Location's enrichment is done, pending, or failed.
 _Avoid_: hydration, lookup
 
 **Discovery**:
-Finding new candidate Locations near an anchor (e.g. food or sights nearby), via discovery
-providers. Distinct from Enrichment: Discovery surfaces *new* candidates; Enrichment
+Finding new candidate Locations via discovery providers — either *anchored* (near an
+existing Location, e.g. food nearby) or *unanchored* (a text/keyword Places search to seed
+an empty trip). Distinct from Enrichment: Discovery surfaces *new* candidates; Enrichment
 completes *existing* ones.
 _Avoid_: nearby search, suggestions
