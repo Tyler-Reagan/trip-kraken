@@ -54,3 +54,15 @@ A Stop that belongs to the Trip but is not placed on any Day — awaiting placem
 orphaned locked Stop whose Day was removed). A Stop in this state has no day-pin; any lock
 is inert until it is re-placed.
 _Avoid_: unscheduled, floating
+
+**Enrichment**:
+Filling in a Location's real-world data (canonical identity, coordinates, address, rating,
+categories, phone, opening hours) from the authoritative place source. A background step;
+a Location's enrichment is done, pending, or failed.
+_Avoid_: hydration, lookup
+
+**Discovery**:
+Finding new candidate Locations near an anchor (e.g. food or sights nearby), via discovery
+providers. Distinct from Enrichment: Discovery surfaces *new* candidates; Enrichment
+completes *existing* ones.
+_Avoid_: nearby search, suggestions

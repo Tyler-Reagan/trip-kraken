@@ -33,9 +33,9 @@ status to **Superseded by ADR-NNNN**.
 | [0004](0004-travel-cost-model.md) | Travel cost behind a pluggable provider | Accepted |
 | [0005](0005-trip-topology.md) | Multi-lodging sequential trip topology | Accepted |
 | [0006](0006-optimize-vs-refine-authority.md) | Lock-and-fill: manual intent survives re-optimization | Accepted |
-| 0007 | Pipeline shape & where compute runs | _Planned_ |
+| [0007](0007-pipeline-shape-and-compute.md) | Phased pipeline, server-side compute | Accepted |
 | [0008](0008-persistence-and-state-model.md) | Persistence & schema management (Drizzle) | Accepted |
-| 0009 | Enrichment & external data sources | _Planned_ |
-| 0010 | Import strategy | _Planned_ |
-| 0011 | Transit integration | _Planned_ |
-| 0012 | Export | _Planned_ |
+| [0009](0009-enrichment-and-data-sources.md) | Enrichment & external data sources | Accepted |
+| [0010](0010-import-strategy.md) | Import strategy (My Maps + blank-slate) | Accepted |
+| [0011](0011-transit-integration.md) | Transit integration (pluggable, handoff) | Accepted |
+| [0012](0012-export.md) | Export (pluggable, Markdown baseline) | Accepted |
