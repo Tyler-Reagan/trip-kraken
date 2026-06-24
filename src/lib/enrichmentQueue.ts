@@ -11,10 +11,11 @@
  *
  * ⚠️ Known limitation: the queue is in-memory. Pending items are lost on
  *    process restart. Locations left with enrichmentStatus='pending' after a
- *    restart are surfaced by the "Retry" button in the UI.
+ *    restart are surfaced by the "Retry" button in the UI. (ADR-0009 replaces this
+ *    with pending-rows-as-queue + startup auto-recovery in a later branch.)
  */
 
-import { getDb } from "@/lib/db";
+import { getLocationForEnrichment, applyEnrichment, markEnrichmentFailed } from "@/lib/db";
 import { enrichLocation } from "@/lib/places";
 
 type QueueItem = { locationId: string };
@@ -38,69 +39,16 @@ async function runConsumer(): Promise<void> {
     while (getQueue().length > 0) {
       const item = getQueue().shift()!;
 
-      type LocRow = {
-        id: string;
-        name: string;
-        lat: number | null;
-        lng: number | null;
-        placeId: string | null;
-      };
-
-      const loc = getDb()
-        .prepare("SELECT id, name, lat, lng, placeId FROM Location WHERE id = ?")
-        .get(item.locationId) as LocRow | undefined;
-
+      const loc = getLocationForEnrichment(item.locationId);
       // Location may have been deleted between enqueue and processing
       if (!loc) continue;
 
       try {
-        const enrichment = await enrichLocation(loc);
-
-        if (Object.keys(enrichment).length > 0) {
-          // COALESCE preserves existing values when enrichment returns nulls —
-          // partial enrichment (e.g. coords resolved but details unavailable)
-          // does not overwrite good data with null.
-          getDb()
-            .prepare(
-              `UPDATE Location SET
-                placeId      = COALESCE(?, placeId),
-                lat          = COALESCE(?, lat),
-                lng          = COALESCE(?, lng),
-                address      = COALESCE(?, address),
-                rating       = COALESCE(?, rating),
-                reviewCount  = COALESCE(?, reviewCount),
-                categories   = COALESCE(?, categories),
-                phone        = COALESCE(?, phone),
-                openTime     = COALESCE(?, openTime),
-                closeTime    = COALESCE(?, closeTime),
-                hoursJson    = COALESCE(?, hoursJson),
-                enrichmentStatus = 'done'
-              WHERE id = ?`
-            )
-            .run(
-              enrichment.placeId ?? null,
-              enrichment.lat ?? null,
-              enrichment.lng ?? null,
-              enrichment.address ?? null,
-              enrichment.rating ?? null,
-              enrichment.reviewCount ?? null,
-              enrichment.categories ? JSON.stringify(enrichment.categories) : null,
-              enrichment.phone ?? null,
-              enrichment.openTime ?? null,
-              enrichment.closeTime ?? null,
-              enrichment.hoursJson ? JSON.stringify(enrichment.hoursJson) : null,
-              item.locationId,
-            );
-        } else {
-          // enrichLocation returned {} — couldn't resolve the place
-          getDb()
-            .prepare("UPDATE Location SET enrichmentStatus = 'failed' WHERE id = ?")
-            .run(item.locationId);
-        }
+        // applyEnrichment writes only non-null fields (no overwrite with null) and marks
+        // 'done'; an empty result marks the row 'failed'.
+        applyEnrichment(item.locationId, await enrichLocation(loc));
       } catch {
-        getDb()
-          .prepare("UPDATE Location SET enrichmentStatus = 'failed' WHERE id = ?")
-          .run(item.locationId);
+        markEnrichmentFailed(item.locationId);
       }
 
       // Enforce Google rate limit between calls

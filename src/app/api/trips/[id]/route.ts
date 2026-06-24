@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, getTripWithDetails } from "@/lib/db";
+import { getTripWithDetails, updateTrip, deleteTrip } from "@/lib/db";
 
 export async function GET(
   _req: NextRequest,
@@ -19,20 +19,11 @@ export async function PATCH(
   const body = await req.json();
   const { name, numDays, startDate } = body;
 
-  const setClauses: string[] = ["updatedAt = datetime('now')"];
-  const values: unknown[] = [];
-
-  if (name !== undefined) { setClauses.push("name = ?"); values.push(name); }
-  if (numDays !== undefined) { setClauses.push("numDays = ?"); values.push(Number(numDays)); }
-  if (startDate !== undefined) {
-    setClauses.push("startDate = ?");
-    values.push(startDate ? new Date(startDate).toISOString() : null);
-  }
-
-  values.push(id);
-  getDb().prepare(`UPDATE Trip SET ${setClauses.join(", ")} WHERE id = ?`).run(...values);
-
-  const trip = getTripWithDetails(id);
+  const trip = updateTrip(id, {
+    ...(name !== undefined ? { name } : {}),
+    ...(numDays !== undefined ? { numDays: Number(numDays) } : {}),
+    ...(startDate !== undefined ? { startDate } : {}),
+  });
   return NextResponse.json(trip);
 }
 
@@ -41,6 +32,6 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  getDb().prepare("DELETE FROM Trip WHERE id = ?").run(id);
+  deleteTrip(id);
   return new NextResponse(null, { status: 204 });
 }

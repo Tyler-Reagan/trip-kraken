@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, rebuildItinerary } from "@/lib/db";
+import { getOptimizationInputs, rebuildItinerary } from "@/lib/db";
 import { optimizeItinerary } from "@/lib/optimizer";
 
 export async function POST(
@@ -14,24 +14,9 @@ export async function POST(
     return NextResponse.json({ error: "numDays must be a positive integer" }, { status: 400 });
   }
 
-  type LocationRow = {
-    id: string; lat: number | null; lng: number | null; excluded: number;
-    visitDuration: number | null; openTime: string | null; closeTime: string | null;
-    categories: string | null;
-  };
-  const locations = getDb().prepare(
-    "SELECT id, lat, lng, excluded, visitDuration, openTime, closeTime, categories FROM Location WHERE tripId = ? AND excluded = 0"
-  ).all(tripId) as LocationRow[];
-
-  // Lodging is derived from Stay membership (ADR-0005), not a Location column.
-  const lodgingIds = new Set(
-    (getDb().prepare("SELECT lodgingLocationId FROM Stay WHERE tripId = ?").all(tripId) as {
-      lodgingLocationId: string;
-    }[]).map((r) => r.lodgingLocationId)
-  );
-
-  const tripExists = getDb().prepare("SELECT id FROM Trip WHERE id = ?").get(tripId);
-  if (!tripExists) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+  // Schedulable locations with derived isLodging (null when the trip doesn't exist).
+  const locations = getOptimizationInputs(tripId);
+  if (!locations) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
   const dayBudgetMinutes =
     typeof dayBudgetHours === "number" && dayBudgetHours > 0
@@ -46,8 +31,8 @@ export async function POST(
       ...(l.visitDuration != null ? { visitDuration: l.visitDuration } : {}),
       ...(l.openTime     != null ? { openTime:      l.openTime      } : {}),
       ...(l.closeTime    != null ? { closeTime:     l.closeTime     } : {}),
-      ...(lodgingIds.has(l.id)                      ? { isLodging: true }                                      : {}),
-      ...(balanceCategories && l.categories != null ? { categories: JSON.parse(l.categories) as string[] } : {}),
+      ...(l.isLodging                                ? { isLodging: true }          : {}),
+      ...(balanceCategories && l.categories != null ? { categories: l.categories } : {}),
     })),
     numDays,
     dayBudgetMinutes

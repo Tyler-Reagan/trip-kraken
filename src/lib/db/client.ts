@@ -7,11 +7,8 @@
  * forward-looking migration machinery; the initial migration simply creates the clean
  * schema.
  *
- * Two surfaces over the same connection:
- *   - getDrizzle(): the typed Drizzle layer (the ADR-0008 data-access boundary) used by
- *     the repository in ./index.ts.
- *   - getSqlite():  the raw better-sqlite3 handle, still used by route handlers whose
- *     hand-written SQL has not yet been moved into the repository (tracked follow-up).
+ * getDrizzle() is the only data-access surface: all persistence goes through the typed
+ * Drizzle layer in ./index.ts. There is no raw SQL handle exposed.
  */
 
 import path from "path";
@@ -25,24 +22,18 @@ const MIGRATIONS_DIR = path.join(process.cwd(), "db", "migrations");
 
 type Drizzle = BetterSQLite3Database<typeof schema>;
 
-const g = globalThis as unknown as { _sqlite?: Database.Database; _drizzle?: Drizzle };
+const g = globalThis as unknown as { _drizzle?: Drizzle };
 
-function init(): void {
+function init(): Drizzle {
   const sqlite = new Database(DB_PATH);
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
   const db = drizzle(sqlite, { schema });
   migrate(db, { migrationsFolder: MIGRATIONS_DIR });
-  g._sqlite = sqlite;
-  g._drizzle = db;
+  return db;
 }
 
 export function getDrizzle(): Drizzle {
-  if (!g._drizzle) init();
-  return g._drizzle!;
-}
-
-export function getSqlite(): Database.Database {
-  if (!g._sqlite) init();
-  return g._sqlite!;
+  if (!g._drizzle) g._drizzle = init();
+  return g._drizzle;
 }
