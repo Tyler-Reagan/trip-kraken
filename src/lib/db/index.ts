@@ -1,71 +1,35 @@
 import type DatabaseType from "better-sqlite3";
 import { randomUUID } from "crypto";
-import { getSqlite } from "./client";
-import type { TripWithDetails, Location, ItineraryDay, ItineraryStop, Stay } from "@/types";
+import { eq, and, gt, gte, asc, desc, sql, count, max, getTableColumns } from "drizzle-orm";
+import { getDrizzle, getSqlite } from "./client";
+import { trip, location, stay, itineraryDay, itineraryStop } from "./schema";
+import type { TripWithDetails, Location, ItineraryDay } from "@/types";
 
 /**
  * Repository layer (ADR-0008). The schema lives in ./schema.ts and is applied by the
- * migration runner in ./client.ts — there is no CREATE/ALTER bootstrap here anymore.
+ * migration runner in ./client.ts. These helpers use typed Drizzle queries — Drizzle
+ * auto-parses the json/boolean-mode columns, so there is no manual JSON.parse / `!== 0`
+ * deserialization. `isLodging` is not a column; it is derived from Stay membership
+ * (ADR-0002/0005): a Location is lodging iff a Stay references it.
  *
- * These helpers still use hand-written SQL over the raw better-sqlite3 handle during the
- * incremental migration off node:sqlite; converting them to typed Drizzle queries is a
- * tracked fast-follow. `isLodging` is no longer a column — it is derived from Stay
- * membership (ADR-0002/0005): a Location is lodging iff a Stay references it.
+ * `getDb()` exposes the raw better-sqlite3 handle for route handlers whose hand-written
+ * SQL has not yet been moved into this repository (tracked follow-up).
  */
 
-/** Raw better-sqlite3 handle. Drop-in for the old node:sqlite `getDb()` (same API). */
+/** Raw better-sqlite3 handle (same API as the old node:sqlite `getDb()`). */
 export function getDb(): DatabaseType.Database {
   return getSqlite();
 }
 
 export const newId = () => randomUUID();
 
-// ─── Row shapes returned by SQLite ───────────────────────────────────────────
+// ─── Mappers ──────────────────────────────────────────────────────────────────
 
-type TripRow = {
-  id: string; name: string; sourceUrl: string | null;
-  numDays: number | null; startDate: string | null;
-  createdAt: string; updatedAt: string;
-};
-type LocationRow = {
-  id: string; tripId: string; name: string; address: string | null;
-  lat: number | null; lng: number | null; placeId: string | null;
-  excluded: number; note: string | null;
-  rating: number | null; reviewCount: number | null; categories: string | null;
-  visitDuration: number | null;
-  openTime: string | null;
-  closeTime: string | null;
-  hoursJson: string | null;
-  phone: string | null;
-  enrichmentStatus: string;
-};
-type StayRow = {
-  id: string; tripId: string; lodgingLocationId: string;
-  ord: number; startNight: number; endNight: number;
-};
-type DayRow = {
-  id: string; tripId: string; dayNumber: number;
-  date: string | null; label: string | null;
-};
-type StopRow = { id: string; dayId: string; locationId: string; ord: number; notes: string | null };
-type StopWithLocRow = StopRow & {
-  loc_id: string; loc_tripId: string; loc_name: string;
-  loc_address: string | null; loc_lat: number | null; loc_lng: number | null;
-  loc_placeId: string | null; loc_excluded: number; loc_note: string | null;
-  loc_rating: number | null; loc_reviewCount: number | null; loc_categories: string | null;
-  loc_visitDuration: number | null;
-  loc_openTime: string | null;
-  loc_closeTime: string | null;
-  loc_hoursJson: string | null;
-  loc_phone: string | null;
-  loc_enrichmentStatus: string;
-};
-
-// ─── Deserializers ────────────────────────────────────────────────────────────
-
-function parseTrip(r: TripRow) {
+function parseTrip(r: typeof trip.$inferSelect) {
   return {
-    id: r.id, name: r.name, sourceUrl: r.sourceUrl,
+    id: r.id,
+    name: r.name,
+    sourceUrl: r.sourceUrl,
     numDays: r.numDays ?? null,
     startDate: r.startDate ? new Date(r.startDate) : null,
     createdAt: new Date(r.createdAt),
@@ -73,130 +37,90 @@ function parseTrip(r: TripRow) {
   };
 }
 
-/** `lodgingIds` is the set of Location ids referenced by a Stay (derives isLodging). */
-function parseLocation(r: LocationRow, lodgingIds: Set<string>): Location {
-  return {
-    ...r,
-    excluded: r.excluded !== 0,
-    isLodging: lodgingIds.has(r.id),
-    categories: r.categories ? JSON.parse(r.categories) : null,
-    hoursJson: r.hoursJson ? JSON.parse(r.hoursJson) : null,
-    phone: r.phone ?? null,
-    enrichmentStatus: (r.enrichmentStatus ?? 'done') as 'done' | 'pending' | 'failed',
-  };
+/** Drizzle returns json/boolean columns already parsed; only isLodging is derived. */
+function toLocation(r: typeof location.$inferSelect, lodgingIds: Set<string>): Location {
+  return { ...r, isLodging: lodgingIds.has(r.id) };
 }
 
-function parseStay(r: StayRow): Stay {
-  return { ...r };
-}
-
-function parseStopWithLoc(r: StopWithLocRow, lodgingIds: Set<string>): ItineraryStop {
-  return {
-    id: r.id, dayId: r.dayId, locationId: r.locationId,
-    order: r.ord, notes: r.notes,
-    location: {
-      id: r.loc_id, tripId: r.loc_tripId, name: r.loc_name,
-      address: r.loc_address, lat: r.loc_lat, lng: r.loc_lng,
-      placeId: r.loc_placeId, excluded: r.loc_excluded !== 0, note: r.loc_note,
-      rating: r.loc_rating, reviewCount: r.loc_reviewCount,
-      categories: r.loc_categories ? JSON.parse(r.loc_categories) : null,
-      visitDuration: r.loc_visitDuration ?? null,
-      openTime: r.loc_openTime ?? null,
-      closeTime: r.loc_closeTime ?? null,
-      hoursJson: r.loc_hoursJson ? JSON.parse(r.loc_hoursJson) : null,
-      isLodging: lodgingIds.has(r.loc_id),
-      phone: r.loc_phone ?? null,
-      enrichmentStatus: (r.loc_enrichmentStatus ?? 'done') as 'done' | 'pending' | 'failed',
-    },
-  };
-}
-
-// ─── Transaction helper ───────────────────────────────────────────────────────
-
-function transaction<T>(fn: () => T): T {
-  getDb().exec("BEGIN");
-  try {
-    const result = fn();
-    getDb().exec("COMMIT");
-    return result;
-  } catch (err) {
-    getDb().exec("ROLLBACK");
-    throw err;
-  }
-}
-
-// ─── Exported query helpers ───────────────────────────────────────────────────
+// ─── Queries ──────────────────────────────────────────────────────────────────
 
 export function listTrips() {
-  const rows = getDb().prepare(`
-    SELECT t.*, COUNT(l.id) as locationCount
-    FROM Trip t
-    LEFT JOIN Location l ON l.tripId = t.id
-    GROUP BY t.id
-    ORDER BY t.createdAt DESC
-  `).all() as (TripRow & { locationCount: number })[];
+  const rows = getDrizzle()
+    .select({ ...getTableColumns(trip), locationCount: count(location.id) })
+    .from(trip)
+    .leftJoin(location, eq(location.tripId, trip.id))
+    .groupBy(trip.id)
+    .orderBy(desc(trip.createdAt))
+    .all();
 
-  return rows.map((r) => ({
-    ...parseTrip(r),
-    _count: { locations: r.locationCount },
-  }));
+  return rows.map((r) => ({ ...parseTrip(r), _count: { locations: r.locationCount } }));
 }
 
 export function getTripWithDetails(id: string): TripWithDetails | null {
-  const tripRow = getDb().prepare("SELECT * FROM Trip WHERE id = ?").get(id) as TripRow | undefined;
+  const db = getDrizzle();
+
+  const tripRow = db.select().from(trip).where(eq(trip.id, id)).get();
   if (!tripRow) return null;
 
-  const stayRows = getDb().prepare(
-    "SELECT * FROM Stay WHERE tripId = ? ORDER BY ord ASC"
-  ).all(id) as StayRow[];
+  const stayRows = db.select().from(stay).where(eq(stay.tripId, id)).orderBy(asc(stay.ord)).all();
   const lodgingIds = new Set(stayRows.map((s) => s.lodgingLocationId));
 
-  const locationRows = getDb().prepare(
-    "SELECT * FROM Location WHERE tripId = ? ORDER BY name ASC"
-  ).all(id) as LocationRow[];
+  const locationRows = db
+    .select()
+    .from(location)
+    .where(eq(location.tripId, id))
+    .orderBy(asc(location.name))
+    .all();
 
-  const dayRows = getDb().prepare(
-    "SELECT * FROM ItineraryDay WHERE tripId = ? ORDER BY dayNumber ASC"
-  ).all(id) as DayRow[];
+  const dayRows = db
+    .select()
+    .from(itineraryDay)
+    .where(eq(itineraryDay.tripId, id))
+    .orderBy(asc(itineraryDay.dayNumber))
+    .all();
 
-  const stopRows = getDb().prepare(`
-    SELECT s.id, s.dayId, s.locationId, s.ord, s.notes,
-           l.id as loc_id, l.tripId as loc_tripId, l.name as loc_name,
-           l.address as loc_address, l.lat as loc_lat, l.lng as loc_lng,
-           l.placeId as loc_placeId, l.excluded as loc_excluded, l.note as loc_note,
-           l.rating as loc_rating, l.reviewCount as loc_reviewCount,
-           l.categories as loc_categories, l.visitDuration as loc_visitDuration,
-           l.openTime as loc_openTime, l.closeTime as loc_closeTime,
-           l.hoursJson as loc_hoursJson,
-           l.phone as loc_phone,
-           l.enrichmentStatus as loc_enrichmentStatus
-    FROM ItineraryStop s
-    JOIN Location l ON l.id = s.locationId
-    JOIN ItineraryDay d ON d.id = s.dayId
-    WHERE d.tripId = ?
-    ORDER BY s.ord ASC
-  `).all(id) as StopWithLocRow[];
+  const stopRows = db
+    .select({ stop: itineraryStop, loc: location })
+    .from(itineraryStop)
+    .innerJoin(location, eq(location.id, itineraryStop.locationId))
+    .innerJoin(itineraryDay, eq(itineraryDay.id, itineraryStop.dayId))
+    .where(eq(itineraryDay.tripId, id))
+    .orderBy(asc(itineraryStop.ord))
+    .all();
 
   const days: ItineraryDay[] = dayRows.map((day) => ({
-    id: day.id, tripId: day.tripId, dayNumber: day.dayNumber,
+    id: day.id,
+    tripId: day.tripId,
+    dayNumber: day.dayNumber,
     date: day.date ? new Date(day.date) : null,
     label: day.label,
-    stops: stopRows.filter((s) => s.dayId === day.id).map((s) => parseStopWithLoc(s, lodgingIds)),
+    stops: stopRows
+      .filter((s) => s.stop.dayId === day.id)
+      .map((s) => ({
+        id: s.stop.id,
+        dayId: s.stop.dayId,
+        locationId: s.stop.locationId,
+        order: s.stop.ord,
+        notes: s.stop.notes,
+        location: toLocation(s.loc, lodgingIds),
+      })),
   }));
 
   return {
     ...parseTrip(tripRow),
-    locations: locationRows.map((l) => parseLocation(l, lodgingIds)),
-    stays: stayRows.map(parseStay),
+    locations: locationRows.map((l) => toLocation(l, lodgingIds)),
+    stays: stayRows,
     days,
   };
 }
 
 function requireTrip(tripId: string): TripWithDetails {
-  const trip = getTripWithDetails(tripId);
-  if (!trip) throw new Error(`Trip ${tripId} not found after write — possible DB inconsistency`);
-  return trip;
+  const t = getTripWithDetails(tripId);
+  if (!t) throw new Error(`Trip ${tripId} not found after write — possible DB inconsistency`);
+  return t;
 }
+
+// ─── Mutations ────────────────────────────────────────────────────────────────
 
 export function createTripWithLocations(data: {
   name: string;
@@ -210,17 +134,22 @@ export function createTripWithLocations(data: {
   }>;
 }): TripWithDetails {
   const tripId = newId();
-  const insertTrip = getDb().prepare(
-    "INSERT INTO Trip (id, name, sourceUrl, numDays, startDate, createdAt, updatedAt) VALUES (?, ?, ?, NULL, NULL, datetime('now'), datetime('now'))"
-  );
-  const insertLoc = getDb().prepare(
-    "INSERT INTO Location (id, tripId, name, address, lat, lng, placeId, excluded, note, enrichmentStatus) VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, 'pending')"
-  );
 
-  transaction(() => {
-    insertTrip.run(tripId, data.name, data.sourceUrl);
+  getDrizzle().transaction((tx) => {
+    tx.insert(trip).values({ id: tripId, name: data.name, sourceUrl: data.sourceUrl }).run();
     for (const loc of data.locations) {
-      insertLoc.run(newId(), tripId, loc.name, loc.address ?? null, loc.lat ?? null, loc.lng ?? null, loc.placeId ?? null);
+      tx.insert(location)
+        .values({
+          id: newId(),
+          tripId,
+          name: loc.name,
+          address: loc.address ?? null,
+          lat: loc.lat ?? null,
+          lng: loc.lng ?? null,
+          placeId: loc.placeId ?? null,
+          enrichmentStatus: "pending",
+        })
+        .run();
     }
   });
 
@@ -233,32 +162,28 @@ export function rebuildItinerary(
   startDate: string | null,
   dayPlans: Array<{ dayNumber: number; locationIds: string[] }>
 ): TripWithDetails {
-  const deleteDays = getDb().prepare("DELETE FROM ItineraryDay WHERE tripId = ?");
-  const updateTrip = getDb().prepare(
-    "UPDATE Trip SET numDays = ?, startDate = ?, updatedAt = datetime('now') WHERE id = ?"
-  );
-  const insertDay = getDb().prepare(
-    "INSERT INTO ItineraryDay (id, tripId, dayNumber, date, label) VALUES (?, ?, ?, ?, NULL)"
-  );
-  const insertStop = getDb().prepare(
-    "INSERT INTO ItineraryStop (id, dayId, locationId, ord, notes) VALUES (?, ?, ?, ?, NULL)"
-  );
-
-  transaction(() => {
-    deleteDays.run(tripId);
-    updateTrip.run(numDays, startDate ? new Date(startDate).toISOString() : null, tripId);
+  getDrizzle().transaction((tx) => {
+    tx.delete(itineraryDay).where(eq(itineraryDay.tripId, tripId)).run();
+    tx.update(trip)
+      .set({
+        numDays,
+        startDate: startDate ? new Date(startDate).toISOString() : null,
+        updatedAt: sql`(datetime('now'))`,
+      })
+      .where(eq(trip.id, tripId))
+      .run();
 
     for (const plan of dayPlans) {
       const dayId = newId();
       const date =
         startDate && plan.dayNumber > 0
-          ? new Date(
-              new Date(startDate).getTime() + (plan.dayNumber - 1) * 86400000
-            ).toISOString()
+          ? new Date(new Date(startDate).getTime() + (plan.dayNumber - 1) * 86400000).toISOString()
           : null;
-      insertDay.run(dayId, tripId, plan.dayNumber, date);
+      tx.insert(itineraryDay).values({ id: dayId, tripId, dayNumber: plan.dayNumber, date }).run();
       for (let i = 0; i < plan.locationIds.length; i++) {
-        insertStop.run(newId(), dayId, plan.locationIds[i], i);
+        tx.insert(itineraryStop)
+          .values({ id: newId(), dayId, locationId: plan.locationIds[i], ord: i })
+          .run();
       }
     }
   });
@@ -270,49 +195,51 @@ export function addStopToDay(
   tripId: string,
   locationId: string,
   dayId: string,
-  /** When provided, insert the new stop immediately after this location's
-   *  existing stop on the day rather than appending to the end. */
+  /** When provided, insert immediately after this location's existing stop on the day. */
   afterLocationId?: string | null
 ): TripWithDetails {
-  const db = getDb();
+  getDrizzle().transaction((tx) => {
+    const loc = tx
+      .select({ id: location.id })
+      .from(location)
+      .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
+      .get();
+    if (!loc) throw new Error("Location not found in trip");
 
-  const loc = db.prepare("SELECT id FROM Location WHERE id = ? AND tripId = ?").get(locationId, tripId);
-  if (!loc) throw new Error("Location not found in trip");
+    const day = tx
+      .select({ id: itineraryDay.id })
+      .from(itineraryDay)
+      .where(and(eq(itineraryDay.id, dayId), eq(itineraryDay.tripId, tripId)))
+      .get();
+    if (!day) throw new Error("Day not found in trip");
 
-  const day = db.prepare("SELECT id FROM ItineraryDay WHERE id = ? AND tripId = ?").get(dayId, tripId);
-  if (!day) throw new Error("Day not found in trip");
-
-  let ord: number;
-
-  if (afterLocationId) {
-    type AnchorRow = { ord: number } | undefined;
-    const anchor = db.prepare(
-      "SELECT s.ord FROM ItineraryStop s WHERE s.dayId = ? AND s.locationId = ?"
-    ).get(dayId, afterLocationId) as AnchorRow;
+    let ord: number;
+    const anchor = afterLocationId
+      ? tx
+          .select({ ord: itineraryStop.ord })
+          .from(itineraryStop)
+          .where(and(eq(itineraryStop.dayId, dayId), eq(itineraryStop.locationId, afterLocationId)))
+          .get()
+      : undefined;
 
     if (anchor) {
-      // Shift all stops that come after the anchor position up by one
-      db.prepare(
-        "UPDATE ItineraryStop SET ord = ord + 1 WHERE dayId = ? AND ord > ?"
-      ).run(dayId, anchor.ord);
+      // Shift stops after the anchor up by one, then slot in right after it.
+      tx.update(itineraryStop)
+        .set({ ord: sql`${itineraryStop.ord} + 1` })
+        .where(and(eq(itineraryStop.dayId, dayId), gt(itineraryStop.ord, anchor.ord)))
+        .run();
       ord = anchor.ord + 1;
     } else {
-      // Anchor not found on this day — fall back to appending
-      const { maxOrd } = db
-        .prepare("SELECT MAX(ord) as maxOrd FROM ItineraryStop WHERE dayId = ?")
-        .get(dayId) as { maxOrd: number | null };
-      ord = (maxOrd ?? -1) + 1;
+      const m = tx
+        .select({ maxOrd: max(itineraryStop.ord) })
+        .from(itineraryStop)
+        .where(eq(itineraryStop.dayId, dayId))
+        .get();
+      ord = (m?.maxOrd ?? -1) + 1;
     }
-  } else {
-    const { maxOrd } = db
-      .prepare("SELECT MAX(ord) as maxOrd FROM ItineraryStop WHERE dayId = ?")
-      .get(dayId) as { maxOrd: number | null };
-    ord = (maxOrd ?? -1) + 1;
-  }
 
-  db.prepare(
-    "INSERT INTO ItineraryStop (id, dayId, locationId, ord, notes) VALUES (?, ?, ?, ?, NULL)"
-  ).run(newId(), dayId, locationId, ord);
+    tx.insert(itineraryStop).values({ id: newId(), dayId, locationId, ord }).run();
+  });
 
   return requireTrip(tripId);
 }
@@ -323,35 +250,36 @@ export function moveStop(
   targetDayId: string,
   targetOrder: number
 ): TripWithDetails {
-  const getStop = getDb().prepare("SELECT * FROM ItineraryStop WHERE id = ?");
-  const getDay = getDb().prepare("SELECT * FROM ItineraryDay WHERE id = ? AND tripId = ?");
-  const shiftOrds = getDb().prepare(
-    "UPDATE ItineraryStop SET ord = ord + 1 WHERE dayId = ? AND ord >= ?"
-  );
-  const updateStop = getDb().prepare(
-    "UPDATE ItineraryStop SET dayId = ?, ord = ? WHERE id = ?"
-  );
-  const getRemaining = getDb().prepare(
-    "SELECT id FROM ItineraryStop WHERE dayId = ? ORDER BY ord ASC"
-  );
-  const setOrd = getDb().prepare("UPDATE ItineraryStop SET ord = ? WHERE id = ?");
+  getDrizzle().transaction((tx) => {
+    const stopRow = tx.select().from(itineraryStop).where(eq(itineraryStop.id, stopId)).get();
+    if (!stopRow) throw new Error("Stop not found");
 
-  transaction(() => {
-    const stop = getStop.get(stopId) as StopRow | undefined;
-    if (!stop) throw new Error("Stop not found");
-
-    const targetDay = getDay.get(targetDayId, tripId);
+    const targetDay = tx
+      .select({ id: itineraryDay.id })
+      .from(itineraryDay)
+      .where(and(eq(itineraryDay.id, targetDayId), eq(itineraryDay.tripId, tripId)))
+      .get();
     if (!targetDay) throw new Error("Target day not found");
 
-    const sourceDayId = stop.dayId;
+    const sourceDayId = stopRow.dayId;
 
-    shiftOrds.run(targetDayId, targetOrder);
-    updateStop.run(targetDayId, targetOrder, stopId);
+    // Make room at targetOrder, then move the stop in.
+    tx.update(itineraryStop)
+      .set({ ord: sql`${itineraryStop.ord} + 1` })
+      .where(and(eq(itineraryStop.dayId, targetDayId), gte(itineraryStop.ord, targetOrder)))
+      .run();
+    tx.update(itineraryStop).set({ dayId: targetDayId, ord: targetOrder }).where(eq(itineraryStop.id, stopId)).run();
 
+    // Re-pack the source day's ords if the stop left it.
     if (sourceDayId !== targetDayId) {
-      const remaining = getRemaining.all(sourceDayId) as { id: string }[];
+      const remaining = tx
+        .select({ id: itineraryStop.id })
+        .from(itineraryStop)
+        .where(eq(itineraryStop.dayId, sourceDayId))
+        .orderBy(asc(itineraryStop.ord))
+        .all();
       for (let i = 0; i < remaining.length; i++) {
-        setOrd.run(i, remaining[i].id);
+        tx.update(itineraryStop).set({ ord: i }).where(eq(itineraryStop.id, remaining[i].id)).run();
       }
     }
   });
