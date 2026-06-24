@@ -45,11 +45,13 @@ to Stop. *Lodging* is a place; *Stay* is a time-bounded occupancy of it.
 
 **Invariants:**
 
-1. Stays within a Trip are ordered and their night-ranges are contiguous and
-   non-overlapping; every Day falls in exactly one Stay's range.
+1. Stays within a Trip are ordered with non-overlapping night-ranges. A Day falls
+   within **at most one** Stay. Lodging is optional: a Trip may have zero Stays
+   (lodging-optional or blank-slate), and Days outside any Stay's range have no Stay.
 2. A Lodging is never a Stop and never a nearby-search candidate.
-3. A Day has a start Anchor and an end Anchor; for a non-travel day both are the
-   Stay's Lodging.
+3. A Day has a start Anchor and an end Anchor. When the Day belongs to a Stay, both
+   default to that Stay's Lodging (non-travel day); a Day with no Stay has no Lodging
+   anchor and uses the optimizer's anchor-less fallback.
 4. A Stop references a Location in the same Trip; ordering within a Day is a dense
    sequence starting at 0.
 5. `excluded` Locations and `locked` Stops are inputs the optimizer must respect, not
