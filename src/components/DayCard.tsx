@@ -265,19 +265,23 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
           </p>
         </div>
 
-        {/* Lock toggle — stays visible when locked so the pin reads at rest (ADR-0006) */}
-        <button
-          onClick={(e) => { e.stopPropagation(); setStopLocked(stop.id, !stop.locked); }}
-          title={stop.locked ? "Locked to this day & order — click to unlock" : "Lock to this day & order"}
-          aria-label={stop.locked ? "Unlock stop" : "Lock stop"}
-          aria-pressed={stop.locked}
-          className={`shrink-0 w-7 h-7 flex items-center justify-center rounded transition-all hover:bg-gray-100 dark:hover:bg-gray-800
-            ${stop.locked
-              ? "text-brand-600 dark:text-brand-400 opacity-100"
-              : "text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 focus-within:opacity-100 hover:text-brand-600 dark:hover:text-brand-400"}`}
-        >
-          {stop.locked ? <LockClosedIcon /> : <LockOpenIcon />}
-        </button>
+        {/* Lock toggle — stays visible when locked so the pin reads at rest (ADR-0006).
+            Hidden on lodging stops: lodging is owned by the Stay timeline, not individually
+            lockable, and the optimizer ignores locks on lodging anyway. */}
+        {!loc.isLodging && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setStopLocked(stop.id, !stop.locked); }}
+            title={stop.locked ? "Locked to this day & order — click to unlock" : "Lock to this day & order"}
+            aria-label={stop.locked ? "Unlock stop" : "Lock stop"}
+            aria-pressed={stop.locked}
+            className={`shrink-0 w-7 h-7 flex items-center justify-center rounded transition-all hover:bg-gray-100 dark:hover:bg-gray-800
+              ${stop.locked
+                ? "text-brand-600 dark:text-brand-400 opacity-100"
+                : "text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 focus-within:opacity-100 hover:text-brand-600 dark:hover:text-brand-400"}`}
+          >
+            {stop.locked ? <LockClosedIcon /> : <LockOpenIcon />}
+          </button>
+        )}
 
         {/* Action buttons */}
         <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
@@ -290,14 +294,18 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
           >
             <SearchIcon />
           </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); doRemoveStop(); }}
-            title="Remove location from this day"
-            aria-label="Remove location"
-            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-          >
-            <TrashIcon />
-          </button>
+          {/* Remove is hidden on lodging stops — a lodging is removed by dissolving its Stay
+              in the Stay editor (relegation), not by trashing one auto-generated day stop. */}
+          {!loc.isLodging && (
+            <button
+              onClick={(e) => { e.stopPropagation(); doRemoveStop(); }}
+              title="Remove location from this day"
+              aria-label="Remove location"
+              className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+            >
+              <TrashIcon />
+            </button>
+          )}
         </div>
       </li>
     </>
