@@ -9,6 +9,7 @@ import ScheduleView from "./ScheduleView";
 import LocationInspector from "./LocationInspector";
 import AddLocationModal from "./AddLocationModal";
 import NearbyDrawer from "./NearbyDrawer";
+import StayEditor from "./StayEditor";
 
 const MapView = dynamic(() => import("./MapView"), { ssr: false });
 
@@ -41,6 +42,7 @@ export default function TripClient({ trip: initial }: Props) {
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
   const showOptimize = useTripStore((s) => s.showOptimize);
   const showAddLocation = useTripStore((s) => s.showAddLocation);
+  const showStays = useTripStore((s) => s.showStays);
 
   const isEnriching = useTripStore((s) => s.isEnriching);
   const enrichProgress = useTripStore((s) => s.enrichProgress);
@@ -51,6 +53,7 @@ export default function TripClient({ trip: initial }: Props) {
   const setSelectedDayNumber = useTripStore((s) => s.setSelectedDayNumber);
   const setShowOptimize = useTripStore((s) => s.setShowOptimize);
   const setShowAddLocation = useTripStore((s) => s.setShowAddLocation);
+  const setShowStays = useTripStore((s) => s.setShowStays);
 
   const hasItinerary = trip?.days.length > 0;
   const pendingCount = trip?.locations.filter((l) => l.enrichmentStatus === "pending").length ?? 0;
@@ -82,6 +85,9 @@ export default function TripClient({ trip: initial }: Props) {
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => setShowAddLocation(true)} className="btn-secondary text-sm">
             + Add location
+          </button>
+          <button onClick={() => setShowStays(true)} className="btn-secondary text-sm">
+            Lodging{trip?.stays.length ? ` (${trip.stays.length})` : ""}
           </button>
           {pendingCount > 0 && (
             <span className="text-sm text-gray-400 dark:text-gray-500 animate-pulse self-center">
@@ -198,6 +204,7 @@ export default function TripClient({ trip: initial }: Props) {
 
       {showOptimize && <OptimizeModal />}
       {showAddLocation && <AddLocationModal />}
+      {showStays && <StayEditor />}
     </div>
   );
 }

@@ -164,7 +164,8 @@ export function getDayCategories(dayId: string): string[] {
   return [...set];
 }
 
-/** Schedulable (non-excluded) locations for the optimizer, with derived isLodging. */
+/** Schedulable (non-excluded) location for the optimizer. Includes lodgings, which the
+ *  optimizer identifies via the Stay timeline (not a per-location flag). */
 export type OptimizationLocation = {
   id: string;
   lat: number | null;
@@ -173,18 +174,25 @@ export type OptimizationLocation = {
   openTime: string | null;
   closeTime: string | null;
   categories: string[] | null;
-  isLodging: boolean;
 };
 
-export function getOptimizationInputs(tripId: string): OptimizationLocation[] | null {
+export type OptimizationInputs = {
+  locations: OptimizationLocation[];
+  stays: Array<{ lodgingLocationId: string; startNight: number; endNight: number }>;
+};
+
+export function getOptimizationInputs(tripId: string): OptimizationInputs | null {
   const db = getDrizzle();
   if (!tripExists(tripId)) return null;
 
-  const lodgingIds = new Set(
-    db.select({ id: stay.lodgingLocationId }).from(stay).where(eq(stay.tripId, tripId)).all().map((r) => r.id)
-  );
+  const stays = db
+    .select({ lodgingLocationId: stay.lodgingLocationId, startNight: stay.startNight, endNight: stay.endNight })
+    .from(stay)
+    .where(eq(stay.tripId, tripId))
+    .orderBy(asc(stay.ord))
+    .all();
 
-  const rows = db
+  const locations = db
     .select({
       id: location.id,
       lat: location.lat,
@@ -198,7 +206,7 @@ export function getOptimizationInputs(tripId: string): OptimizationLocation[] | 
     .where(and(eq(location.tripId, tripId), eq(location.excluded, false)))
     .all();
 
-  return rows.map((r) => ({ ...r, isLodging: lodgingIds.has(r.id) }));
+  return { locations, stays };
 }
 
 // ─── Trip mutations ─────────────────────────────────────────────────────────
@@ -295,6 +303,73 @@ export function rebuildItinerary(
   return requireTrip(tripId);
 }
 
+// ─── Stay timeline ────────────────────────────────────────────────────────────
+
+/** Thrown when a proposed Stay timeline violates ADR-0002/0005 invariants. */
+export class StayValidationError extends Error {}
+
+export type StayInput = { lodgingLocationId: string; startNight: number; endNight: number };
+
+/**
+ * Replace a trip's Stay timeline atomically (ADR-0005). Validates ADR-0002 invariants:
+ * each range within [1, numDays], non-overlapping, each lodging a Location in the trip.
+ * Stays may have gaps (lodging is optional). Stays are stored ordered by startNight.
+ * Lodging *stops* are not written here — they are generated per-day by optimize/rebuild.
+ */
+export function setStays(tripId: string, stays: StayInput[]): TripWithDetails {
+  const db = getDrizzle();
+  const tripRow = db.select({ numDays: trip.numDays }).from(trip).where(eq(trip.id, tripId)).get();
+  if (!tripRow) throw new StayValidationError("Trip not found");
+  const numDays = tripRow.numDays;
+
+  const sorted = [...stays].sort((a, b) => a.startNight - b.startNight);
+
+  for (const s of sorted) {
+    if (!Number.isInteger(s.startNight) || !Number.isInteger(s.endNight) || s.startNight < 1 || s.endNight < s.startNight) {
+      throw new StayValidationError(`Invalid night range ${s.startNight}–${s.endNight}`);
+    }
+    if (numDays != null && s.endNight > numDays) {
+      throw new StayValidationError(`Stay ends on night ${s.endNight} but the trip has ${numDays} days`);
+    }
+  }
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].startNight <= sorted[i - 1].endNight) {
+      throw new StayValidationError("Stays overlap");
+    }
+  }
+
+  const lodgingIds = sorted.map((s) => s.lodgingLocationId);
+  if (lodgingIds.length > 0) {
+    const found = db
+      .select({ id: location.id })
+      .from(location)
+      .where(and(eq(location.tripId, tripId), inArray(location.id, lodgingIds)))
+      .all();
+    const foundSet = new Set(found.map((r) => r.id));
+    for (const id of lodgingIds) {
+      if (!foundSet.has(id)) throw new StayValidationError("Lodging location is not in this trip");
+    }
+  }
+
+  db.transaction((tx) => {
+    tx.delete(stay).where(eq(stay.tripId, tripId)).run();
+    sorted.forEach((s, ord) => {
+      tx.insert(stay)
+        .values({
+          id: newId(),
+          tripId,
+          lodgingLocationId: s.lodgingLocationId,
+          ord,
+          startNight: s.startNight,
+          endNight: s.endNight,
+        })
+        .run();
+    });
+  });
+
+  return requireTrip(tripId);
+}
+
 // ─── Location mutations ───────────────────────────────────────────────────────
 
 export type NewLocationInput = {
@@ -340,11 +415,7 @@ export function createLocation(tripId: string, data: NewLocationInput): Location
   return loc;
 }
 
-/**
- * Update a Location. `isLodging` toggles the trip's lodging Stay (single-Stay,
- * transitional — ADR-0005) and the auto-prepended lodging stops; the rest are plain
- * column updates. All in one transaction.
- */
+/** Update a Location's editable fields. Lodging is managed via the Stay timeline (setStays), not here. */
 export function updateLocation(
   tripId: string,
   locationId: string,
@@ -353,59 +424,21 @@ export function updateLocation(
     note?: string | null;
     name?: string;
     visitDuration?: number | null;
-    isLodging?: boolean;
   }
 ): Location | null {
-  getDrizzle().transaction((tx) => {
-    if (fields.isLodging === true) {
-      const t = tx.select({ numDays: trip.numDays }).from(trip).where(eq(trip.id, tripId)).get();
-      tx.delete(stay).where(eq(stay.tripId, tripId)).run();
-      tx.insert(stay)
-        .values({ id: newId(), tripId, lodgingLocationId: locationId, ord: 0, startNight: 1, endNight: t?.numDays ?? 1 })
-        .run();
-
-      const dayIds = tx
-        .select({ id: itineraryDay.id })
-        .from(itineraryDay)
-        .where(eq(itineraryDay.tripId, tripId))
-        .orderBy(asc(itineraryDay.dayNumber))
-        .all()
-        .map((d) => d.id);
-      if (dayIds.length) {
-        tx.delete(itineraryStop)
-          .where(and(eq(itineraryStop.locationId, locationId), inArray(itineraryStop.dayId, dayIds)))
-          .run();
-      }
-      for (const dId of dayIds) {
-        tx.update(itineraryStop).set({ ord: sql`${itineraryStop.ord} + 1` }).where(eq(itineraryStop.dayId, dId)).run();
-        tx.insert(itineraryStop).values({ id: newId(), dayId: dId, locationId, ord: 0 }).run();
-      }
-    }
-
-    if (fields.isLodging === false) {
-      tx.delete(stay).where(and(eq(stay.tripId, tripId), eq(stay.lodgingLocationId, locationId))).run();
-      const dayIds = tx
-        .select({ id: itineraryDay.id })
-        .from(itineraryDay)
-        .where(eq(itineraryDay.tripId, tripId))
-        .all()
-        .map((d) => d.id);
-      if (dayIds.length) {
-        tx.delete(itineraryStop)
-          .where(and(eq(itineraryStop.locationId, locationId), inArray(itineraryStop.dayId, dayIds)))
-          .run();
-      }
-    }
-
-    const set = {
-      ...(fields.excluded !== undefined ? { excluded: fields.excluded } : {}),
-      ...(fields.note !== undefined ? { note: fields.note } : {}),
-      ...(fields.name !== undefined ? { name: fields.name } : {}),
-      ...(fields.visitDuration !== undefined ? { visitDuration: fields.visitDuration } : {}),
-    };
-    if (Object.keys(set).length) tx.update(location).set(set).where(eq(location.id, locationId)).run();
-  });
-
+  const set = {
+    ...(fields.excluded !== undefined ? { excluded: fields.excluded } : {}),
+    ...(fields.note !== undefined ? { note: fields.note } : {}),
+    ...(fields.name !== undefined ? { name: fields.name } : {}),
+    ...(fields.visitDuration !== undefined ? { visitDuration: fields.visitDuration } : {}),
+  };
+  if (Object.keys(set).length) {
+    getDrizzle()
+      .update(location)
+      .set(set)
+      .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
+      .run();
+  }
   return getLocation(locationId);
 }
 

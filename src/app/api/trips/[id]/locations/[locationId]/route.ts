@@ -7,9 +7,9 @@ export async function PATCH(
 ) {
   const { id: tripId, locationId } = await params;
   const body = await req.json();
-  const { excluded, note, name, visitDuration, isLodging } = body;
+  const { excluded, note, name, visitDuration } = body;
 
-  const location = updateLocation(tripId, locationId, { excluded, note, name, visitDuration, isLodging });
+  const location = updateLocation(tripId, locationId, { excluded, note, name, visitDuration });
   return NextResponse.json(location);
 }
 

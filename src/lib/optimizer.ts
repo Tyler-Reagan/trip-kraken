@@ -3,20 +3,17 @@
  *
  * Phase 1 — Cluster locations into days (k-means on lat/lng)
  *   Geographically close locations are grouped into the same day to minimize
- *   travel between days.
+ *   travel between days. When the trip has Stays (ADR-0005), each day's centroid is
+ *   tethered toward its Stay's lodging, so a location's Stay (its city) emerges from
+ *   the same clustering cost rather than a separate assignment step.
  *
  * Phase 2 — Order stops within each day (nearest-neighbor TSP + 2-opt)
- *   Within a cluster, find a short visiting order using a greedy
- *   nearest-neighbor heuristic, then refine with 2-opt local search to
- *   eliminate route crossings. Typical improvement: 8–12% over nearest-
- *   neighbor alone. Good enough for typical trip sizes (≤ 20 stops/day)
- *   and requires no external API.
+ *   Within a cluster, find a short visiting order using a greedy nearest-neighbor
+ *   heuristic anchored at that day's lodging, then refine with 2-opt local search.
  *
- *   Time-window awareness: if locations carry openTime/closeTime fields,
- *   both phases add a km-equivalent soft penalty for arriving outside those
- *   windows. The penalty is large enough to discourage out-of-hours visits
- *   but never hard-blocks them — the schedule remains feasible even when a
- *   strict ordering is geometrically impossible.
+ *   Time-window awareness: if locations carry openTime/closeTime fields, both phases
+ *   add a km-equivalent soft penalty for arriving outside those windows. The penalty
+ *   discourages out-of-hours visits but never hard-blocks them.
  */
 
 export interface LocationInput {
@@ -26,8 +23,14 @@ export interface LocationInput {
   visitDuration?: number;   // minutes; used for day duration balancing
   openTime?: string;        // "HH:MM" 24-hour; soft time-window constraint
   closeTime?: string;       // "HH:MM" 24-hour; soft time-window constraint
-  isLodging?: boolean;      // hotel/lodging: prepended to every day; excluded from clustering
   categories?: string[];    // Google Places categories; used for cross-day balance
+}
+
+/** A lodging occupied over a contiguous night-range (ADR-0005). */
+export interface StayPlan {
+  lodgingId: string;
+  startNight: number;
+  endNight: number;
 }
 
 export interface DayPlan {
@@ -38,53 +41,53 @@ export interface DayPlan {
 export function optimizeItinerary(
   locations: LocationInput[],
   numDays: number,
+  stays: StayPlan[] = [],
   dayBudgetMinutes?: number,
   dayStartMins = 9 * 60    // assumed start-of-day for time-window simulation (default 09:00)
 ): DayPlan[] {
   if (locations.length === 0) return [];
 
   const days = numDays > 0 ? numDays : 1;
+  const byId = new Map(locations.map((l) => [l.id, l]));
 
-  // Extract lodging — excluded from clustering, prepended to every day
-  const lodging = locations.find((l) => l.isLodging);
-  const nonLodging = locations.filter((l) => !l.isLodging);
+  // Day d (1..days) belongs to the Stay covering night d; its anchor is that Stay's
+  // lodging. Lodging is excluded from clustering and prepended per-day (ADR-0005).
+  const lodgingIds = new Set(stays.map((s) => s.lodgingId));
+  const dayAnchor: (LocationInput | null)[] = [];
+  for (let d = 1; d <= days; d++) {
+    const stay = stays.find((s) => d >= s.startNight && d <= s.endNight);
+    dayAnchor.push(stay ? byId.get(stay.lodgingId) ?? null : null);
+  }
+  const prepend = (dayIdx: number, ids: string[]): string[] => {
+    const a = dayAnchor[dayIdx];
+    return a ? [a.id, ...ids] : ids;
+  };
 
-  // Filter out locations without valid coordinates
+  const nonLodging = locations.filter((l) => !lodgingIds.has(l.id));
   const valid = nonLodging.filter((l) => l.lat !== 0 || l.lng !== 0);
   const invalid = nonLodging.filter((l) => l.lat === 0 && l.lng === 0);
 
-  // If fewer non-lodging locations than days, each gets its own day
+  // Fewer locations than days: one per day, each prepended with its day's lodging.
   if (valid.length <= days) {
-    const plans: DayPlan[] = valid.map((loc, i) => ({
-      dayNumber: i + 1,
-      locationIds: lodging ? [lodging.id, loc.id] : [loc.id],
-    }));
-    // Pad remaining days as empty (still include lodging)
-    for (let d = valid.length + 1; d <= days; d++) {
-      plans.push({ dayNumber: d, locationIds: lodging ? [lodging.id] : [] });
+    const plans: DayPlan[] = [];
+    for (let d = 0; d < days; d++) {
+      const loc = valid[d];
+      plans.push({ dayNumber: d + 1, locationIds: prepend(d, loc ? [loc.id] : []) });
     }
-    // Append invalid locations to last day
-    if (invalid.length > 0 && plans.length > 0) {
-      plans[plans.length - 1].locationIds.push(...invalid.map((l) => l.id));
-    }
+    if (invalid.length > 0) plans[plans.length - 1].locationIds.push(...invalid.map((l) => l.id));
     return plans;
   }
 
-  // Phase 1: k-means clustering (non-lodging locations only)
-  const clusters = kMeans(valid, days, dayBudgetMinutes);
+  // Phase 1: k-means clustering, each day's centroid tethered toward its Stay's lodging.
+  const clusters = kMeans(valid, days, dayAnchor, dayBudgetMinutes);
 
-  // Phase 2: nearest-neighbor TSP + 2-opt refinement within each cluster
-  // Lodging is passed to nearestNeighborOrder so it starts the route from there
-  const plans: DayPlan[] = clusters.map((cluster, i) => {
-    const ordered = twoOpt(nearestNeighborOrder(cluster, dayStartMins, lodging), dayStartMins);
-    const stopIds = ordered.map((l) => l.id);
-    return {
-      dayNumber: i + 1,
-      locationIds: lodging ? [lodging.id, ...stopIds] : stopIds,
-    };
+  // Phase 2: nearest-neighbor TSP + 2-opt within each day, anchored at its lodging.
+  const plans: DayPlan[] = clusters.map((cluster, d) => {
+    const ordered = twoOpt(nearestNeighborOrder(cluster, dayStartMins, dayAnchor[d] ?? undefined), dayStartMins);
+    return { dayNumber: d + 1, locationIds: prepend(d, ordered.map((l) => l.id)) };
   });
 
-  // Distribute locations with missing coordinates across days round-robin
+  // Distribute coordinate-less locations across days round-robin.
   invalid.forEach((loc, i) => {
     plans[i % plans.length].locationIds.push(loc.id);
   });
@@ -96,12 +99,23 @@ export function optimizeItinerary(
 // K-means clustering
 // ---------------------------------------------------------------------------
 
-function kMeans(locations: LocationInput[], k: number, dayBudgetMinutes?: number): LocationInput[][] {
-  // Initialise centroids using k-means++ seeding
-  const centroids = kMeansPlusPlusInit(locations, k);
+// How strongly a day's centroid is tethered to its Stay's lodging during recompute, in
+// units of virtual members. Keeps a Stay's days in the right city while still letting
+// real members spread them across neighbourhoods.
+const STAY_ANCHOR_WEIGHT = 2;
+
+type Centroid = { id: string; lat: number; lng: number };
+
+function kMeans(
+  locations: LocationInput[],
+  k: number,
+  anchors: (LocationInput | null)[],
+  dayBudgetMinutes?: number
+): LocationInput[][] {
+  const centroids = seedCentroids(locations, k, anchors);
   let assignments = new Array<number>(locations.length).fill(0);
 
-  // Pre-compute ideal category distribution across days for Task 5
+  // Pre-compute ideal category distribution across days (cross-day balance).
   const allCategories = locations.flatMap((l) => l.categories ?? []);
   const uniqueCategories = [...new Set(allCategories)];
   const idealCategoryCounts: Record<string, number> = {};
@@ -111,17 +125,13 @@ function kMeans(locations: LocationInput[], k: number, dayBudgetMinutes?: number
   }
 
   for (let iter = 0; iter < 100; iter++) {
-    // Compute current day durations from previous iteration's assignments so
-    // the cost function can penalise adding more stops to over-budget days.
+    // Day durations from the previous assignment, so the cost can penalise over-budget days.
     const dayDurations = dayBudgetMinutes
       ? Array.from({ length: k }, (_, c) =>
-          locations
-            .filter((_, i) => assignments[i] === c)
-            .reduce((sum, l) => sum + (l.visitDuration ?? 0), 0)
+          locations.filter((_, i) => assignments[i] === c).reduce((sum, l) => sum + (l.visitDuration ?? 0), 0)
         )
       : undefined;
 
-    // Compute current category counts per day for category balance penalty
     const dayCategoryCounts: Record<string, number>[] = Array.from({ length: k }, () => ({}));
     if (uniqueCategories.length > 0) {
       locations.forEach((loc, i) => {
@@ -131,7 +141,6 @@ function kMeans(locations: LocationInput[], k: number, dayBudgetMinutes?: number
       });
     }
 
-    // Assign each location to the nearest centroid (with optional duration + category penalty)
     const newAssignments = locations.map((loc) =>
       nearestCentroidIndex(loc, centroids, dayDurations, dayBudgetMinutes, dayCategoryCounts, idealCategoryCounts)
     );
@@ -140,54 +149,59 @@ function kMeans(locations: LocationInput[], k: number, dayBudgetMinutes?: number
     assignments = newAssignments;
     if (!changed) break;
 
-    // Recompute centroids as the mean of their assigned locations
+    // Recompute centroids as the mean of members, tethered toward each day's anchor.
     for (let c = 0; c < k; c++) {
       const members = locations.filter((_, i) => assignments[i] === c);
-      if (members.length === 0) continue;
+      const anchor = anchors[c];
+      if (members.length === 0) {
+        if (anchor) centroids[c] = { id: `c${c}`, lat: anchor.lat, lng: anchor.lng };
+        continue;
+      }
+      const sumLat = members.reduce((s, l) => s + l.lat, 0);
+      const sumLng = members.reduce((s, l) => s + l.lng, 0);
+      const w = anchor ? STAY_ANCHOR_WEIGHT : 0;
+      const al = anchor ? anchor.lat : 0;
+      const an = anchor ? anchor.lng : 0;
       centroids[c] = {
-        id: `centroid-${c}`,
-        lat: members.reduce((s, l) => s + l.lat, 0) / members.length,
-        lng: members.reduce((s, l) => s + l.lng, 0) / members.length,
+        id: `c${c}`,
+        lat: (sumLat + w * al) / (members.length + w),
+        lng: (sumLng + w * an) / (members.length + w),
       };
     }
   }
 
-  // Collect clusters
   const clusters: LocationInput[][] = Array.from({ length: k }, () => []);
   locations.forEach((loc, i) => clusters[assignments[i]].push(loc));
-
-  // Merge empty clusters into the largest one to ensure k non-empty days
-  // when there are fewer locations than k
   return clusters;
 }
 
-function kMeansPlusPlusInit(
-  locations: LocationInput[],
-  k: number
-): LocationInput[] {
-  const centroids: LocationInput[] = [];
-  // Pick a random first centroid
-  centroids.push(locations[Math.floor(Math.random() * locations.length)]);
-
-  while (centroids.length < k) {
-    // For each location compute its distance to the nearest centroid
-    const distances = locations.map((loc) => {
-      const d = Math.min(...centroids.map((c) => haversine(loc, c)));
-      return d * d;
-    });
-    const total = distances.reduce((s, d) => s + d, 0);
-    // Pick next centroid with probability proportional to distance²
-    let threshold = Math.random() * total;
-    for (let i = 0; i < locations.length; i++) {
-      threshold -= distances[i];
-      if (threshold <= 0) {
-        centroids.push(locations[i]);
-        break;
-      }
+/**
+ * Seed one centroid per day. Days with a Stay anchor seed at the lodging (with a tiny
+ * deterministic jitter so multiple days of one Stay don't start identical); days with no
+ * Stay seed greedily at the location farthest from existing centroids (k-means++ in
+ * spirit, deterministic).
+ */
+function seedCentroids(locations: LocationInput[], k: number, anchors: (LocationInput | null)[]): Centroid[] {
+  const centroids: Centroid[] = [];
+  for (let c = 0; c < k; c++) {
+    const a = anchors[c];
+    if (a) {
+      const jitter = (c + 1) * 1e-3; // ~100 m, breaks ties between same-Stay days
+      centroids.push({ id: `c${c}`, lat: a.lat + jitter, lng: a.lng + jitter });
+      continue;
     }
-    if (centroids.length < k) centroids.push(locations[locations.length - 1]);
+    if (centroids.length === 0) {
+      centroids.push({ id: `c${c}`, lat: locations[0].lat, lng: locations[0].lng });
+      continue;
+    }
+    let best = locations[0];
+    let bestDist = -1;
+    for (const loc of locations) {
+      const d = Math.min(...centroids.map((cc) => haversine(loc, cc)));
+      if (d > bestDist) { bestDist = d; best = loc; }
+    }
+    centroids.push({ id: `c${c}`, lat: best.lat, lng: best.lng });
   }
-
   return centroids;
 }
 
@@ -197,7 +211,7 @@ const CATEGORY_BALANCE_KM = 1.0;
 
 function nearestCentroidIndex(
   loc: LocationInput,
-  centroids: LocationInput[],
+  centroids: Centroid[],
   dayDurations?: number[],
   dayBudgetMinutes?: number,
   dayCategoryCounts?: Record<string, number>[],
