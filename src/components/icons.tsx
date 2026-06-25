@@ -2,24 +2,6 @@ interface IconProps {
   className?: string;
 }
 
-export function FlagIcon({ className = "w-4 h-4" }: IconProps) {
-  return (
-    <svg className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M4 2v12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M4 2h8.5l-2.25 3.75 2.25 3.75H4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-export function FlagFilledIcon({ className = "w-4 h-4" }: IconProps) {
-  return (
-    <svg className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M4 2v12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M4 2h8.5l-2.25 3.75 2.25 3.75H4V2z" fill="currentColor" />
-    </svg>
-  );
-}
-
 export function SearchIcon({ className = "w-4 h-4" }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">

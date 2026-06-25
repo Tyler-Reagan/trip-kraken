@@ -18,6 +18,7 @@ interface TripStore {
   nearbySearchDayId: string | null;
   showOptimize: boolean;
   showAddLocation: boolean;
+  showStays: boolean;
 
   // Setters
   setTrip: (trip: TripWithDetails) => void;
@@ -28,13 +29,14 @@ interface TripStore {
   setNearbySearchLocation: (loc: Location | null, dayId?: string | null) => void;
   setShowOptimize: (v: boolean) => void;
   setShowAddLocation: (v: boolean) => void;
+  setShowStays: (v: boolean) => void;
 
   // Async mutations — use get().tripId internally
   reload: () => Promise<void>;
   moveStop: (stopId: string, targetDayId: string, targetOrder: number) => Promise<void>;
   removeStop: (stopId: string) => Promise<void>;
   addLocationToDay: (locationId: string, dayId: string) => Promise<void>;
-  toggleLodging: (locationId: string, isLodging: boolean) => Promise<void>;
+  saveStays: (stays: Array<{ lodgingLocationId: string; startNight: number; endNight: number }>) => Promise<string | null>;
   enrich: () => Promise<void>;
 
   // Enrichment progress (shown during manual retry)
@@ -59,6 +61,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   nearbySearchDayId: null,
   showOptimize: false,
   showAddLocation: false,
+  showStays: false,
   isEnriching: false,
   enrichProgress: null,
   _pollTimer: null,
@@ -71,6 +74,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   setNearbySearchLocation: (loc, dayId) => set({ nearbySearchLocation: loc, nearbySearchDayId: dayId ?? null }),
   setShowOptimize: (v) => set({ showOptimize: v }),
   setShowAddLocation: (v) => set({ showAddLocation: v }),
+  setShowStays: (v) => set({ showStays: v }),
 
   reload: async () => {
     const tripId = get().tripId;
@@ -120,15 +124,20 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     await get().reload();
   },
 
-  toggleLodging: async (locationId, isLodging) => {
+  saveStays: async (stays) => {
     const tripId = get().tripId;
-    if (!tripId) return;
-    await fetch(`/api/trips/${tripId}/locations/${locationId}`, {
-      method: "PATCH",
+    if (!tripId) return "No trip loaded";
+    const res = await fetch(`/api/trips/${tripId}/stays`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isLodging, ...(isLodging ? { visitDuration: null } : {}) }),
+      body: JSON.stringify({ stays }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return (data as { error?: string }).error ?? "Failed to save stays";
+    }
     await get().reload();
+    return null;
   },
 
   enrich: async () => {

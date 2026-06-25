@@ -415,11 +415,7 @@ export function createLocation(tripId: string, data: NewLocationInput): Location
   return loc;
 }
 
-/**
- * Update a Location. `isLodging` toggles the trip's lodging Stay (single-Stay,
- * transitional — ADR-0005) and the auto-prepended lodging stops; the rest are plain
- * column updates. All in one transaction.
- */
+/** Update a Location's editable fields. Lodging is managed via the Stay timeline (setStays), not here. */
 export function updateLocation(
   tripId: string,
   locationId: string,
@@ -428,59 +424,21 @@ export function updateLocation(
     note?: string | null;
     name?: string;
     visitDuration?: number | null;
-    isLodging?: boolean;
   }
 ): Location | null {
-  getDrizzle().transaction((tx) => {
-    if (fields.isLodging === true) {
-      const t = tx.select({ numDays: trip.numDays }).from(trip).where(eq(trip.id, tripId)).get();
-      tx.delete(stay).where(eq(stay.tripId, tripId)).run();
-      tx.insert(stay)
-        .values({ id: newId(), tripId, lodgingLocationId: locationId, ord: 0, startNight: 1, endNight: t?.numDays ?? 1 })
-        .run();
-
-      const dayIds = tx
-        .select({ id: itineraryDay.id })
-        .from(itineraryDay)
-        .where(eq(itineraryDay.tripId, tripId))
-        .orderBy(asc(itineraryDay.dayNumber))
-        .all()
-        .map((d) => d.id);
-      if (dayIds.length) {
-        tx.delete(itineraryStop)
-          .where(and(eq(itineraryStop.locationId, locationId), inArray(itineraryStop.dayId, dayIds)))
-          .run();
-      }
-      for (const dId of dayIds) {
-        tx.update(itineraryStop).set({ ord: sql`${itineraryStop.ord} + 1` }).where(eq(itineraryStop.dayId, dId)).run();
-        tx.insert(itineraryStop).values({ id: newId(), dayId: dId, locationId, ord: 0 }).run();
-      }
-    }
-
-    if (fields.isLodging === false) {
-      tx.delete(stay).where(and(eq(stay.tripId, tripId), eq(stay.lodgingLocationId, locationId))).run();
-      const dayIds = tx
-        .select({ id: itineraryDay.id })
-        .from(itineraryDay)
-        .where(eq(itineraryDay.tripId, tripId))
-        .all()
-        .map((d) => d.id);
-      if (dayIds.length) {
-        tx.delete(itineraryStop)
-          .where(and(eq(itineraryStop.locationId, locationId), inArray(itineraryStop.dayId, dayIds)))
-          .run();
-      }
-    }
-
-    const set = {
-      ...(fields.excluded !== undefined ? { excluded: fields.excluded } : {}),
-      ...(fields.note !== undefined ? { note: fields.note } : {}),
-      ...(fields.name !== undefined ? { name: fields.name } : {}),
-      ...(fields.visitDuration !== undefined ? { visitDuration: fields.visitDuration } : {}),
-    };
-    if (Object.keys(set).length) tx.update(location).set(set).where(eq(location.id, locationId)).run();
-  });
-
+  const set = {
+    ...(fields.excluded !== undefined ? { excluded: fields.excluded } : {}),
+    ...(fields.note !== undefined ? { note: fields.note } : {}),
+    ...(fields.name !== undefined ? { name: fields.name } : {}),
+    ...(fields.visitDuration !== undefined ? { visitDuration: fields.visitDuration } : {}),
+  };
+  if (Object.keys(set).length) {
+    getDrizzle()
+      .update(location)
+      .set(set)
+      .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
+      .run();
+  }
   return getLocation(locationId);
 }
 
