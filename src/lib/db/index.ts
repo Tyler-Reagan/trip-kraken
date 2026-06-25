@@ -164,7 +164,8 @@ export function getDayCategories(dayId: string): string[] {
   return [...set];
 }
 
-/** Schedulable (non-excluded) locations for the optimizer, with derived isLodging. */
+/** Schedulable (non-excluded) location for the optimizer. Includes lodgings, which the
+ *  optimizer identifies via the Stay timeline (not a per-location flag). */
 export type OptimizationLocation = {
   id: string;
   lat: number | null;
@@ -173,18 +174,25 @@ export type OptimizationLocation = {
   openTime: string | null;
   closeTime: string | null;
   categories: string[] | null;
-  isLodging: boolean;
 };
 
-export function getOptimizationInputs(tripId: string): OptimizationLocation[] | null {
+export type OptimizationInputs = {
+  locations: OptimizationLocation[];
+  stays: Array<{ lodgingLocationId: string; startNight: number; endNight: number }>;
+};
+
+export function getOptimizationInputs(tripId: string): OptimizationInputs | null {
   const db = getDrizzle();
   if (!tripExists(tripId)) return null;
 
-  const lodgingIds = new Set(
-    db.select({ id: stay.lodgingLocationId }).from(stay).where(eq(stay.tripId, tripId)).all().map((r) => r.id)
-  );
+  const stays = db
+    .select({ lodgingLocationId: stay.lodgingLocationId, startNight: stay.startNight, endNight: stay.endNight })
+    .from(stay)
+    .where(eq(stay.tripId, tripId))
+    .orderBy(asc(stay.ord))
+    .all();
 
-  const rows = db
+  const locations = db
     .select({
       id: location.id,
       lat: location.lat,
@@ -198,7 +206,7 @@ export function getOptimizationInputs(tripId: string): OptimizationLocation[] | 
     .where(and(eq(location.tripId, tripId), eq(location.excluded, false)))
     .all();
 
-  return rows.map((r) => ({ ...r, isLodging: lodgingIds.has(r.id) }));
+  return { locations, stays };
 }
 
 // ─── Trip mutations ─────────────────────────────────────────────────────────
