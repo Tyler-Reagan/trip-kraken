@@ -22,6 +22,24 @@ export function TrashIcon({ className = "w-4 h-4" }: IconProps) {
   );
 }
 
+export function LockClosedIcon({ className = "w-4 h-4" }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="3.5" y="7" width="9" height="6.5" rx="1.25" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5.5 7V5.25a2.5 2.5 0 015 0V7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function LockOpenIcon({ className = "w-4 h-4" }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="3.5" y="7" width="9" height="6.5" rx="1.25" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5.5 7V5.25a2.5 2.5 0 014.9-.7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function XIcon({ className = "w-4 h-4" }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">

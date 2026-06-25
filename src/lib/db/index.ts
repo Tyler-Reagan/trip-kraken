@@ -566,6 +566,12 @@ export function updateLocation(
       .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
       .run();
   }
+  // Excluding a Location drops its Stop on the next reconcile; clear any lock first so the
+  // reconciling writer's lock assertion can't trip over a Stop that's about to vanish
+  // (ADR-0006's confirm-and-cascade for a locked Stop's Location, enforced server-side).
+  if (fields.excluded === true) {
+    getDrizzle().update(itineraryStop).set({ locked: false }).where(eq(itineraryStop.locationId, locationId)).run();
+  }
   return getLocation(locationId);
 }
 
@@ -636,9 +642,28 @@ export function addStopToDay(
       ord = (m?.maxOrd ?? -1) + 1;
     }
 
-    tx.insert(itineraryStop).values({ id: newId(), dayId, locationId, ord }).run();
+    // Hand-placing a stop locks it by default (ADR-0006): manual intent survives re-opt.
+    tx.insert(itineraryStop).values({ id: newId(), dayId, locationId, ord, locked: true }).run();
   });
 
+  return requireTrip(tripId);
+}
+
+export function setStopLocked(tripId: string, stopId: string, locked: boolean): TripWithDetails {
+  getDrizzle()
+    .update(itineraryStop)
+    .set({ locked })
+    .where(
+      and(
+        eq(itineraryStop.id, stopId),
+        // Scope to the trip via the stop's day (defense against cross-trip stopIds).
+        inArray(
+          itineraryStop.dayId,
+          getDrizzle().select({ id: itineraryDay.id }).from(itineraryDay).where(eq(itineraryDay.tripId, tripId))
+        )
+      )
+    )
+    .run();
   return requireTrip(tripId);
 }
 
@@ -665,7 +690,8 @@ export function moveStop(
       .set({ ord: sql`${itineraryStop.ord} + 1` })
       .where(and(eq(itineraryStop.dayId, targetDayId), gte(itineraryStop.ord, targetOrder)))
       .run();
-    tx.update(itineraryStop).set({ dayId: targetDayId, ord: targetOrder }).where(eq(itineraryStop.id, stopId)).run();
+    // A manual move locks the stop (ADR-0006): the user's placement now survives re-opt.
+    tx.update(itineraryStop).set({ dayId: targetDayId, ord: targetOrder, locked: true }).where(eq(itineraryStop.id, stopId)).run();
 
     if (sourceDayId !== targetDayId) {
       const remaining = tx

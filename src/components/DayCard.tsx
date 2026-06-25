@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ItineraryDay, ItineraryStop, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
-import { SearchIcon, TrashIcon } from "./icons";
+import { SearchIcon, TrashIcon, LockClosedIcon, LockOpenIcon } from "./icons";
 
 interface Props {
   day: ItineraryDay;
@@ -186,6 +186,7 @@ interface StopRowProps {
 function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDropBefore }: StopRowProps) {
   const tripId = useTripStore((s) => s.tripId);
   const reload = useTripStore((s) => s.reload);
+  const setStopLocked = useTripStore((s) => s.setStopLocked);
   const highlightedLocationId = useTripStore((s) => s.highlightedLocationId);
   const setHighlightedLocationId = useTripStore((s) => s.setHighlightedLocationId);
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
@@ -227,6 +228,7 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
         onDragStart={() => onDragStart(stop)}
         className={`group flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none
           ${isDragging ? "opacity-40" : ""}
+          ${stop.locked ? "ring-1 ring-inset ring-brand-300 dark:ring-brand-700" : ""}
           ${isHighlighted
             ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/30 border-brand-200 dark:border-brand-800"
             : isInspected
@@ -262,6 +264,20 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
             {hoursText} · {durText}
           </p>
         </div>
+
+        {/* Lock toggle — stays visible when locked so the pin reads at rest (ADR-0006) */}
+        <button
+          onClick={(e) => { e.stopPropagation(); setStopLocked(stop.id, !stop.locked); }}
+          title={stop.locked ? "Locked to this day & order — click to unlock" : "Lock to this day & order"}
+          aria-label={stop.locked ? "Unlock stop" : "Lock stop"}
+          aria-pressed={stop.locked}
+          className={`shrink-0 w-7 h-7 flex items-center justify-center rounded transition-all hover:bg-gray-100 dark:hover:bg-gray-800
+            ${stop.locked
+              ? "text-brand-600 dark:text-brand-400 opacity-100"
+              : "text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 focus-within:opacity-100 hover:text-brand-600 dark:hover:text-brand-400"}`}
+        >
+          {stop.locked ? <LockClosedIcon /> : <LockOpenIcon />}
+        </button>
 
         {/* Action buttons */}
         <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">

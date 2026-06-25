@@ -35,6 +35,7 @@ interface TripStore {
   reload: () => Promise<void>;
   moveStop: (stopId: string, targetDayId: string, targetOrder: number) => Promise<void>;
   removeStop: (stopId: string) => Promise<void>;
+  setStopLocked: (stopId: string, locked: boolean) => Promise<void>;
   addLocationToDay: (locationId: string, dayId: string) => Promise<void>;
   saveStays: (stays: Array<{ lodgingLocationId: string; startNight: number; endNight: number }>) => Promise<string | null>;
   enrich: () => Promise<void>;
@@ -110,6 +111,17 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     const tripId = get().tripId;
     if (!tripId) return;
     await fetch(`/api/trips/${tripId}/stops/${stopId}?keepLocation=true`, { method: "DELETE" });
+    await get().reload();
+  },
+
+  setStopLocked: async (stopId, locked) => {
+    const tripId = get().tripId;
+    if (!tripId) return;
+    await fetch(`/api/trips/${tripId}/stops/${stopId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ locked }),
+    });
     await get().reload();
   },
 
