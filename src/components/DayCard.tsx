@@ -47,7 +47,7 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
   const totalMinutes = day.stops.reduce((sum, s) => sum + (s.location.visitDuration ?? 0), 0);
   const anyHasDuration = day.stops.some((s) => s.location.visitDuration !== null);
   const isLightDay = anyHasDuration && totalMinutes < LIGHT_DAY_THRESHOLD && day.stops.length > 0;
-  const nearbyDefaultStop = day.stops[0] ?? null;
+  const nearbyAnchorLoc = day.startLodging ?? day.stops[0]?.location ?? null;
 
   const dateStr = day.date
     ? new Date(day.date).toLocaleDateString("en-US", {
@@ -135,10 +135,10 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
           <span className="text-xs text-gray-400 dark:text-gray-500">
             {day.stops.length} stop{day.stops.length !== 1 ? "s" : ""}
           </span>
-          {nearbyDefaultStop && (
+          {nearbyAnchorLoc && (
             <button
-              onClick={() => setNearbySearchLocation(nearbyDefaultStop.location, day.id)}
-              disabled={nearbyDefaultStop.location.lat === null}
+              onClick={() => setNearbySearchLocation(nearbyAnchorLoc, day.id)}
+              disabled={nearbyAnchorLoc.lat === null}
               title="Find nearby stops for this day"
               className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 disabled:text-gray-300 dark:disabled:text-gray-600 transition-colors"
             >
@@ -149,27 +149,62 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
       </div>
 
       {/* Stops list */}
-      {day.stops.length === 0 ? (
-        <p className="text-sm text-gray-400 dark:text-gray-500 italic py-2 text-center">
+      <ol className="space-y-2">
+        {day.startLodging && <LodgingAnchorRow loc={day.startLodging} role="start" dayId={day.id} />}
+        {day.stops.map((stop, idx) => (
+          <StopRow
+            key={stop.id}
+            stop={stop}
+            index={idx}
+            isDragging={draggingStop?.id === stop.id}
+            dayOfWeek={dayOfWeek}
+            dayId={day.id}
+            onDragStart={onDragStart}
+            onDropBefore={() => onDrop(day, idx)}
+          />
+        ))}
+        {day.endLodging && <LodgingAnchorRow loc={day.endLodging} role="end" dayId={day.id} />}
+      </ol>
+      {day.stops.length === 0 && (
+        <p className="text-sm text-gray-400 dark:text-gray-500 italic py-1 text-center">
           Drag stops here or re-optimize
         </p>
-      ) : (
-        <ol className="space-y-2">
-          {day.stops.map((stop, idx) => (
-            <StopRow
-              key={stop.id}
-              stop={stop}
-              index={idx}
-              isDragging={draggingStop?.id === stop.id}
-              dayOfWeek={dayOfWeek}
-              dayId={day.id}
-              onDragStart={onDragStart}
-              onDropBefore={() => onDrop(day, idx)}
-            />
-          ))}
-        </ol>
       )}
     </div>
+  );
+}
+
+function LodgingAnchorRow({ loc, role, dayId }: { loc: Location; role: "start" | "end"; dayId: string }) {
+  const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
+  const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
+
+  return (
+    <li
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("button")) return;
+        setInspectedLocationId(loc.id);
+      }}
+      className="group flex items-center gap-2 p-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 cursor-pointer transition-colors hover:bg-amber-50 dark:hover:bg-amber-900/30"
+    >
+      <span className="shrink-0 px-1.5 h-5 flex items-center rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-[10px] font-semibold uppercase tracking-wide">
+        Stay
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{loc.name}</p>
+        <p className="text-xs text-amber-600/80 dark:text-amber-400/80 mt-0.5">
+          {role === "start" ? "Start of day" : "Overnight"}
+        </p>
+      </div>
+      <button
+        onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, dayId); }}
+        disabled={loc.lat === null}
+        title="Find nearby places"
+        aria-label="Find nearby places"
+        className="shrink-0 w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-all"
+      >
+        <SearchIcon />
+      </button>
+    </li>
   );
 }
 

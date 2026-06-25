@@ -64,6 +64,8 @@ export type ItineraryDay = {
   dayNumber: number;
   date: Date | null;
   label: string | null;
+  startLodging: Location | null;
+  endLodging: Location | null;
   stops: ItineraryStop[];
 };
 

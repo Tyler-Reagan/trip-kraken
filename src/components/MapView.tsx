@@ -6,6 +6,7 @@ import Map, { Source, Layer, MapMouseEvent } from "react-map-gl/maplibre";
 import type { MapRef, LayerProps } from "react-map-gl/maplibre";
 import type { FeatureCollection, LineString, Point } from "geojson";
 import { useTripStore } from "@/store/tripStore";
+import type { Location } from "@/types";
 
 const CARTO_DARK =
   "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
@@ -109,9 +110,13 @@ export default function MapView() {
     const points: FeatureCollection<Point> = { type: "FeatureCollection", features: [] };
     const routes: FeatureCollection<LineString> = { type: "FeatureCollection", features: [] };
 
-    // Collect lodging locations across all days before rendering points.
-    // Lodging appears in every day as stop 0 — we deduplicate into one feature.
     const lodgingMap: Record<string, { locationId: string; name: string; lat: number; lng: number; dayNumbers: number[] }> = {};
+    const addLodging = (loc: Location, dayNumber: number) => {
+      if (loc.lat === null || loc.lng === null) return;
+      const e = lodgingMap[loc.id];
+      if (e) { if (!e.dayNumbers.includes(dayNumber)) e.dayNumbers.push(dayNumber); }
+      else lodgingMap[loc.id] = { locationId: loc.id, name: loc.name, lat: loc.lat, lng: loc.lng, dayNumbers: [dayNumber] };
+    };
 
     for (const day of (trip?.days ?? [])) {
       const rgb = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length];
@@ -124,28 +129,7 @@ export default function MapView() {
           s.location.lat !== null && s.location.lng !== null
       );
 
-      // Track non-lodging position within this day for stop numbering.
-      let nonLodgingIndex = 0;
-
-      for (const stop of geocodedStops) {
-        if (stop.location.isLodging) {
-          // Accumulate day membership; will render as a single lodging feature below.
-          const existing = lodgingMap[stop.location.id];
-          if (existing) {
-            existing.dayNumbers.push(day.dayNumber);
-          } else {
-            lodgingMap[stop.location.id] = {
-              locationId: stop.location.id,
-              name: stop.location.name,
-              lat: stop.location.lat,
-              lng: stop.location.lng,
-              dayNumbers: [day.dayNumber],
-            };
-          }
-          continue;
-        }
-
-        nonLodgingIndex++;
+      geocodedStops.forEach((stop, i) => {
         points.features.push({
           type: "Feature",
           geometry: { type: "Point", coordinates: [stop.location.lng, stop.location.lat] },
@@ -153,22 +137,27 @@ export default function MapView() {
             locationId: stop.location.id,
             name: stop.location.name,
             dayNumber: day.dayNumber,
-            order: nonLodgingIndex,
+            order: i + 1,
             color,
             alpha,
             isHighlighted: stop.location.id === highlightedLocationId ? 1 : 0,
             isBase: 0,
           },
         });
-      }
+      });
 
-      if (geocodedStops.length >= 2) {
+      if (day.startLodging) addLodging(day.startLodging, day.dayNumber);
+      if (day.endLodging) addLodging(day.endLodging, day.dayNumber);
+
+      const routeCoords: [number, number][] = [];
+      if (day.startLodging?.lat != null && day.startLodging.lng != null) routeCoords.push([day.startLodging.lng, day.startLodging.lat]);
+      for (const s of geocodedStops) routeCoords.push([s.location.lng, s.location.lat]);
+      if (day.endLodging?.lat != null && day.endLodging.lng != null) routeCoords.push([day.endLodging.lng, day.endLodging.lat]);
+
+      if (routeCoords.length >= 2) {
         routes.features.push({
           type: "Feature",
-          geometry: {
-            type: "LineString",
-            coordinates: geocodedStops.map((s) => [s.location.lng, s.location.lat]),
-          },
+          geometry: { type: "LineString", coordinates: routeCoords },
           properties: { color, alpha: isActive ? 0.65 : 0 },
         });
       }

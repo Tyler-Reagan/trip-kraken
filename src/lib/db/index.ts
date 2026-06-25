@@ -80,28 +80,40 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
     .orderBy(asc(itineraryStop.ord))
     .all();
 
-  const days: ItineraryDay[] = dayRows.map((day) => ({
-    id: day.id,
-    tripId: day.tripId,
-    dayNumber: day.dayNumber,
-    date: day.date ? new Date(day.date) : null,
-    label: day.label,
-    stops: stopRows
-      .filter((s) => s.stop.dayId === day.id)
-      .map((s) => ({
-        id: s.stop.id,
-        dayId: s.stop.dayId,
-        locationId: s.stop.locationId,
-        order: s.stop.ord,
-        notes: s.stop.notes,
-        locked: s.stop.locked,
-        location: toLocation(s.loc, lodgingIds),
-      })),
-  }));
+  const locById = new Map(locationRows.map((l) => [l.id, toLocation(l, lodgingIds)]));
+  const lodgingAt = (night: number): Location | null => {
+    const s = stayRows.find((r) => night >= r.startNight && night <= r.endNight);
+    return s ? locById.get(s.lodgingLocationId) ?? null : null;
+  };
+
+  const days: ItineraryDay[] = dayRows.map((day) => {
+    const start = lodgingAt(Math.max(1, day.dayNumber - 1));
+    const end = lodgingAt(day.dayNumber);
+    return {
+      id: day.id,
+      tripId: day.tripId,
+      dayNumber: day.dayNumber,
+      date: day.date ? new Date(day.date) : null,
+      label: day.label,
+      startLodging: start,
+      endLodging: end && end.id !== start?.id ? end : null,
+      stops: stopRows
+        .filter((s) => s.stop.dayId === day.id && !lodgingIds.has(s.stop.locationId))
+        .map((s) => ({
+          id: s.stop.id,
+          dayId: s.stop.dayId,
+          locationId: s.stop.locationId,
+          order: s.stop.ord,
+          notes: s.stop.notes,
+          locked: s.stop.locked,
+          location: toLocation(s.loc, lodgingIds),
+        })),
+    };
+  });
 
   return {
     ...parseTrip(tripRow),
-    locations: locationRows.map((l) => toLocation(l, lodgingIds)),
+    locations: locationRows.map((l) => locById.get(l.id)!),
     stays: stayRows,
     days,
   };

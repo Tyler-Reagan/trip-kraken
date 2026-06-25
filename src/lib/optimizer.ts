@@ -62,18 +62,14 @@ export function optimizeItinerary(
   const days = numDays > 0 ? numDays : 1;
   const byId = new Map(locations.map((l) => [l.id, l]));
 
-  // Day d (1..days) belongs to the Stay covering night d; its anchor is that Stay's
-  // lodging. Lodging is excluded from clustering and prepended per-day (ADR-0005).
+  // Each day's routing anchor is its Stay's lodging — used to pull clustering/sequencing,
+  // never emitted as a stop (lodging is derived from the Stay timeline at read time).
   const lodgingIds = new Set(stays.map((s) => s.lodgingId));
   const dayAnchor: (LocationInput | null)[] = [];
   for (let d = 1; d <= days; d++) {
     const stay = stays.find((s) => d >= s.startNight && d <= s.endNight);
     dayAnchor.push(stay ? byId.get(stay.lodgingId) ?? null : null);
   }
-  const prepend = (dayIdx: number, ids: string[]): string[] => {
-    const a = dayAnchor[dayIdx];
-    return a ? [a.id, ...ids] : ids;
-  };
 
   // Locked Stops are pinned to their Day in their relative order, and held out of
   // clustering. Lodging is managed by the Stay timeline, never by a lock. A lock pinned to
@@ -101,7 +97,7 @@ export function optimizeItinerary(
     const plans: DayPlan[] = [];
     for (let d = 0; d < days; d++) {
       const ordered = sequenceWithLocks(lockedSeqFor(d), valid[d] ? [valid[d]] : [], dayAnchor[d] ?? undefined, dayStartMins);
-      plans.push({ dayNumber: d + 1, locationIds: prepend(d, ordered.map((l) => l.id)) });
+      plans.push({ dayNumber: d + 1, locationIds: ordered.map((l) => l.id) });
     }
     if (invalid.length > 0) plans[plans.length - 1].locationIds.push(...invalid.map((l) => l.id));
     return plans;
@@ -114,7 +110,7 @@ export function optimizeItinerary(
   // anchored at its lodging.
   const plans: DayPlan[] = clusters.map((cluster, d) => {
     const ordered = sequenceWithLocks(lockedSeqFor(d), cluster, dayAnchor[d] ?? undefined, dayStartMins);
-    return { dayNumber: d + 1, locationIds: prepend(d, ordered.map((l) => l.id)) };
+    return { dayNumber: d + 1, locationIds: ordered.map((l) => l.id) };
   });
 
   // Distribute coordinate-less locations across days round-robin.
