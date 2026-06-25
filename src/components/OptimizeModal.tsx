@@ -16,6 +16,7 @@ export default function OptimizeModal() {
   const [balanceCategories, setBalanceCategories] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
 
   const hasCategoryData = trip?.locations.some((l) => l.categories && l.categories.length > 0) ?? false;
 
@@ -24,6 +25,7 @@ export default function OptimizeModal() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setWarnings([]);
     setLoading(true);
 
     try {
@@ -46,7 +48,13 @@ export default function OptimizeModal() {
       }
 
       await reload();
-      setShowOptimize(false);
+      // Keep the modal open to surface any reconciliation warnings (e.g. locks orphaned by
+      // a day-count cut, ADR-0006); close immediately when there's nothing to report.
+      if (Array.isArray(data.warnings) && data.warnings.length > 0) {
+        setWarnings(data.warnings);
+      } else {
+        setShowOptimize(false);
+      }
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -157,16 +165,25 @@ export default function OptimizeModal() {
             </p>
           )}
 
+          {warnings.length > 0 && (
+            <div className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2 space-y-1">
+              <p className="font-medium">Itinerary updated, with notes:</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                {warnings.map((w, i) => <li key={i}>{w}</li>)}
+              </ul>
+            </div>
+          )}
+
           <div className="flex gap-3">
             <button
               type="button"
               onClick={() => setShowOptimize(false)}
               className="btn-secondary flex-1"
             >
-              Cancel
+              {warnings.length > 0 ? "Done" : "Cancel"}
             </button>
             <button type="submit" disabled={loading} className="btn-primary flex-1">
-              {loading ? "Optimizing…" : "Generate itinerary"}
+              {loading ? "Optimizing…" : warnings.length > 0 ? "Re-run" : "Generate itinerary"}
             </button>
           </div>
         </form>

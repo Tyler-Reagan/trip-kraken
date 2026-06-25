@@ -94,6 +94,7 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
         locationId: s.stop.locationId,
         order: s.stop.ord,
         notes: s.stop.notes,
+        locked: s.stop.locked,
         location: toLocation(s.loc, lodgingIds),
       })),
   }));
@@ -209,6 +210,21 @@ export function getOptimizationInputs(tripId: string): OptimizationInputs | null
   return { locations, stays };
 }
 
+/**
+ * Locked Stops the solver must honor as fixed input (ADR-0006): each pins its Location to a
+ * Day (`dayNumber`) and a relative order (`lockOrder` = the stored `ord`). Joined through the
+ * Day so we get the day number directly. Orphaned locks (day past `numDays`) are filtered by
+ * the caller; the reconciling writer warns and drops them.
+ */
+export function getLockedStops(tripId: string): Array<{ locationId: string; dayNumber: number; lockOrder: number }> {
+  return getDrizzle()
+    .select({ locationId: itineraryStop.locationId, dayNumber: itineraryDay.dayNumber, lockOrder: itineraryStop.ord })
+    .from(itineraryStop)
+    .innerJoin(itineraryDay, eq(itineraryDay.id, itineraryStop.dayId))
+    .where(and(eq(itineraryDay.tripId, tripId), eq(itineraryStop.locked, true)))
+    .all();
+}
+
 // ─── Trip mutations ─────────────────────────────────────────────────────────
 
 export function createTripWithLocations(data: {
@@ -268,14 +284,39 @@ export function deleteTrip(id: string): void {
   getDrizzle().delete(trip).where(eq(trip.id, id)).run();
 }
 
-export function rebuildItinerary(
+/** Thrown when the solver's output violates a lock (a locked Stop moved day or was reordered). */
+export class LockViolationError extends Error {}
+
+export type DayPlan = { dayNumber: number; locationIds: string[] };
+export type ReconcileResult = { trip: TripWithDetails; warnings: string[] };
+
+/**
+ * Reconcile the itinerary to the solver's desired plan WITHOUT destroying manual intent
+ * (ADR-0006/0008). Instead of delete-all-and-recreate, this diffs the desired plan against
+ * the stored itinerary keyed on `locationId` — Stop identity is stable per scheduled
+ * Location — so `notes` and lock state survive re-optimization:
+ *
+ *  - Day rows are reconciled by `dayNumber`, so day labels survive; days beyond `numDays`
+ *    are dropped. A locked Stop orphaned by a dropped day is unscheduled with a warning
+ *    (its lock goes inert; notes are not preserved — the deferred ADR-0006 path).
+ *  - Newly-scheduled Locations get a fresh Stop; Locations no longer scheduled (excluded or
+ *    removed) have their Stop deleted.
+ *  - Every surviving Stop is updated to its new `(day, order)` IN PLACE — never
+ *    delete+reinsert — which is what preserves its `notes` and `locked` flag.
+ *
+ * Before committing, it asserts the solver honored every lock (each locked Stop kept its Day
+ * and its order relative to other locked Stops on that Day); a violation throws and rolls the
+ * transaction back, so a solver bug fails loud rather than silently moving a pinned Stop.
+ */
+export function reconcileItinerary(
   tripId: string,
   numDays: number,
   startDate: string | null,
-  dayPlans: Array<{ dayNumber: number; locationIds: string[] }>
-): TripWithDetails {
+  dayPlans: DayPlan[]
+): ReconcileResult {
+  const warnings: string[] = [];
+
   getDrizzle().transaction((tx) => {
-    tx.delete(itineraryDay).where(eq(itineraryDay.tripId, tripId)).run();
     tx.update(trip)
       .set({
         numDays,
@@ -285,22 +326,108 @@ export function rebuildItinerary(
       .where(eq(trip.id, tripId))
       .run();
 
+    // ── Reconcile day rows by dayNumber (so day labels survive) ──
+    const existingDays = tx
+      .select({ id: itineraryDay.id, dayNumber: itineraryDay.dayNumber })
+      .from(itineraryDay)
+      .where(eq(itineraryDay.tripId, tripId))
+      .all();
+
+    const survivingDayNumbers = new Set(dayPlans.map((p) => p.dayNumber));
+    const droppedDayIds = existingDays.filter((d) => !survivingDayNumbers.has(d.dayNumber)).map((d) => d.id);
+    if (droppedDayIds.length > 0) {
+      // Warn about locked Stops on days about to vanish; the cascade then removes them.
+      const orphaned = tx
+        .select({ c: count() })
+        .from(itineraryStop)
+        .where(and(inArray(itineraryStop.dayId, droppedDayIds), eq(itineraryStop.locked, true)))
+        .get();
+      const n = orphaned?.c ?? 0;
+      if (n > 0) warnings.push(`${n} locked stop${n === 1 ? "" : "s"} lost ${n === 1 ? "its" : "their"} day and ${n === 1 ? "was" : "were"} unscheduled.`);
+      tx.delete(itineraryDay).where(inArray(itineraryDay.id, droppedDayIds)).run();
+    }
+
+    const dayIdByNumber = new Map(
+      existingDays.filter((d) => survivingDayNumbers.has(d.dayNumber)).map((d) => [d.dayNumber, d.id])
+    );
     for (const plan of dayPlans) {
-      const dayId = newId();
       const date =
         startDate && plan.dayNumber > 0
           ? new Date(new Date(startDate).getTime() + (plan.dayNumber - 1) * 86400000).toISOString()
           : null;
-      tx.insert(itineraryDay).values({ id: dayId, tripId, dayNumber: plan.dayNumber, date }).run();
-      for (let i = 0; i < plan.locationIds.length; i++) {
-        tx.insert(itineraryStop)
-          .values({ id: newId(), dayId, locationId: plan.locationIds[i], ord: i })
-          .run();
+      const existingId = dayIdByNumber.get(plan.dayNumber);
+      if (existingId) {
+        tx.update(itineraryDay).set({ date }).where(eq(itineraryDay.id, existingId)).run();
+      } else {
+        const id = newId();
+        tx.insert(itineraryDay).values({ id, tripId, dayNumber: plan.dayNumber, date }).run();
+        dayIdByNumber.set(plan.dayNumber, id);
       }
+    }
+
+    // ── Diff stops keyed on locationId (one persistent Stop per scheduled Location) ──
+    const existingStops = tx
+      .select({
+        id: itineraryStop.id,
+        dayId: itineraryStop.dayId,
+        dayNumber: itineraryDay.dayNumber,
+        locationId: itineraryStop.locationId,
+        ord: itineraryStop.ord,
+        locked: itineraryStop.locked,
+      })
+      .from(itineraryStop)
+      .innerJoin(itineraryDay, eq(itineraryDay.id, itineraryStop.dayId))
+      .where(eq(itineraryDay.tripId, tripId))
+      .all();
+    const existingByLocation = new Map(existingStops.map((s) => [s.locationId, s]));
+
+    const desired = new Map<string, { dayNumber: number; ord: number }>();
+    for (const plan of dayPlans) {
+      plan.locationIds.forEach((locationId, ord) => desired.set(locationId, { dayNumber: plan.dayNumber, ord }));
+    }
+
+    // Assert the solver honored every lock: same Day, and locked Stops keep their relative
+    // order within a Day. (Inert until the lock UI can set `locked`.)
+    const lockedByDay = new Map<number, typeof existingStops>();
+    for (const s of existingStops) {
+      if (!s.locked) continue;
+      const want = desired.get(s.locationId);
+      if (!want) throw new LockViolationError(`solver dropped locked stop for location ${s.locationId}`);
+      if (want.dayNumber !== s.dayNumber)
+        throw new LockViolationError(`solver moved locked stop ${s.locationId} off day ${s.dayNumber}`);
+      const arr = lockedByDay.get(s.dayNumber) ?? [];
+      arr.push(s);
+      lockedByDay.set(s.dayNumber, arr);
+    }
+    for (const [dayNumber, locks] of lockedByDay) {
+      const lockedOrder = [...locks].sort((a, b) => a.ord - b.ord).map((s) => s.locationId);
+      const lockedIds = new Set(lockedOrder);
+      const plan = dayPlans.find((p) => p.dayNumber === dayNumber)!;
+      const solverLockedOrder = plan.locationIds.filter((id) => lockedIds.has(id));
+      for (let i = 0; i < lockedOrder.length; i++) {
+        if (lockedOrder[i] !== solverLockedOrder[i])
+          throw new LockViolationError(`solver reordered locked stops on day ${dayNumber}`);
+      }
+    }
+
+    // Apply: upsert each scheduled Location's Stop in place; delete Stops that dropped out.
+    for (const [locationId, place] of desired) {
+      const dayId = dayIdByNumber.get(place.dayNumber)!;
+      const existing = existingByLocation.get(locationId);
+      if (existing) {
+        if (existing.dayId !== dayId || existing.ord !== place.ord) {
+          tx.update(itineraryStop).set({ dayId, ord: place.ord }).where(eq(itineraryStop.id, existing.id)).run();
+        }
+      } else {
+        tx.insert(itineraryStop).values({ id: newId(), dayId, locationId, ord: place.ord }).run();
+      }
+    }
+    for (const s of existingStops) {
+      if (!desired.has(s.locationId)) tx.delete(itineraryStop).where(eq(itineraryStop.id, s.id)).run();
     }
   });
 
-  return requireTrip(tripId);
+  return { trip: requireTrip(tripId), warnings };
 }
 
 // ─── Stay timeline ────────────────────────────────────────────────────────────
@@ -439,6 +566,12 @@ export function updateLocation(
       .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
       .run();
   }
+  // Excluding a Location drops its Stop on the next reconcile; clear any lock first so the
+  // reconciling writer's lock assertion can't trip over a Stop that's about to vanish
+  // (ADR-0006's confirm-and-cascade for a locked Stop's Location, enforced server-side).
+  if (fields.excluded === true) {
+    getDrizzle().update(itineraryStop).set({ locked: false }).where(eq(itineraryStop.locationId, locationId)).run();
+  }
   return getLocation(locationId);
 }
 
@@ -509,9 +642,28 @@ export function addStopToDay(
       ord = (m?.maxOrd ?? -1) + 1;
     }
 
-    tx.insert(itineraryStop).values({ id: newId(), dayId, locationId, ord }).run();
+    // Hand-placing a stop locks it by default (ADR-0006): manual intent survives re-opt.
+    tx.insert(itineraryStop).values({ id: newId(), dayId, locationId, ord, locked: true }).run();
   });
 
+  return requireTrip(tripId);
+}
+
+export function setStopLocked(tripId: string, stopId: string, locked: boolean): TripWithDetails {
+  getDrizzle()
+    .update(itineraryStop)
+    .set({ locked })
+    .where(
+      and(
+        eq(itineraryStop.id, stopId),
+        // Scope to the trip via the stop's day (defense against cross-trip stopIds).
+        inArray(
+          itineraryStop.dayId,
+          getDrizzle().select({ id: itineraryDay.id }).from(itineraryDay).where(eq(itineraryDay.tripId, tripId))
+        )
+      )
+    )
+    .run();
   return requireTrip(tripId);
 }
 
@@ -538,7 +690,8 @@ export function moveStop(
       .set({ ord: sql`${itineraryStop.ord} + 1` })
       .where(and(eq(itineraryStop.dayId, targetDayId), gte(itineraryStop.ord, targetOrder)))
       .run();
-    tx.update(itineraryStop).set({ dayId: targetDayId, ord: targetOrder }).where(eq(itineraryStop.id, stopId)).run();
+    // A manual move locks the stop (ADR-0006): the user's placement now survives re-opt.
+    tx.update(itineraryStop).set({ dayId: targetDayId, ord: targetOrder, locked: true }).where(eq(itineraryStop.id, stopId)).run();
 
     if (sourceDayId !== targetDayId) {
       const remaining = tx

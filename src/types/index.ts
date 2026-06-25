@@ -73,6 +73,7 @@ export type ItineraryStop = {
   locationId: string;
   order: number;
   notes: string | null;
+  locked: boolean;
   location: Location;
 };
 
