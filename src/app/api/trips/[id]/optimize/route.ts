@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOptimizationInputs, rebuildItinerary } from "@/lib/db";
+import { getOptimizationInputs, reconcileItinerary } from "@/lib/db";
 import { optimizeItinerary } from "@/lib/optimizer";
 
 export async function POST(
@@ -44,6 +44,8 @@ export async function POST(
     dayBudgetMinutes
   );
 
-  const updated = rebuildItinerary(tripId, numDays, startDate ?? null, dayPlans);
-  return NextResponse.json(updated);
+  // Reconcile in place (ADR-0006/0008): preserves Stop identity, notes, and locks rather
+  // than wiping the itinerary. Returns warnings (e.g. locks orphaned by a day-count cut).
+  const { trip, warnings } = reconcileItinerary(tripId, numDays, startDate ?? null, dayPlans);
+  return NextResponse.json({ ...trip, warnings });
 }
