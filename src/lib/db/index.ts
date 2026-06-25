@@ -295,6 +295,73 @@ export function rebuildItinerary(
   return requireTrip(tripId);
 }
 
+// ─── Stay timeline ────────────────────────────────────────────────────────────
+
+/** Thrown when a proposed Stay timeline violates ADR-0002/0005 invariants. */
+export class StayValidationError extends Error {}
+
+export type StayInput = { lodgingLocationId: string; startNight: number; endNight: number };
+
+/**
+ * Replace a trip's Stay timeline atomically (ADR-0005). Validates ADR-0002 invariants:
+ * each range within [1, numDays], non-overlapping, each lodging a Location in the trip.
+ * Stays may have gaps (lodging is optional). Stays are stored ordered by startNight.
+ * Lodging *stops* are not written here — they are generated per-day by optimize/rebuild.
+ */
+export function setStays(tripId: string, stays: StayInput[]): TripWithDetails {
+  const db = getDrizzle();
+  const tripRow = db.select({ numDays: trip.numDays }).from(trip).where(eq(trip.id, tripId)).get();
+  if (!tripRow) throw new StayValidationError("Trip not found");
+  const numDays = tripRow.numDays;
+
+  const sorted = [...stays].sort((a, b) => a.startNight - b.startNight);
+
+  for (const s of sorted) {
+    if (!Number.isInteger(s.startNight) || !Number.isInteger(s.endNight) || s.startNight < 1 || s.endNight < s.startNight) {
+      throw new StayValidationError(`Invalid night range ${s.startNight}–${s.endNight}`);
+    }
+    if (numDays != null && s.endNight > numDays) {
+      throw new StayValidationError(`Stay ends on night ${s.endNight} but the trip has ${numDays} days`);
+    }
+  }
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].startNight <= sorted[i - 1].endNight) {
+      throw new StayValidationError("Stays overlap");
+    }
+  }
+
+  const lodgingIds = sorted.map((s) => s.lodgingLocationId);
+  if (lodgingIds.length > 0) {
+    const found = db
+      .select({ id: location.id })
+      .from(location)
+      .where(and(eq(location.tripId, tripId), inArray(location.id, lodgingIds)))
+      .all();
+    const foundSet = new Set(found.map((r) => r.id));
+    for (const id of lodgingIds) {
+      if (!foundSet.has(id)) throw new StayValidationError("Lodging location is not in this trip");
+    }
+  }
+
+  db.transaction((tx) => {
+    tx.delete(stay).where(eq(stay.tripId, tripId)).run();
+    sorted.forEach((s, ord) => {
+      tx.insert(stay)
+        .values({
+          id: newId(),
+          tripId,
+          lodgingLocationId: s.lodgingLocationId,
+          ord,
+          startNight: s.startNight,
+          endNight: s.endNight,
+        })
+        .run();
+    });
+  });
+
+  return requireTrip(tripId);
+}
+
 // ─── Location mutations ───────────────────────────────────────────────────────
 
 export type NewLocationInput = {
