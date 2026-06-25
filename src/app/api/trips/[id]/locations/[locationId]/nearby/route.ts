@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getLocationCoords, getDayCategories } from "@/lib/db";
 import { searchNearby } from "@/lib/places";
 import { searchTabelog, enrichTabelogAddresses } from "@/lib/tabelog";
 import { approximateAnchorDistance, haversineMeters } from "@/lib/stations";
@@ -11,10 +11,7 @@ export async function GET(
 ) {
   const { id: tripId, locationId } = await params;
 
-  type LocRow = { lat: number | null; lng: number | null };
-  const loc = getDb()
-    .prepare("SELECT lat, lng FROM Location WHERE id = ? AND tripId = ?")
-    .get(locationId, tripId) as LocRow | undefined;
+  const loc = getLocationCoords(tripId, locationId);
 
   if (!loc) return NextResponse.json({ error: "Location not found" }, { status: 404 });
   if (loc.lat === null || loc.lng === null) {
@@ -67,23 +64,7 @@ export async function GET(
     }
 
     // Build category set for the target day (used for diversity scoring)
-    const dayCategorySet = new Set<string>();
-    if (dayId) {
-      type CatRow = { categories: string | null };
-      const rows = getDb().prepare(`
-        SELECT l.categories
-        FROM ItineraryStop s
-        JOIN Location l ON l.id = s.locationId
-        WHERE s.dayId = ?
-      `).all(dayId) as CatRow[];
-      for (const row of rows) {
-        if (row.categories) {
-          for (const cat of JSON.parse(row.categories) as string[]) {
-            dayCategorySet.add(cat);
-          }
-        }
-      }
-    }
+    const dayCategorySet = new Set<string>(dayId ? getDayCategories(dayId) : []);
 
     // Score and sort: rating quality + review depth + category diversity bonus
     function scorePlace(p: NearbyPlace): number {

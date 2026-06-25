@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, newId } from "@/lib/db";
+import { locationExistsByPlaceId, createLocation } from "@/lib/db";
 import { findPlaceFromText, getPlaceDetails } from "@/lib/places";
 import { enqueueLocationEnrichment } from "@/lib/enrichmentQueue";
 
@@ -15,13 +15,8 @@ export async function POST(
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
-  if (placeId) {
-    const existing = getDb()
-      .prepare("SELECT id FROM Location WHERE tripId = ? AND placeId = ?")
-      .get(tripId, placeId);
-    if (existing) {
-      return NextResponse.json({ error: "Already in trip" }, { status: 409 });
-    }
+  if (placeId && locationExistsByPlaceId(tripId, placeId)) {
+    return NextResponse.json({ error: "Already in trip" }, { status: 409 });
   }
 
   let resolvedLat: number | null = lat ?? null;
@@ -34,7 +29,7 @@ export async function POST(
   let inlinePhone: string | null = null;
   let inlineOpenTime: string | null = null;
   let inlineCloseTime: string | null = null;
-  let inlineHoursJson: string | null = null;
+  let inlineHoursJson: Record<string, { open: string; close: string | null }> | null = null;
   let inlineRating: number | null = rating ?? null;
   let inlineReviewCount: number | null = reviewCount ?? null;
   let inlineCategories: string[] | null = categories ?? null;
@@ -49,12 +44,7 @@ export async function POST(
         : null;
     // 5 km bias radius — anchor is a hotel, not the restaurant, so a tight
     // radius would miss most results in the same neighbourhood.
-    const found = await findPlaceFromText(
-      name,
-      hint?.lat ?? null,
-      hint?.lng ?? null,
-      5000
-    );
+    const found = await findPlaceFromText(name, hint?.lat ?? null, hint?.lng ?? null, 5000);
     if (found) {
       resolvedLat = found.lat;
       resolvedLng = found.lng;
@@ -72,7 +62,7 @@ export async function POST(
       inlinePhone = details.phone;
       inlineOpenTime = details.openTime;
       inlineCloseTime = details.closeTime;
-      inlineHoursJson = details.hoursJson ? JSON.stringify(details.hoursJson) : null;
+      inlineHoursJson = details.hoursJson;
       // Prefer details values over the partial data from searchNearby
       if (details.rating !== null) inlineRating = details.rating;
       if (details.reviewCount !== null) inlineReviewCount = details.reviewCount;
@@ -88,36 +78,25 @@ export async function POST(
   }
   // else: no placeId and no coordinates — nothing enrichable; leave as 'done'
 
-  const id = newId();
-  getDb()
-    .prepare(
-      `INSERT INTO Location
-        (id, tripId, name, address, lat, lng, placeId, excluded, note,
-         rating, reviewCount, categories, phone, openTime, closeTime, hoursJson, enrichmentStatus)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      id,
-      tripId,
-      name,
-      inlineAddress,
-      resolvedLat,
-      resolvedLng,
-      resolvedPlaceId,
-      inlineRating ?? null,
-      inlineReviewCount ?? null,
-      inlineCategories ? JSON.stringify(inlineCategories) : null,
-      inlinePhone,
-      inlineOpenTime,
-      inlineCloseTime,
-      inlineHoursJson,
-      enrichmentStatus,
-    );
+  const location = createLocation(tripId, {
+    name,
+    address: inlineAddress,
+    lat: resolvedLat,
+    lng: resolvedLng,
+    placeId: resolvedPlaceId,
+    rating: inlineRating ?? null,
+    reviewCount: inlineReviewCount ?? null,
+    categories: inlineCategories,
+    phone: inlinePhone,
+    openTime: inlineOpenTime,
+    closeTime: inlineCloseTime,
+    hoursJson: inlineHoursJson,
+    enrichmentStatus,
+  });
 
   if (enrichmentStatus === "pending") {
-    enqueueLocationEnrichment(id);
+    enqueueLocationEnrichment(location.id);
   }
 
-  const location = getDb().prepare("SELECT * FROM Location WHERE id = ?").get(id);
   return NextResponse.json(location, { status: 201 });
 }
