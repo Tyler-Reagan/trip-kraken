@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { enrichLocation } from "@/lib/places";
-import { SQLInputValue } from "node:sqlite";
 
 export async function POST(
   _req: NextRequest,
@@ -59,20 +58,18 @@ export async function POST(
       }
 
       updateStmt.run(
-        ...[
-          result.placeId ?? null,
-          result.lat ?? null,
-          result.lng ?? null,
-          result.address ?? null,
-          result.rating ?? null,
-          result.reviewCount ?? null,
-          result.categories ? JSON.stringify(result.categories) : null,
-          result.phone ?? null,
-          result.openTime ?? null,
-          result.closeTime ?? null,
-          result.hoursJson ? JSON.stringify(result.hoursJson) : null,
-          loc.id,
-        ] as SQLInputValue[]
+        result.placeId ?? null,
+        result.lat ?? null,
+        result.lng ?? null,
+        result.address ?? null,
+        result.rating ?? null,
+        result.reviewCount ?? null,
+        result.categories ? JSON.stringify(result.categories) : null,
+        result.phone ?? null,
+        result.openTime ?? null,
+        result.closeTime ?? null,
+        result.hoursJson ? JSON.stringify(result.hoursJson) : null,
+        loc.id,
       );
       enriched++;
     } catch {

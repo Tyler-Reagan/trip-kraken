@@ -23,11 +23,12 @@ export async function DELETE(
       .get(stop.locationId) as { remaining: number };
 
     if (remaining === 0) {
-      const loc = db
-        .prepare("SELECT isLodging FROM Location WHERE id = ? AND tripId = ?")
-        .get(stop.locationId, tripId) as { isLodging: number } | undefined;
+      // Lodging (a Location referenced by a Stay) is never orphan-deleted.
+      const isLodging = db
+        .prepare("SELECT 1 AS x FROM Stay WHERE tripId = ? AND lodgingLocationId = ? LIMIT 1")
+        .get(tripId, stop.locationId) !== undefined;
 
-      if (loc && !loc.isLodging) {
+      if (!isLodging) {
         db.prepare("DELETE FROM Location WHERE id = ?").run(stop.locationId);
       }
     }

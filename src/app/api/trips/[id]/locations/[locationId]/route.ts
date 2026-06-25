@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, newId } from "@/lib/db";
-import { SQLInputValue } from "node:sqlite";
 
 export async function PATCH(
   req: NextRequest,
@@ -15,8 +14,15 @@ export async function PATCH(
   db.exec("BEGIN");
   try {
     if (isLodging === true) {
-      // Radio-style: clear any existing lodging flag in the trip
-      db.prepare("UPDATE Location SET isLodging = 0 WHERE tripId = ?").run(tripId);
+      // Lodging is a Stay (ADR-0005). Single-Stay, transitional: one lodging per trip,
+      // so replace any existing Stay (radio-style). Multi-Stay timeline is a later branch.
+      const trip = db.prepare("SELECT numDays FROM Trip WHERE id = ?").get(tripId) as
+        | { numDays: number | null }
+        | undefined;
+      db.prepare("DELETE FROM Stay WHERE tripId = ?").run(tripId);
+      db.prepare(
+        "INSERT INTO Stay (id, tripId, lodgingLocationId, ord, startNight, endNight) VALUES (?, ?, ?, 0, 1, ?)"
+      ).run(newId(), tripId, locationId, trip?.numDays ?? 1);
 
       // Propagate to all days: remove any existing stop for this location, then
       // prepend it as ord=0 on every day in the trip
@@ -37,7 +43,8 @@ export async function PATCH(
     }
 
     if (isLodging === false) {
-      // Remove from all days — it was there only as lodging, not as a user-placed stop
+      // Relegate: dissolve the Stay, then remove the auto-prepended lodging stops.
+      db.prepare("DELETE FROM Stay WHERE tripId = ? AND lodgingLocationId = ?").run(tripId, locationId);
       db.prepare(
         "DELETE FROM ItineraryStop WHERE locationId = ? AND dayId IN (SELECT id FROM ItineraryDay WHERE tripId = ?)"
       ).run(locationId, tripId);
@@ -50,11 +57,10 @@ export async function PATCH(
     if (note          !== undefined) { setClauses.push("note = ?");           values.push(note); }
     if (name          !== undefined) { setClauses.push("name = ?");           values.push(name); }
     if (visitDuration !== undefined) { setClauses.push("visitDuration = ?");  values.push(visitDuration); }
-    if (isLodging     !== undefined) { setClauses.push("isLodging = ?");      values.push(isLodging ? 1 : 0); }
 
     if (setClauses.length > 0) {
       values.push(locationId);
-      db.prepare(`UPDATE Location SET ${setClauses.join(", ")} WHERE id = ?`).run(...(values as SQLInputValue[]));
+      db.prepare(`UPDATE Location SET ${setClauses.join(", ")} WHERE id = ?`).run(...values);
     }
 
     db.exec("COMMIT");
@@ -72,6 +78,19 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; locationId: string }> }
 ) {
   const { locationId } = await params;
-  getDb().prepare("DELETE FROM Location WHERE id = ?").run(locationId);
+  const db = getDb();
+
+  // The lodging FK is ON DELETE RESTRICT, so a Location serving as a Stay's lodging
+  // can't be deleted directly. Relegate first (dissolve any referencing Stay), then
+  // delete — Stops cascade away with the Location.
+  db.exec("BEGIN");
+  try {
+    db.prepare("DELETE FROM Stay WHERE lodgingLocationId = ?").run(locationId);
+    db.prepare("DELETE FROM Location WHERE id = ?").run(locationId);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
   return new NextResponse(null, { status: 204 });
 }
