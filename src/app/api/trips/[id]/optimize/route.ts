@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOptimizationInputs, reconcileItinerary } from "@/lib/db";
+import { getOptimizationInputs, getLockedStops, reconcileItinerary } from "@/lib/db";
 import { optimizeItinerary } from "@/lib/optimizer";
 
 export async function POST(
@@ -29,6 +29,10 @@ export async function POST(
     endNight: s.endNight,
   }));
 
+  // Locks the solver must honor (ADR-0006). Locks pinned past the new day count are dropped
+  // here — they can't be placed; the reconciling writer surfaces them as orphans.
+  const locked = getLockedStops(tripId).filter((l) => l.dayNumber <= numDays);
+
   const dayPlans = optimizeItinerary(
     inputs.locations.map((l) => ({
       id: l.id,
@@ -41,7 +45,9 @@ export async function POST(
     })),
     numDays,
     stays,
-    dayBudgetMinutes
+    dayBudgetMinutes,
+    undefined,
+    locked
   );
 
   // Reconcile in place (ADR-0006/0008): preserves Stop identity, notes, and locks rather

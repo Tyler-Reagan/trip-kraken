@@ -210,6 +210,21 @@ export function getOptimizationInputs(tripId: string): OptimizationInputs | null
   return { locations, stays };
 }
 
+/**
+ * Locked Stops the solver must honor as fixed input (ADR-0006): each pins its Location to a
+ * Day (`dayNumber`) and a relative order (`lockOrder` = the stored `ord`). Joined through the
+ * Day so we get the day number directly. Orphaned locks (day past `numDays`) are filtered by
+ * the caller; the reconciling writer warns and drops them.
+ */
+export function getLockedStops(tripId: string): Array<{ locationId: string; dayNumber: number; lockOrder: number }> {
+  return getDrizzle()
+    .select({ locationId: itineraryStop.locationId, dayNumber: itineraryDay.dayNumber, lockOrder: itineraryStop.ord })
+    .from(itineraryStop)
+    .innerJoin(itineraryDay, eq(itineraryDay.id, itineraryStop.dayId))
+    .where(and(eq(itineraryDay.tripId, tripId), eq(itineraryStop.locked, true)))
+    .all();
+}
+
 // ─── Trip mutations ─────────────────────────────────────────────────────────
 
 export function createTripWithLocations(data: {
