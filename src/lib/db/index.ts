@@ -88,7 +88,11 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
   };
 
   const days: ItineraryDay[] = dayRows.map((day) => {
-    const start = lodgingAt(Math.max(1, day.dayNumber - 1));
+    // Start = where you woke: the lodging of the night BEFORE this day. The first day has no
+    // prior night (night 0 → no lodging), so it has no start anchor — on a check-in day you
+    // arrive mid-day, so the booked lodging is that day's overnight/end, never its origin.
+    // (The true day-1 origin is an arrival anchor, deferred to ADR-0013 Phase 2.)
+    const start = lodgingAt(day.dayNumber - 1);
     const end = lodgingAt(day.dayNumber);
     return {
       id: day.id,

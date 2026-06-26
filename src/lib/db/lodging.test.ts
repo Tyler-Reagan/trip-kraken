@@ -58,12 +58,15 @@ setStays(trip.id, [
 
 const details = getTripWithDetails(trip.id)!;
 const [d1, d2, d3] = details.days;
-assert.equal(d1.startLodging?.id, A, "day1 start = A");
-assert.equal(d1.endLodging, null, "day1 end same as start → null");
-assert.equal(d2.startLodging?.id, A, "day2 start = A");
-assert.equal(d2.endLodging, null, "day2 end same as start → null");
-assert.equal(d3.startLodging?.id, A, "day3 start = A (travel day)");
-assert.equal(d3.endLodging?.id, B, "day3 end = B (travel day)");
+// Day 1 is a check-in/arrival day: no origin (no prior night), A is the overnight/end.
+assert.equal(d1.startLodging, null, "day1 has no origin (arrival day)");
+assert.equal(d1.endLodging?.id, A, "day1 overnights at A");
+// Day 2 is a round-trip day at A: woke there, sleep there → shown once as the start anchor.
+assert.equal(d2.startLodging?.id, A, "day2 starts at A (woke there)");
+assert.equal(d2.endLodging, null, "day2 round-trips at A → no separate end");
+// Day 3 is the travel day: woke at A, sleep at B.
+assert.equal(d3.startLodging?.id, A, "day3 starts at A (travel day)");
+assert.equal(d3.endLodging?.id, B, "day3 ends at B (travel day)");
 
 const opt = getOptimizationInputs(trip.id)!;
 assert.deepEqual(
