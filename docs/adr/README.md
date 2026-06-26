@@ -39,3 +39,4 @@ status to **Superseded by ADR-NNNN**.
 | [0010](0010-import-strategy.md) | Trip creation: blank-slate + search; My Maps accelerator | Accepted |
 | [0011](0011-transit-integration.md) | Transit integration (pluggable, handoff) | Accepted |
 | [0012](0012-export.md) | Export (pluggable, Markdown baseline) | Accepted |
+| [0013](0013-accommodation-bookings-and-derived-anchors.md) | Accommodations as timed bookings; day anchors derived | Accepted |

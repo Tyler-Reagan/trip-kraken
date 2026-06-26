@@ -7,6 +7,9 @@
 - **Constrained by:** ADR-0001 (scope-out: real-time, booking), ADR-0004 (travel cost)
 - **Mirrors:** ADR-0009 (pluggable providers with regional applicability)
 - **Note:** Decided in the 2026-06-24 grilling session.
+- **Constrained by ADR-0013 (2026-06-25):** accommodation check-in/check-out datetimes are
+  optimizer time-window constraints (vacate-by / settle-after); the within-day transition routing
+  they imply is time-of-day-dependent, part of this ADR's deferred time-of-day complexity.
 
 ## Context
 

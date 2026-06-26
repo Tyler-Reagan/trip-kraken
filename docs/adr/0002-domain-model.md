@@ -6,6 +6,10 @@
 - **Superseded by:** —
 - **Constrained by:** ADR-0001 (north star), ADR-0005 (topology), ADR-0006 (authority)
 - **Note:** Vocabulary sharpened by the 2026-06-23 grilling session; see `CONTEXT.md`.
+- **Amended by ADR-0013 (2026-06-25):** a **Stay** is a timed booking (Lodging + check-in/
+  check-out datetimes), not an integer night-range; "nights" and Day→Stay membership derive
+  from those datetimes, and an Anchor gains a time dimension and a possible mid-day transition
+  waypoint (an accommodation can be both a mid-day visit and a Day's end Anchor).
 
 ## Context
 

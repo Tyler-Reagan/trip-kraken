@@ -7,6 +7,12 @@
 - **Constrains:** ADR-0002 (domain model), ADR-0003 (optimizer)
 - **Note:** Term "Base" replaced by Lodging + Stay during the 2026-06-23 grilling
   session; see `CONTEXT.md` and ADR-0002.
+- **Implementation note (2026-06-25):** A Lodging is a **derived day-anchor**, never a stored
+  itinerary Stop.
+- **Amended by ADR-0013 (2026-06-25):** a Day's start/end Anchors derive from **timed bookings**
+  (a Stay = Lodging + check-in/check-out datetimes), not night-ranges. Check-in/out may also be
+  mid-day transition waypoints, so an accommodation can be both a mid-day visit and the Day's end
+  Anchor. Arrival/departure anchors and time-window routing are deferred there.
 
 ## Context
 

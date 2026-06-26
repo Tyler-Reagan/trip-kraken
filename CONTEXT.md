@@ -21,9 +21,10 @@ Anchor for its Stay's Days; it is never a scheduled Stop and never a nearby-sear
 _Avoid_: base, hotel
 
 **Stay**:
-A Lodging occupied for one contiguous range of nights. A Trip has an ordered list of
-Stays; revisiting the same hotel later is a second Stay sharing one Lodging.
-_Avoid_: base, leg
+A timed accommodation **booking** — a Lodging with a check-in and a check-out datetime. A
+Trip has an ordered list of Stays; revisiting the same hotel later is a second Stay sharing
+one Lodging. Which Days a Stay covers, and the nights it spans, derive from its datetimes.
+_Avoid_: base, leg, night-range
 
 **Day**:
 One day of the itinerary. Belongs to one Stay and holds an ordered run of Stops.
