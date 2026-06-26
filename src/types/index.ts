@@ -11,14 +11,13 @@ export type TripWithDetails = {
   days: ItineraryDay[];
 };
 
-/** A Lodging occupied for a contiguous night-range (ADR-0002/0005). */
+/** A timed accommodation booking — a Lodging with check-in/check-out datetimes (ADR-0013). */
 export type Stay = {
   id: string;
   tripId: string;
   lodgingLocationId: string;
-  ord: number;
-  startNight: number;
-  endNight: number;
+  checkIn: string;  // ISO datetime
+  checkOut: string; // ISO datetime
 };
 
 export type Location = {

@@ -54,8 +54,9 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
   const tripRow = db.select().from(trip).where(eq(trip.id, id)).get();
   if (!tripRow) return null;
 
-  const stayRows = db.select().from(stay).where(eq(stay.tripId, id)).orderBy(asc(stay.ord)).all();
+  const stayRows = db.select().from(stay).where(eq(stay.tripId, id)).orderBy(asc(stay.checkIn)).all();
   const lodgingIds = new Set(stayRows.map((s) => s.lodgingLocationId));
+  const nightRanges = staysAsNightRanges(stayRows, tripRow.startDate, tripRow.numDays);
 
   const locationRows = db
     .select()
@@ -82,8 +83,8 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
 
   const locById = new Map(locationRows.map((l) => [l.id, toLocation(l, lodgingIds)]));
   const lodgingAt = (night: number): Location | null => {
-    const s = stayRows.find((r) => night >= r.startNight && night <= r.endNight);
-    return s ? locById.get(s.lodgingLocationId) ?? null : null;
+    const r = nightRanges.find((r) => night >= r.startNight && night <= r.endNight);
+    return r ? locById.get(r.lodgingLocationId) ?? null : null;
   };
 
   const days: ItineraryDay[] = dayRows.map((day) => {
@@ -196,14 +197,21 @@ export type OptimizationInputs = {
 
 export function getOptimizationInputs(tripId: string): OptimizationInputs | null {
   const db = getDrizzle();
-  if (!tripExists(tripId)) return null;
+  const tripRow = db
+    .select({ startDate: trip.startDate, numDays: trip.numDays })
+    .from(trip)
+    .where(eq(trip.id, tripId))
+    .get();
+  if (!tripRow) return null;
 
-  const stays = db
-    .select({ lodgingLocationId: stay.lodgingLocationId, startNight: stay.startNight, endNight: stay.endNight })
+  // The optimizer interface is unchanged: derive integer night-ranges from booking datetimes.
+  const stayRows = db
+    .select({ lodgingLocationId: stay.lodgingLocationId, checkIn: stay.checkIn, checkOut: stay.checkOut })
     .from(stay)
     .where(eq(stay.tripId, tripId))
-    .orderBy(asc(stay.ord))
+    .orderBy(asc(stay.checkIn))
     .all();
+  const stays = staysAsNightRanges(stayRows, tripRow.startDate, tripRow.numDays);
 
   const locations = db
     .select({
@@ -444,36 +452,65 @@ export function reconcileItinerary(
 
 // ─── Stay timeline ────────────────────────────────────────────────────────────
 
-/** Thrown when a proposed Stay timeline violates ADR-0002/0005 invariants. */
+/** Thrown when a proposed Stay timeline violates ADR-0002/0013 invariants. */
 export class StayValidationError extends Error {}
 
-export type StayInput = { lodgingLocationId: string; startNight: number; endNight: number };
+export type StayInput = { lodgingLocationId: string; checkIn: string; checkOut: string };
+
+/** Trip Day number a calendar date falls on (Day 1 = startDate). Compared at date granularity. */
+function dayNumberOf(isoDateTime: string, startDate: string): number {
+  const day0 = Date.parse(startDate.slice(0, 10) + "T00:00:00Z");
+  const day = Date.parse(isoDateTime.slice(0, 10) + "T00:00:00Z");
+  return Math.round((day - day0) / 86400000) + 1;
+}
 
 /**
- * Replace a trip's Stay timeline atomically (ADR-0005). Validates ADR-0002 invariants:
- * each range within [1, numDays], non-overlapping, each lodging a Location in the trip.
- * Stays may have gaps (lodging is optional). Stays are stored ordered by startNight.
- * Lodging *stops* are not written here — they are generated per-day by optimize/rebuild.
+ * Convert booking datetimes into the integer night-ranges the optimizer and day-anchor
+ * derivation consume (ADR-0013 read boundary). "Night N" is the night after Day N. A booking
+ * checking in on Day X and out on Day Y covers nights X..Y-1. Ranges are clamped to
+ * [1, numDays] and empty ones dropped. Returns [] until the trip has a startDate (no calendar).
+ */
+function staysAsNightRanges(
+  stayRows: Array<{ lodgingLocationId: string; checkIn: string; checkOut: string }>,
+  startDate: string | null,
+  numDays: number | null
+): Array<{ lodgingLocationId: string; startNight: number; endNight: number }> {
+  if (!startDate) return [];
+  const ranges: Array<{ lodgingLocationId: string; startNight: number; endNight: number }> = [];
+  for (const s of stayRows) {
+    const startNight = Math.max(1, dayNumberOf(s.checkIn, startDate));
+    let endNight = dayNumberOf(s.checkOut, startDate) - 1;
+    if (numDays != null) endNight = Math.min(endNight, numDays);
+    if (startNight <= endNight) ranges.push({ lodgingLocationId: s.lodgingLocationId, startNight, endNight });
+  }
+  return ranges;
+}
+
+/**
+ * Replace a trip's Stay timeline atomically (ADR-0013). A Stay is a booking: a Lodging with
+ * check-in/check-out datetimes. Validates: checkIn < checkOut, the bookings' `[checkIn,
+ * checkOut)` intervals do not overlap, and each lodging is a Location in the trip. Stored
+ * ordered by checkIn; nights/day-anchors derive at the read boundary. Lodging *stops* are not
+ * written here — they are generated per-day by optimize/rebuild.
  */
 export function setStays(tripId: string, stays: StayInput[]): TripWithDetails {
   const db = getDrizzle();
-  const tripRow = db.select({ numDays: trip.numDays }).from(trip).where(eq(trip.id, tripId)).get();
+  const tripRow = db.select({ id: trip.id }).from(trip).where(eq(trip.id, tripId)).get();
   if (!tripRow) throw new StayValidationError("Trip not found");
-  const numDays = tripRow.numDays;
 
-  const sorted = [...stays].sort((a, b) => a.startNight - b.startNight);
+  const sorted = [...stays].sort((a, b) => a.checkIn.localeCompare(b.checkIn));
 
   for (const s of sorted) {
-    if (!Number.isInteger(s.startNight) || !Number.isInteger(s.endNight) || s.startNight < 1 || s.endNight < s.startNight) {
-      throw new StayValidationError(`Invalid night range ${s.startNight}–${s.endNight}`);
+    const ci = Date.parse(s.checkIn);
+    const co = Date.parse(s.checkOut);
+    if (Number.isNaN(ci) || Number.isNaN(co)) {
+      throw new StayValidationError("Invalid check-in/check-out datetime");
     }
-    if (numDays != null && s.endNight > numDays) {
-      throw new StayValidationError(`Stay ends on night ${s.endNight} but the trip has ${numDays} days`);
-    }
+    if (ci >= co) throw new StayValidationError("Check-in must be before check-out");
   }
   for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i].startNight <= sorted[i - 1].endNight) {
-      throw new StayValidationError("Stays overlap");
+    if (Date.parse(sorted[i].checkIn) < Date.parse(sorted[i - 1].checkOut)) {
+      throw new StayValidationError("Bookings overlap");
     }
   }
 
@@ -492,18 +529,17 @@ export function setStays(tripId: string, stays: StayInput[]): TripWithDetails {
 
   db.transaction((tx) => {
     tx.delete(stay).where(eq(stay.tripId, tripId)).run();
-    sorted.forEach((s, ord) => {
+    for (const s of sorted) {
       tx.insert(stay)
         .values({
           id: newId(),
           tripId,
           lodgingLocationId: s.lodgingLocationId,
-          ord,
-          startNight: s.startNight,
-          endNight: s.endNight,
+          checkIn: s.checkIn,
+          checkOut: s.checkOut,
         })
         .run();
-    });
+    }
   });
 
   return requireTrip(tripId);

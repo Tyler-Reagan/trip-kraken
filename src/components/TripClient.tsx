@@ -10,6 +10,7 @@ import LocationInspector from "./LocationInspector";
 import AddLocationModal from "./AddLocationModal";
 import NearbyDrawer from "./NearbyDrawer";
 import StayEditor from "./StayEditor";
+import LodgingSummary from "./LodgingSummary";
 
 const MapView = dynamic(() => import("./MapView"), { ssr: false });
 
@@ -113,6 +114,9 @@ export default function TripClient({ trip: initial }: Props) {
           </button>
         </div>
       </div>
+
+      {/* Derived lodging timeline (read-only) */}
+      <LodgingSummary />
 
       {/* View tabs + day filter */}
       {hasItinerary && (
