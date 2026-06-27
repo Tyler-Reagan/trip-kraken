@@ -8,8 +8,10 @@
  *   the same clustering cost rather than a separate assignment step.
  *
  * Phase 2 — Order stops within each day (nearest-neighbor TSP + 2-opt)
- *   Within a cluster, find a short visiting order using a greedy nearest-neighbor
- *   heuristic anchored at that day's lodging, then refine with 2-opt local search.
+ *   Within a cluster, find a short visiting order between the day's start anchor (where you woke)
+ *   and end anchor (where you sleep) — the same lodging on a round-trip day, a different one on a
+ *   travel day (ADR-0005). Unlocked-only round-trip days use nearest-neighbor + 2-opt; days with a
+ *   distinct end anchor (travel/arrival/departure) route by cheapest insertion toward that end.
  *
  *   Time-window awareness: if locations carry openTime/closeTime fields, both phases
  *   add a km-equivalent soft penalty for arriving outside those windows. The penalty
@@ -85,15 +87,27 @@ export function optimizeItinerary(
   if (edges.arrivalId) anchorIds.add(edges.arrivalId);
   if (edges.departureId) anchorIds.add(edges.departureId);
 
+  // The lodging you sleep at on night d — the day's clustering tether (k-means), unchanged.
+  const lodgingOnNight = (night: number): LocationInput | null => {
+    const s = stays.find((s) => night >= s.startNight && night <= s.endNight);
+    return s ? byId.get(s.lodgingId) ?? null : null;
+  };
   const dayAnchor: (LocationInput | null)[] = [];
+  for (let d = 1; d <= days; d++) dayAnchor.push(lodgingOnNight(d));
+
+  // Per-day routing endpoints (ADR-0005, #55): a Day's route runs from where you WOKE (the prior
+  // night's lodging) to where you SLEEP (this night's lodging). They differ on a travel day (you
+  // changed hotels) → an A→…→B open path; on a round-trip day they're equal, so only the start
+  // anchors the walk (no forced return, unchanged from before). Day 1's start overrides to the
+  // arrival edge, the last Day's end to the departure edge (#54).
+  const seqStart: (LocationInput | null)[] = [];
+  const seqEnd: (LocationInput | null)[] = [];
   for (let d = 1; d <= days; d++) {
-    const stay = stays.find((s) => d >= s.startNight && d <= s.endNight);
-    dayAnchor.push(stay ? byId.get(stay.lodgingId) ?? null : null);
+    const start = d === 1 && arrival ? arrival : lodgingOnNight(d - 1);
+    const end = d === days && departure ? departure : lodgingOnNight(d);
+    seqStart.push(start);
+    seqEnd.push(end && end.id !== start?.id ? end : null);
   }
-  // Per-day routing endpoints: Day 1 starts at arrival; the last Day ends at departure. Other
-  // days have no fixed end (travel-day ends arrive with #55). Clustering still uses dayAnchor.
-  const seqStart = dayAnchor.map((a, i) => (i === 0 && arrival ? arrival : a));
-  const seqEnd = dayAnchor.map((_, i) => (i === days - 1 && departure ? departure : null));
 
   // Locked Stops are pinned to their Day in their relative order, and held out of
   // clustering. Lodging is managed by the Stay timeline, never by a lock. A lock pinned to
