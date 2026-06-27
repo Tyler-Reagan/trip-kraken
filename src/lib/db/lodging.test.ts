@@ -19,12 +19,14 @@ import {
   updateTrip,
   setStays,
   setTripEndpoints,
+  importBookingStay,
   getTripWithDetails,
   getOptimizationInputs,
   StayValidationError,
   newId,
 } from "@/lib/db";
 import { optimizeItinerary } from "@/lib/optimizer";
+import { parseBookingConfirmation } from "@/lib/bookingImport";
 
 // Stand up a temp DB and install it as the repository's connection BEFORE any repo call.
 // (The repo's getDrizzle() is lazy, so the static import above never opens the real dev DB.)
@@ -181,6 +183,39 @@ const travelPlan = optimizeItinerary(
 const travelDay = travelPlan.find((p) => p.dayNumber === 2)!.locationIds;
 assert.ok(!["la", "lb"].some((id) => travelDay.includes(id)), "lodgings are not stops on the travel day");
 assert.deepEqual(travelDay, ["m1", "m2"], "travel day routes woke A → … → sleep B");
+
+// ── Booking import (ADR-0013 Phase 2 / ADR-0010, #57) ──
+// Parser: a clean labelled confirmation → property + dates (month-name and ISO forms).
+const parsed = parseBookingConfirmation(
+  ["Your stay at Hotel Sakura", "Check-in: August 3, 2026", "Check-out: 2026-08-06", "Confirmation #ABC"].join("\n")
+);
+assert.ok(parsed.ok, "clean confirmation parses");
+if (parsed.ok) {
+  assert.equal(parsed.booking.property, "Hotel Sakura", "property parsed");
+  assert.equal(parsed.booking.checkInDate, "2026-08-03", "check-in parsed from a month-name date");
+  assert.equal(parsed.booking.checkOutDate, "2026-08-06", "check-out parsed from an ISO date");
+}
+// Parser: malformed input is reported, never silently dropped.
+assert.equal(parseBookingConfirmation("no dates or property here").ok, false, "malformed confirmation reports an error");
+
+// Importer: a fresh trip — the property becomes a lodging Location and a Stay is appended.
+const it = createTripWithLocations({ name: "Import trip", sourceUrl: "", locations: [] });
+updateTrip(it.id, { numDays: 6, startDate: "2026-08-03" });
+const imp1 = importBookingStay(it.id, { property: "Hotel Sakura", checkInDate: "2026-08-03", checkOutDate: "2026-08-06" });
+const sakura = imp1.locations.find((l) => l.name === "Hotel Sakura")!;
+assert.ok(sakura, "the property became a Location");
+assert.deepEqual(sakura.roles, ["lodging"], "the imported property derives the lodging role");
+assert.equal(imp1.stays.length, 1, "a Stay was appended");
+assert.equal(imp1.stays[0].lodgingLocationId, sakura.id, "the Stay references the new lodging");
+// Re-importing the same property name resolves the existing Location (no duplicate).
+const imp2 = importBookingStay(it.id, { property: "hotel sakura", checkInDate: "2026-08-06", checkOutDate: "2026-08-08" });
+assert.equal(imp2.locations.filter((l) => l.name.toLowerCase() === "hotel sakura").length, 1, "same property resolves — no duplicate Location");
+assert.equal(imp2.stays.length, 2, "second Stay appended");
+// Overlapping import is rejected.
+expectRejected(
+  () => importBookingStay(it.id, { property: "Hotel Overlap", checkInDate: "2026-08-04", checkOutDate: "2026-08-07" }),
+  "overlapping booking import"
+);
 
 fs.rmSync(dir, { recursive: true, force: true });
 console.log("✓ lodging.test.ts passed");
