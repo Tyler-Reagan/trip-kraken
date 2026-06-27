@@ -47,7 +47,7 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
   const totalMinutes = day.stops.reduce((sum, s) => sum + (s.location.visitDuration ?? 0), 0);
   const anyHasDuration = day.stops.some((s) => s.location.visitDuration !== null);
   const isLightDay = anyHasDuration && totalMinutes < LIGHT_DAY_THRESHOLD && day.stops.length > 0;
-  const nearbyAnchorLoc = day.startLodging ?? day.stops[0]?.location ?? null;
+  const nearbyAnchorLoc = day.startAnchor ?? day.stops[0]?.location ?? null;
 
   const dateStr = day.date
     ? new Date(day.date).toLocaleDateString("en-US", {
@@ -150,7 +150,7 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
 
       {/* Stops list */}
       <ol className="space-y-2">
-        {day.startLodging && <LodgingAnchorRow loc={day.startLodging} role="start" dayId={day.id} />}
+        {day.startAnchor && <AnchorRow loc={day.startAnchor} role="start" dayId={day.id} />}
         {day.stops.map((stop, idx) => (
           <StopRow
             key={stop.id}
@@ -163,7 +163,7 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
             onDropBefore={() => onDrop(day, idx)}
           />
         ))}
-        {day.endLodging && <LodgingAnchorRow loc={day.endLodging} role="end" dayId={day.id} />}
+        {day.endAnchor && <AnchorRow loc={day.endAnchor} role="end" dayId={day.id} />}
       </ol>
       {day.stops.length === 0 && (
         <p className="text-sm text-gray-400 dark:text-gray-500 italic py-1 text-center">
@@ -174,9 +174,37 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
   );
 }
 
-function LodgingAnchorRow({ loc, role, dayId }: { loc: Location; role: "start" | "end"; dayId: string }) {
+/**
+ * A Day's fixed start/end anchor row. The anchor's derived role decides how it reads: a lodging
+ * shows as "Stay", an arrival/departure transport anchor (ADR-0005) shows as its edge and uses a
+ * cooler palette to distinguish a place you pass through from a place you sleep.
+ */
+function AnchorRow({ loc, role, dayId }: { loc: Location; role: "start" | "end"; dayId: string }) {
   const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
+
+  const isArrival = loc.roles.includes("arrival");
+  const isDeparture = loc.roles.includes("departure");
+  const isTransport = isArrival || isDeparture;
+  const chip = isArrival ? "Arrival" : isDeparture ? "Departure" : "Stay";
+  const subtext = isArrival
+    ? "Trip start"
+    : isDeparture
+      ? "Trip end"
+      : role === "start"
+        ? "Start of day"
+        : "Overnight";
+  const palette = isTransport
+    ? {
+        row: "border-sky-200 dark:border-sky-800 bg-sky-50/60 dark:bg-sky-950/20 hover:bg-sky-50 dark:hover:bg-sky-900/30",
+        chip: "bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-400",
+        sub: "text-sky-600/80 dark:text-sky-400/80",
+      }
+    : {
+        row: "border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-900/30",
+        chip: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400",
+        sub: "text-amber-600/80 dark:text-amber-400/80",
+      };
 
   return (
     <li
@@ -184,15 +212,15 @@ function LodgingAnchorRow({ loc, role, dayId }: { loc: Location; role: "start" |
         if ((e.target as HTMLElement).closest("button")) return;
         setInspectedLocationId(loc.id);
       }}
-      className="group flex items-center gap-2 p-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 cursor-pointer transition-colors hover:bg-amber-50 dark:hover:bg-amber-900/30"
+      className={`group flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${palette.row}`}
     >
-      <span className="shrink-0 px-1.5 h-5 flex items-center rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-[10px] font-semibold uppercase tracking-wide">
-        Stay
+      <span className={`shrink-0 px-1.5 h-5 flex items-center rounded text-[10px] font-semibold uppercase tracking-wide ${palette.chip}`}>
+        {chip}
       </span>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{loc.name}</p>
-        <p className="text-xs text-amber-600/80 dark:text-amber-400/80 mt-0.5">
-          {role === "start" ? "Start of day" : "Overnight"}
+        <p className={`text-xs mt-0.5 ${palette.sub}`}>
+          {subtext}
         </p>
       </div>
       <button

@@ -146,13 +146,13 @@ export default function MapView() {
         });
       });
 
-      if (day.startLodging) addLodging(day.startLodging, day.dayNumber);
-      if (day.endLodging) addLodging(day.endLodging, day.dayNumber);
+      if (day.startAnchor) addLodging(day.startAnchor, day.dayNumber);
+      if (day.endAnchor) addLodging(day.endAnchor, day.dayNumber);
 
       const routeCoords: [number, number][] = [];
-      if (day.startLodging?.lat != null && day.startLodging.lng != null) routeCoords.push([day.startLodging.lng, day.startLodging.lat]);
+      if (day.startAnchor?.lat != null && day.startAnchor.lng != null) routeCoords.push([day.startAnchor.lng, day.startAnchor.lat]);
       for (const s of geocodedStops) routeCoords.push([s.location.lng, s.location.lat]);
-      if (day.endLodging?.lat != null && day.endLodging.lng != null) routeCoords.push([day.endLodging.lng, day.endLodging.lat]);
+      if (day.endAnchor?.lat != null && day.endAnchor.lng != null) routeCoords.push([day.endAnchor.lng, day.endAnchor.lat]);
 
       if (routeCoords.length >= 2) {
         routes.features.push({

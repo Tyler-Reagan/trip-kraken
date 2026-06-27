@@ -33,6 +33,12 @@ export interface StayPlan {
   endNight: number;
 }
 
+/** Trip-edge transport anchors (ADR-0005, #54): the Day-1 start and last-Day end Locations. */
+export interface EdgeAnchors {
+  arrivalId?: string | null;
+  departureId?: string | null;
+}
+
 /**
  * A Stop the user has pinned (ADR-0006). A lock fixes the Location's **Day** and its order
  * **relative to other locked Stops on that Day**; the optimizer routes all unlocked Stops
@@ -55,21 +61,39 @@ export function optimizeItinerary(
   stays: StayPlan[] = [],
   dayBudgetMinutes?: number,
   dayStartMins = 9 * 60,   // assumed start-of-day for time-window simulation (default 09:00)
-  locked: LockedStop[] = []
+  locked: LockedStop[] = [],
+  edges: EdgeAnchors = {}
 ): DayPlan[] {
   if (locations.length === 0) return [];
 
   const days = numDays > 0 ? numDays : 1;
   const byId = new Map(locations.map((l) => [l.id, l]));
 
-  // Each day's routing anchor is its Stay's lodging — used to pull clustering/sequencing,
-  // never emitted as a stop (lodging is derived from the Stay timeline at read time).
-  const lodgingIds = new Set(stays.map((s) => s.lodgingId));
+  // Trip-edge anchors (ADR-0005, #54): resolved only when present with valid coordinates.
+  const resolveAnchor = (id: string | null | undefined): LocationInput | null => {
+    if (!id) return null;
+    const l = byId.get(id);
+    return l && (l.lat !== 0 || l.lng !== 0) ? l : null;
+  };
+  const arrival = resolveAnchor(edges.arrivalId);
+  const departure = resolveAnchor(edges.departureId);
+
+  // Anchors are never clustered or emitted as stops: lodgings (Stay timeline) plus the trip
+  // edges. Clustering pull stays on lodgings; arrival/departure only override the *sequencing*
+  // endpoints at the first/last Day.
+  const anchorIds = new Set(stays.map((s) => s.lodgingId));
+  if (edges.arrivalId) anchorIds.add(edges.arrivalId);
+  if (edges.departureId) anchorIds.add(edges.departureId);
+
   const dayAnchor: (LocationInput | null)[] = [];
   for (let d = 1; d <= days; d++) {
     const stay = stays.find((s) => d >= s.startNight && d <= s.endNight);
     dayAnchor.push(stay ? byId.get(stay.lodgingId) ?? null : null);
   }
+  // Per-day routing endpoints: Day 1 starts at arrival; the last Day ends at departure. Other
+  // days have no fixed end (travel-day ends arrive with #55). Clustering still uses dayAnchor.
+  const seqStart = dayAnchor.map((a, i) => (i === 0 && arrival ? arrival : a));
+  const seqEnd = dayAnchor.map((_, i) => (i === days - 1 && departure ? departure : null));
 
   // Locked Stops are pinned to their Day in their relative order, and held out of
   // clustering. Lodging is managed by the Stay timeline, never by a lock. A lock pinned to
@@ -78,7 +102,7 @@ export function optimizeItinerary(
   const lockedIds = new Set<string>();
   for (const l of [...locked].sort((a, b) => a.lockOrder - b.lockOrder)) {
     if (l.dayNumber < 1 || l.dayNumber > days) continue;
-    if (lodgingIds.has(l.locationId) || !byId.has(l.locationId)) continue;
+    if (anchorIds.has(l.locationId) || !byId.has(l.locationId)) continue;
     lockedIds.add(l.locationId);
     const arr = lockedByDay.get(l.dayNumber) ?? [];
     arr.push(l.locationId);
@@ -87,8 +111,8 @@ export function optimizeItinerary(
   const lockedSeqFor = (dayIdx: number): LocationInput[] =>
     (lockedByDay.get(dayIdx + 1) ?? []).map((id) => byId.get(id)).filter((l): l is LocationInput => !!l);
 
-  // Unlocked, non-lodging Locations are the clustering pool; locked ones merge in per-day.
-  const pool = locations.filter((l) => !lodgingIds.has(l.id) && !lockedIds.has(l.id));
+  // Unlocked, non-anchor Locations are the clustering pool; locked ones merge in per-day.
+  const pool = locations.filter((l) => !anchorIds.has(l.id) && !lockedIds.has(l.id));
   const valid = pool.filter((l) => l.lat !== 0 || l.lng !== 0);
   const invalid = pool.filter((l) => l.lat === 0 && l.lng === 0);
 
@@ -96,7 +120,7 @@ export function optimizeItinerary(
   if (valid.length <= days) {
     const plans: DayPlan[] = [];
     for (let d = 0; d < days; d++) {
-      const ordered = sequenceWithLocks(lockedSeqFor(d), valid[d] ? [valid[d]] : [], dayAnchor[d] ?? undefined, dayStartMins);
+      const ordered = sequenceWithLocks(lockedSeqFor(d), valid[d] ? [valid[d]] : [], seqStart[d] ?? undefined, dayStartMins, seqEnd[d] ?? undefined);
       plans.push({ dayNumber: d + 1, locationIds: ordered.map((l) => l.id) });
     }
     if (invalid.length > 0) plans[plans.length - 1].locationIds.push(...invalid.map((l) => l.id));
@@ -109,7 +133,7 @@ export function optimizeItinerary(
   // Phase 2: per day, sequence unlocked stops around the day's fixed locked skeleton,
   // anchored at its lodging.
   const plans: DayPlan[] = clusters.map((cluster, d) => {
-    const ordered = sequenceWithLocks(lockedSeqFor(d), cluster, dayAnchor[d] ?? undefined, dayStartMins);
+    const ordered = sequenceWithLocks(lockedSeqFor(d), cluster, seqStart[d] ?? undefined, dayStartMins, seqEnd[d] ?? undefined);
     return { dayNumber: d + 1, locationIds: ordered.map((l) => l.id) };
   });
 
@@ -133,18 +157,24 @@ function sequenceWithLocks(
   lockedSeq: LocationInput[],
   unlocked: LocationInput[],
   anchor: LocationInput | undefined,
-  dayStartMins: number
+  dayStartMins: number,
+  endAnchor?: LocationInput
 ): LocationInput[] {
-  if (lockedSeq.length === 0) {
+  // Unlocked-only day with no fixed end: original nearest-neighbor + 2-opt route (start-anchored).
+  if (lockedSeq.length === 0 && !endAnchor) {
     return twoOpt(nearestNeighborOrder(unlocked, dayStartMins, anchor), dayStartMins);
   }
+  // Otherwise build by cheapest insertion: a locked skeleton (possibly empty), each unlocked stop
+  // slotted into the gap that adds the least travel. `anchor` is the virtual pre-start and
+  // `endAnchor` the virtual tail, so the route is pulled toward starting at `anchor` and ending at
+  // `endAnchor` (the trip-edge / travel-day anchors) without either being emitted as a stop.
   const route = [...lockedSeq];
   for (const u of unlocked) {
     let bestPos = route.length;
     let bestCost = Infinity;
     for (let pos = 0; pos <= route.length; pos++) {
       const prev = pos === 0 ? anchor : route[pos - 1];
-      const next = pos < route.length ? route[pos] : undefined;
+      const next = pos < route.length ? route[pos] : endAnchor;
       const added =
         (prev ? haversine(prev, u) : 0) +
         (next ? haversine(u, next) : 0) -

@@ -13,6 +13,7 @@ const addDays = (date: string, n: number) =>
 export default function StayEditor() {
   const trip = useTripStore((s) => s.trip);
   const saveStays = useTripStore((s) => s.saveStays);
+  const saveEndpoints = useTripStore((s) => s.saveEndpoints);
   const setShowStays = useTripStore((s) => s.setShowStays);
 
   const locations = trip?.locations ?? [];
@@ -26,6 +27,9 @@ export default function StayEditor() {
         checkOutDate: s.checkOutDate,
       })) ?? []
   );
+  // Trip-edge anchors (ADR-0005): where you arrive on Day 1 and depart on the last Day.
+  const [arrivalLocationId, setArrivalLocationId] = useState(trip?.arrivalLocationId ?? "");
+  const [departureLocationId, setDepartureLocationId] = useState(trip?.departureLocationId ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -62,7 +66,11 @@ export default function StayEditor() {
       return;
     }
     setSaving(true);
-    const err = await saveStays(draft);
+    const endpointErr = await saveEndpoints({
+      arrivalLocationId: arrivalLocationId || null,
+      departureLocationId: departureLocationId || null,
+    });
+    const err = endpointErr ?? (await saveStays(draft));
     setSaving(false);
     if (err) setError(err);
     else close();
@@ -72,11 +80,41 @@ export default function StayEditor() {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={close}>
       <div className="card w-full max-w-xl p-6 space-y-5" onClick={(e) => e.stopPropagation()}>
         <div className="space-y-1">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Lodging bookings</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Lodging &amp; trip endpoints</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             One row per reservation: where you sleep, from check-in to check-out. Each day&apos;s
             start and end anchor is derived from these. Leave empty for a trip with no fixed lodging.
           </p>
+        </div>
+
+        {/* Arrival / departure: the transport anchors at the trip's edges (ADR-0005). */}
+        <div className="grid grid-cols-2 gap-3">
+          <label className="space-y-1">
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Arrival (Day 1 start)</span>
+            <select
+              value={arrivalLocationId}
+              onChange={(e) => setArrivalLocationId(e.target.value)}
+              className="input w-full py-1.5 text-sm"
+            >
+              <option value="">None</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Departure (last day end)</span>
+            <select
+              value={departureLocationId}
+              onChange={(e) => setDepartureLocationId(e.target.value)}
+              className="input w-full py-1.5 text-sm"
+            >
+              <option value="">None</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+            </select>
+          </label>
         </div>
 
         {draft.length === 0 ? (

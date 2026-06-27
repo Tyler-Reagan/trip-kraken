@@ -13,7 +13,7 @@
  */
 
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 export const trip = sqliteTable("Trip", {
   id: text("id").primaryKey(),
@@ -21,6 +21,13 @@ export const trip = sqliteTable("Trip", {
   sourceUrl: text("sourceUrl"), // nullable: blank-slate trips have no import source (ADR-0010)
   numDays: integer("numDays"),
   startDate: text("startDate"),
+  // Trip-edge transport anchors (ADR-0005, #54): the Location you arrive at on Day 1 and depart
+  // from on the last Day. A Location referenced here plays the arrival/departure role (ADR-0014),
+  // the same way a Stay reference makes one a lodging. SET NULL: deleting the place clears the
+  // anchor rather than blocking the delete. The `: AnySQLiteColumn` return annotation breaks the
+  // Trip↔Location reference cycle TS otherwise can't infer (Drizzle's circular-reference fix).
+  arrivalLocationId: text("arrivalLocationId").references((): AnySQLiteColumn => location.id, { onDelete: "set null" }),
+  departureLocationId: text("departureLocationId").references((): AnySQLiteColumn => location.id, { onDelete: "set null" }),
   createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
   updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
 });

@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { eq, and, gt, gte, asc, desc, sql, count, max, inArray, getTableColumns } from "drizzle-orm";
 import { getDrizzle } from "./client";
 import { trip, location, stay, itineraryDay, itineraryStop } from "./schema";
-import type { TripWithDetails, Location, ItineraryDay } from "@/types";
+import type { TripWithDetails, Location, ItineraryDay, LocationRole } from "@/types";
 import type { LocationEnrichment } from "@/lib/places";
 
 /**
@@ -25,14 +25,16 @@ function parseTrip(r: typeof trip.$inferSelect) {
     sourceUrl: r.sourceUrl,
     numDays: r.numDays ?? null,
     startDate: r.startDate ? new Date(r.startDate) : null,
+    arrivalLocationId: r.arrivalLocationId ?? null,
+    departureLocationId: r.departureLocationId ?? null,
     createdAt: new Date(r.createdAt),
     updatedAt: new Date(r.updatedAt),
   };
 }
 
 /** Drizzle returns json/boolean columns already parsed; only `roles` is derived (ADR-0014). */
-function toLocation(r: typeof location.$inferSelect, lodgingIds: Set<string>): Location {
-  return { ...r, roles: lodgingIds.has(r.id) ? ["lodging"] : [] };
+function toLocation(r: typeof location.$inferSelect, rolesByLocation: Map<string, LocationRole[]>): Location {
+  return { ...r, roles: rolesByLocation.get(r.id) ?? [] };
 }
 
 // ─── Reads ────────────────────────────────────────────────────────────────────
@@ -58,6 +60,16 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
   const stayRows = db.select().from(stay).where(eq(stay.tripId, id)).orderBy(asc(stay.checkInDate)).all();
   const lodgingIds = new Set(stayRows.map((s) => s.lodgingLocationId));
 
+  // Derived roles (ADR-0014): a Stay reference ⇒ lodging; a Trip edge reference ⇒ arrival/departure.
+  const rolesByLocation = new Map<string, LocationRole[]>();
+  const addRole = (locId: string, role: LocationRole) =>
+    rolesByLocation.set(locId, [...(rolesByLocation.get(locId) ?? []), role]);
+  for (const lid of lodgingIds) addRole(lid, "lodging");
+  if (tripRow.arrivalLocationId) addRole(tripRow.arrivalLocationId, "arrival");
+  if (tripRow.departureLocationId) addRole(tripRow.departureLocationId, "departure");
+  // Anchor Locations (any role) fill a Day's anchor slot and are never scheduled as a Stop.
+  const anchorIds = new Set(rolesByLocation.keys());
+
   const locationRows = db
     .select()
     .from(location)
@@ -81,7 +93,7 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
     .orderBy(asc(itineraryStop.ord))
     .all();
 
-  const locById = new Map(locationRows.map((l) => [l.id, toLocation(l, lodgingIds)]));
+  const locById = new Map(locationRows.map((l) => [l.id, toLocation(l, rolesByLocation)]));
 
   // Day anchors derive from ONE rule over the date bookings (ADR-0014). `lodgingOn(date)` is the
   // Stay you sleep under that date — half-open [checkInDate, checkOutDate), ISO date strings
@@ -96,24 +108,31 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
     return s ? locById.get(s.lodgingLocationId) ?? null : null;
   };
 
+  // Trip-edge transport anchors (ADR-0005): the first Day starts at arrival, the last ends at
+  // departure, overriding the lodging bookend at those edges.
+  const arrivalLoc = tripRow.arrivalLocationId ? locById.get(tripRow.arrivalLocationId) ?? null : null;
+  const departureLoc = tripRow.departureLocationId ? locById.get(tripRow.departureLocationId) ?? null : null;
+  const lastDayNumber = tripRow.numDays ?? Math.max(0, ...dayRows.map((d) => d.dayNumber));
+
   const days: ItineraryDay[] = dayRows.map((day) => {
-    // Start = where you woke = the lodging of the day before (the prior date). End = where you
-    // sleep = the lodging of this date. On a check-in day you arrive mid-day, so the prior date
-    // falls outside every Stay → null start; the booked lodging is the overnight/end, never the
-    // origin. (The true day-1 origin is an arrival anchor — ADR-0005 / #54.) start ≠ end ⇒ a
-    // travel day; equal ⇒ a round trip.
-    const start = lodgingOn(dateOfDay(day.dayNumber - 1));
-    const end = lodgingOn(dateOfDay(day.dayNumber));
+    // Start = where you woke = the lodging of the day before (the prior date); Day 1 overrides to
+    // the arrival anchor. End = where you sleep = the lodging of this date; the last Day overrides
+    // to the departure anchor. On a check-in day the prior date falls outside every Stay → null
+    // start, so the booked lodging is the overnight/end, never the origin. start ≠ end ⇒ a travel
+    // day (or an arrival/departure edge); equal ⇒ a round trip.
+    const start = day.dayNumber === 1 && arrivalLoc ? arrivalLoc : lodgingOn(dateOfDay(day.dayNumber - 1));
+    const end =
+      day.dayNumber === lastDayNumber && departureLoc ? departureLoc : lodgingOn(dateOfDay(day.dayNumber));
     return {
       id: day.id,
       tripId: day.tripId,
       dayNumber: day.dayNumber,
       date: day.date ? new Date(day.date) : null,
       label: day.label,
-      startLodging: start,
-      endLodging: end && end.id !== start?.id ? end : null,
+      startAnchor: start,
+      endAnchor: end && end.id !== start?.id ? end : null,
       stops: stopRows
-        .filter((s) => s.stop.dayId === day.id && !lodgingIds.has(s.stop.locationId))
+        .filter((s) => s.stop.dayId === day.id && !anchorIds.has(s.stop.locationId))
         .map((s) => ({
           id: s.stop.id,
           dayId: s.stop.dayId,
@@ -121,7 +140,7 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
           order: s.stop.ord,
           notes: s.stop.notes,
           locked: s.stop.locked,
-          location: toLocation(s.loc, lodgingIds),
+          location: toLocation(s.loc, rolesByLocation),
         })),
     };
   });
@@ -144,17 +163,27 @@ export function tripExists(tripId: string): boolean {
   return getDrizzle().select({ id: trip.id }).from(trip).where(eq(trip.id, tripId)).get() !== undefined;
 }
 
-/** A single Location with derived roles (ADR-0014). */
+/** A single Location with derived roles (ADR-0014): lodging from a Stay, arrival/departure from
+ *  the Trip's edge anchors. */
 export function getLocation(locationId: string): Location | null {
   const db = getDrizzle();
   const row = db.select().from(location).where(eq(location.id, locationId)).get();
   if (!row) return null;
+  const roles: LocationRole[] = [];
   const lodging = db
     .select({ x: sql<number>`1` })
     .from(stay)
     .where(eq(stay.lodgingLocationId, locationId))
     .get();
-  return { ...row, roles: lodging !== undefined ? ["lodging"] : [] };
+  if (lodging !== undefined) roles.push("lodging");
+  const edge = db
+    .select({ a: trip.arrivalLocationId, d: trip.departureLocationId })
+    .from(trip)
+    .where(eq(trip.id, row.tripId))
+    .get();
+  if (edge?.a === locationId) roles.push("arrival");
+  if (edge?.d === locationId) roles.push("departure");
+  return { ...row, roles };
 }
 
 export function getLocationCoords(
@@ -207,12 +236,19 @@ export type OptimizationLocation = {
 export type OptimizationInputs = {
   locations: OptimizationLocation[];
   stays: Array<{ lodgingLocationId: string; startNight: number; endNight: number }>;
+  arrivalLocationId: string | null;   // trip-edge anchors (ADR-0005, #54)
+  departureLocationId: string | null;
 };
 
 export function getOptimizationInputs(tripId: string): OptimizationInputs | null {
   const db = getDrizzle();
   const tripRow = db
-    .select({ startDate: trip.startDate, numDays: trip.numDays })
+    .select({
+      startDate: trip.startDate,
+      numDays: trip.numDays,
+      arrivalLocationId: trip.arrivalLocationId,
+      departureLocationId: trip.departureLocationId,
+    })
     .from(trip)
     .where(eq(trip.id, tripId))
     .get();
@@ -241,7 +277,12 @@ export function getOptimizationInputs(tripId: string): OptimizationInputs | null
     .where(and(eq(location.tripId, tripId), eq(location.excluded, false)))
     .all();
 
-  return { locations, stays };
+  return {
+    locations,
+    stays,
+    arrivalLocationId: tripRow.arrivalLocationId ?? null,
+    departureLocationId: tripRow.departureLocationId ?? null,
+  };
 }
 
 /**
@@ -561,6 +602,41 @@ export function setStays(tripId: string, stays: StayInput[]): TripWithDetails {
     }
   });
 
+  return requireTrip(tripId);
+}
+
+/**
+ * Set (or clear) the trip's arrival/departure edge anchors (ADR-0005). Each must reference a
+ * Location in the trip, or be null to clear. A Location used as an endpoint plays the
+ * arrival/departure role (derived, ADR-0014); it is never scheduled as a Stop.
+ */
+export function setTripEndpoints(
+  tripId: string,
+  endpoints: { arrivalLocationId: string | null; departureLocationId: string | null }
+): TripWithDetails {
+  const db = getDrizzle();
+  const ids = [endpoints.arrivalLocationId, endpoints.departureLocationId].filter(
+    (x): x is string => !!x
+  );
+  if (ids.length > 0) {
+    const found = db
+      .select({ id: location.id })
+      .from(location)
+      .where(and(eq(location.tripId, tripId), inArray(location.id, ids)))
+      .all();
+    const foundSet = new Set(found.map((r) => r.id));
+    for (const id of ids) {
+      if (!foundSet.has(id)) throw new StayValidationError("Endpoint location is not in this trip");
+    }
+  }
+  db.update(trip)
+    .set({
+      arrivalLocationId: endpoints.arrivalLocationId,
+      departureLocationId: endpoints.departureLocationId,
+      updatedAt: sql`(datetime('now'))`,
+    })
+    .where(eq(trip.id, tripId))
+    .run();
   return requireTrip(tripId);
 }
 

@@ -6,6 +6,8 @@ export type TripWithDetails = {
   startDate: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  arrivalLocationId: string | null;   // trip-edge transport anchors (ADR-0005, #54)
+  departureLocationId: string | null;
   locations: Location[];
   stays: Stay[];
   days: ItineraryDay[];
@@ -22,10 +24,11 @@ export type Stay = {
 
 /**
  * A role a Location plays in a trip, *derived* from what references it — not a stored flag
- * (ADR-0014). A Location is a "lodging" because a Stay references it. Arrival/departure roles
- * arrive with the trip-edge anchors (ADR-0005, #54).
+ * (ADR-0014). A Location is a "lodging" because a Stay references it, and "arrival"/"departure"
+ * because the Trip's edge anchors reference it (ADR-0005). All current roles are *anchor* roles:
+ * a Location with any role fills a Day's anchor slot and is never a scheduled activity Stop.
  */
-export type LocationRole = "lodging";
+export type LocationRole = "lodging" | "arrival" | "departure";
 
 export type Location = {
   id: string;
@@ -70,8 +73,11 @@ export type ItineraryDay = {
   dayNumber: number;
   date: Date | null;
   label: string | null;
-  startLodging: Location | null;
-  endLodging: Location | null;
+  // A Day's anchors (ADR-0005): where its route starts and ends. Usually the Stay's lodging;
+  // the first Day may start at an arrival anchor and the last Day end at a departure anchor.
+  // The anchor Location's `roles` say which kind it is.
+  startAnchor: Location | null;
+  endAnchor: Location | null;
   stops: ItineraryStop[];
 };
 
