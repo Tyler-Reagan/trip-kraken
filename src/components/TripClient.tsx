@@ -10,6 +10,7 @@ import LocationInspector from "./LocationInspector";
 import AddLocationModal from "./AddLocationModal";
 import NearbyDrawer from "./NearbyDrawer";
 import StayEditor from "./StayEditor";
+import LodgingSummary from "./LodgingSummary";
 
 const MapView = dynamic(() => import("./MapView"), { ssr: false });
 
@@ -62,7 +63,7 @@ export default function TripClient({ trip: initial }: Props) {
   const unscheduledCount = hasItinerary
     ? (() => {
         const scheduled = new Set(trip.days.flatMap((d) => d.stops.map((s) => s.locationId)));
-        return trip.locations.filter((l) => !scheduled.has(l.id) && !l.isLodging).length;
+        return trip.locations.filter((l) => !scheduled.has(l.id) && !l.roles.includes("lodging")).length;
       })()
     : 0;
 
@@ -113,6 +114,9 @@ export default function TripClient({ trip: initial }: Props) {
           </button>
         </div>
       </div>
+
+      {/* Derived lodging timeline (read-only) */}
+      <LodgingSummary />
 
       {/* View tabs + day filter */}
       {hasItinerary && (

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "9ab53c8d-f86a-4b45-bb1a-fc772183e01a",
+  "id": "dbb07582-691f-470b-b5f3-e7a71c7c5cc9",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "ItineraryDay": {
@@ -319,23 +319,16 @@
           "notNull": true,
           "autoincrement": false
         },
-        "ord": {
-          "name": "ord",
-          "type": "integer",
+        "checkInDate": {
+          "name": "checkInDate",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "startNight": {
-          "name": "startNight",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "endNight": {
-          "name": "endNight",
-          "type": "integer",
+        "checkOutDate": {
+          "name": "checkOutDate",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false

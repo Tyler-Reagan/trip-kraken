@@ -6,8 +6,10 @@
  *    lodging (ADR-0005). "Is this Location a lodging?" = "is it referenced by a Stay?"
  *  - Stops carry a `locked` flag (ADR-0006).
  *  - Trip.sourceUrl is nullable to allow blank-slate trips (ADR-0010).
- * Day → Stay membership is derived from the Stay's night-range, so there is no stayId
- * column on a Day.
+ * A Stay is a date booking — a Lodging with a check-in/check-out date (ADR-0014, amending
+ * ADR-0013). Day → Stay membership, "nights", and day anchors all derive from those dates by
+ * a single comparison rule, so there is no stayId column on a Day and no stored night-range.
+ * Check-in/out *times* are property policy, not part of the booking, and never decide topology.
  */
 
 import { sql } from "drizzle-orm";
@@ -61,9 +63,11 @@ export const stay = sqliteTable("Stay", {
   lodgingLocationId: text("lodgingLocationId")
     .notNull()
     .references(() => location.id, { onDelete: "restrict" }),
-  ord: integer("ord").notNull(),
-  startNight: integer("startNight").notNull(),
-  endNight: integer("endNight").notNull(),
+  // Calendar dates "YYYY-MM-DD" (ADR-0014). Half-open: you sleep the nights in
+  // [checkInDate, checkOutDate). Stays are ordered by checkInDate; nights and day anchors
+  // derive from these dates. Check-in/out times are Lodging policy, not stored here.
+  checkInDate: text("checkInDate").notNull(),
+  checkOutDate: text("checkOutDate").notNull(),
 });
 
 export const itineraryDay = sqliteTable("ItineraryDay", {

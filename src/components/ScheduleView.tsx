@@ -25,7 +25,7 @@ export default function ScheduleView() {
     trip.days.flatMap((d) => d.stops.map((s) => s.locationId))
   );
   const unscheduledLocations = trip.locations.filter(
-    (l) => !scheduledLocationIds.has(l.id) && !l.isLodging
+    (l) => !scheduledLocationIds.has(l.id) && !l.roles.includes("lodging")
   );
 
   function handleDragStartStop(stop: ItineraryStop) {

@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { setStays, StayValidationError, type StayInput } from "@/lib/db";
 
 /**
- * Replace the trip's Stay timeline (ADR-0005). Body: { stays: StayInput[] }.
- * Each stay = { lodgingLocationId, startNight, endNight }.
+ * Replace the trip's Stay timeline (ADR-0014). Body: { stays: StayInput[] }.
+ * Each stay = { lodgingLocationId, checkInDate, checkOutDate } ("YYYY-MM-DD"); setStays validates.
  */
 export async function PUT(
   req: NextRequest,
