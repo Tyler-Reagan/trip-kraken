@@ -40,3 +40,4 @@ status to **Superseded by ADR-NNNN**.
 | [0011](0011-transit-integration.md) | Transit integration (pluggable, handoff) | Accepted |
 | [0012](0012-export.md) | Export (pluggable, Markdown baseline) | Accepted |
 | [0013](0013-accommodation-bookings-and-derived-anchors.md) | Accommodations as timed bookings; day anchors derived | Accepted |
+| [0014](0014-location-primitive-date-bookings-derived-roles.md) | Location as primitive; stays as date bookings; roles and anchors derived | Accepted |

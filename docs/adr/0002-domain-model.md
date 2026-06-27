@@ -10,6 +10,10 @@
   check-out datetimes), not an integer night-range; "nights" and Day→Stay membership derive
   from those datetimes, and an Anchor gains a time dimension and a possible mid-day transition
   waypoint (an accommodation can be both a mid-day visit and a Day's end Anchor).
+- **Amended by ADR-0014 (2026-06-26):** `Location.isLodging` is removed — a Location's roles
+  (lodging, arrival/departure, scheduled visit) are *derived* from the structures that reference
+  it, not stored. A **Stay** is a **date** booking (`checkInDate`/`checkOutDate`), not a datetime
+  one; check-in/out *times* become optional Lodging policy and never decide topology.
 
 ## Context
 

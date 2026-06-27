@@ -4,6 +4,9 @@
 - **Date:** 2026-06-25
 - **Supersedes:** —
 - **Superseded by:** —
+- **Amended by:** ADR-0014 (2026-06-26): check-in/out become **dates**, not datetimes; the time
+  dimension moves to optional Lodging policy and Phase-2 optimizer constraints. "Booking is the
+  primitive" and "anchors are derived" stand.
 - **Amends:** ADR-0002 (Stay definition), ADR-0005 (per-Day Anchors)
 - **Constrained by:** ADR-0001 (intent ranks above optimality), ADR-0008 (persistence)
 - **Constrains:** ADR-0003 (time-window constraints), ADR-0011 (time-of-day transit)
