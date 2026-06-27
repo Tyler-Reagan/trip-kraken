@@ -153,5 +153,26 @@ const day1Ids = optPlan[0].locationIds;
 assert.ok(!["ap", "dp", "lo"].some((id) => day1Ids.includes(id)), "anchors are not emitted as stops");
 assert.deepEqual(day1Ids, ["s1", "s2"], "stops ordered arrival → … → departure");
 
+// ── Optimizer travel-day routing (ADR-0005, #55): a hotel-change day routes woke(A) → … → sleep(B) ──
+// Stay LA night 1, Stay LB night 2 (far-apart cities). One activity near A clusters to Day 1; two
+// between A and B cluster to Day 2 — the travel day, which must route from A toward B.
+const travelPlan = optimizeItinerary(
+  [
+    { id: "la", lat: 35.0, lng: 139.0 },  // lodging A (night 1)
+    { id: "lb", lat: 35.0, lng: 140.0 },  // lodging B (night 2)
+    { id: "a1", lat: 35.0, lng: 139.05 }, // near A → Day 1
+    { id: "m1", lat: 35.0, lng: 139.6 },  // nearer A's side of the leg → earlier on Day 2
+    { id: "m2", lat: 35.0, lng: 139.8 },  // nearer B's side → later on Day 2
+  ],
+  2,
+  [
+    { lodgingId: "la", startNight: 1, endNight: 1 },
+    { lodgingId: "lb", startNight: 2, endNight: 2 },
+  ]
+);
+const travelDay = travelPlan.find((p) => p.dayNumber === 2)!.locationIds;
+assert.ok(!["la", "lb"].some((id) => travelDay.includes(id)), "lodgings are not stops on the travel day");
+assert.deepEqual(travelDay, ["m1", "m2"], "travel day routes woke A → … → sleep B");
+
 fs.rmSync(dir, { recursive: true, force: true });
 console.log("✓ lodging.test.ts passed");
