@@ -151,6 +151,9 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
       {/* Stops list */}
       <ol className="space-y-2">
         {day.startAnchor && <AnchorRow loc={day.startAnchor} role="start" dayId={day.id} />}
+        {/* On a check-in day, the new lodging is dropped into the route to leave bags, then
+            reappears as the overnight end anchor below (ADR-0013 Phase 2). */}
+        {day.checkInWaypoint && <AnchorRow loc={day.checkInWaypoint} role="checkin" dayId={day.id} />}
         {day.stops.map((stop, idx) => (
           <StopRow
             key={stop.id}
@@ -179,21 +182,23 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
  * shows as "Stay", an arrival/departure transport anchor (ADR-0005) shows as its edge and uses a
  * cooler palette to distinguish a place you pass through from a place you sleep.
  */
-function AnchorRow({ loc, role, dayId }: { loc: Location; role: "start" | "end"; dayId: string }) {
+function AnchorRow({ loc, role, dayId }: { loc: Location; role: "start" | "end" | "checkin"; dayId: string }) {
   const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
 
   const isArrival = loc.roles.includes("arrival");
   const isDeparture = loc.roles.includes("departure");
   const isTransport = isArrival || isDeparture;
-  const chip = isArrival ? "Arrival" : isDeparture ? "Departure" : "Stay";
+  const chip = isArrival ? "Arrival" : isDeparture ? "Departure" : role === "checkin" ? "Check-in" : "Stay";
   const subtext = isArrival
     ? "Trip start"
     : isDeparture
       ? "Trip end"
-      : role === "start"
-        ? "Start of day"
-        : "Overnight";
+      : role === "checkin"
+        ? "Check-in · drop bags"
+        : role === "start"
+          ? "Start of day"
+          : "Overnight";
   const palette = isTransport
     ? {
         row: "border-sky-200 dark:border-sky-800 bg-sky-50/60 dark:bg-sky-950/20 hover:bg-sky-50 dark:hover:bg-sky-900/30",

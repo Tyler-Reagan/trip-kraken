@@ -78,6 +78,10 @@ export type ItineraryDay = {
   // The anchor Location's `roles` say which kind it is.
   startAnchor: Location | null;
   endAnchor: Location | null;
+  // On a check-in day (you sleep somewhere different from where you woke) the new lodging is also
+  // visited mid-route to drop bags (ADR-0013 Phase 2): the same Location as the overnight end
+  // anchor, surfaced as a within-day waypoint. Null on round-trip days. Derived, never a Stop.
+  checkInWaypoint: Location | null;
   stops: ItineraryStop[];
 };
 

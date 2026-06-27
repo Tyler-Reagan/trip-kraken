@@ -120,9 +120,13 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
     // to the departure anchor. On a check-in day the prior date falls outside every Stay → null
     // start, so the booked lodging is the overnight/end, never the origin. start ≠ end ⇒ a travel
     // day (or an arrival/departure edge); equal ⇒ a round trip.
-    const start = day.dayNumber === 1 && arrivalLoc ? arrivalLoc : lodgingOn(dateOfDay(day.dayNumber - 1));
-    const end =
-      day.dayNumber === lastDayNumber && departureLoc ? departureLoc : lodgingOn(dateOfDay(day.dayNumber));
+    const wokeLodging = lodgingOn(dateOfDay(day.dayNumber - 1));
+    const sleepLodging = lodgingOn(dateOfDay(day.dayNumber));
+    const start = day.dayNumber === 1 && arrivalLoc ? arrivalLoc : wokeLodging;
+    const end = day.dayNumber === lastDayNumber && departureLoc ? departureLoc : sleepLodging;
+    // Check-in day ⇒ you sleep somewhere new (≠ where you woke). That new lodging is visited
+    // mid-route to drop bags (ADR-0013 Phase 2), then again as the overnight end anchor.
+    const checkInWaypoint = sleepLodging && sleepLodging.id !== wokeLodging?.id ? sleepLodging : null;
     return {
       id: day.id,
       tripId: day.tripId,
@@ -131,6 +135,7 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
       label: day.label,
       startAnchor: start,
       endAnchor: end && end.id !== start?.id ? end : null,
+      checkInWaypoint,
       stops: stopRows
         .filter((s) => s.stop.dayId === day.id && !anchorIds.has(s.stop.locationId))
         .map((s) => ({
