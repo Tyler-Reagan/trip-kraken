@@ -47,7 +47,8 @@ export async function POST(
     stays,
     dayBudgetMinutes,
     undefined,
-    locked
+    locked,
+    { arrivalId: inputs.arrivalLocationId, departureId: inputs.departureLocationId }
   );
 
   // Reconcile in place (ADR-0006/0008): preserves Stop identity, notes, and locks rather

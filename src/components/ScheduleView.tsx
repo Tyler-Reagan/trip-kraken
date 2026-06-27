@@ -25,7 +25,9 @@ export default function ScheduleView() {
     trip.days.flatMap((d) => d.stops.map((s) => s.locationId))
   );
   const unscheduledLocations = trip.locations.filter(
-    (l) => !scheduledLocationIds.has(l.id) && !l.roles.includes("lodging")
+    // Anchors (lodging / arrival / departure) are never schedulable activities — only role-less
+    // candidates appear in the unscheduled pool (ADR-0014).
+    (l) => !scheduledLocationIds.has(l.id) && l.roles.length === 0
   );
 
   function handleDragStartStop(stop: ItineraryStop) {

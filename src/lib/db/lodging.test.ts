@@ -15,13 +15,16 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "@/lib/db/schema";
 import {
   createTripWithLocations,
+  createLocation,
   updateTrip,
   setStays,
+  setTripEndpoints,
   getTripWithDetails,
   getOptimizationInputs,
   StayValidationError,
   newId,
 } from "@/lib/db";
+import { optimizeItinerary } from "@/lib/optimizer";
 
 // Stand up a temp DB and install it as the repository's connection BEFORE any repo call.
 // (The repo's getDrizzle() is lazy, so the static import above never opens the real dev DB.)
@@ -59,14 +62,14 @@ setStays(trip.id, [
 const details = getTripWithDetails(trip.id)!;
 const [d1, d2, d3] = details.days;
 // Day 1 is a check-in/arrival day: no origin (no prior night), A is the overnight/end.
-assert.equal(d1.startLodging, null, "day1 has no origin (arrival day)");
-assert.equal(d1.endLodging?.id, A, "day1 overnights at A");
+assert.equal(d1.startAnchor, null, "day1 has no origin (arrival day)");
+assert.equal(d1.endAnchor?.id, A, "day1 overnights at A");
 // Day 2 is a round-trip day at A: woke there, sleep there → shown once as the start anchor.
-assert.equal(d2.startLodging?.id, A, "day2 starts at A (woke there)");
-assert.equal(d2.endLodging, null, "day2 round-trips at A → no separate end");
+assert.equal(d2.startAnchor?.id, A, "day2 starts at A (woke there)");
+assert.equal(d2.endAnchor, null, "day2 round-trips at A → no separate end");
 // Day 3 is the travel day: woke at A, sleep at B.
-assert.equal(d3.startLodging?.id, A, "day3 starts at A (travel day)");
-assert.equal(d3.endLodging?.id, B, "day3 ends at B (travel day)");
+assert.equal(d3.startAnchor?.id, A, "day3 starts at A (travel day)");
+assert.equal(d3.endAnchor?.id, B, "day3 ends at B (travel day)");
 
 const opt = getOptimizationInputs(trip.id)!;
 assert.deepEqual(
@@ -95,6 +98,60 @@ expectRejected(
   () => setStays(trip.id, [{ lodgingLocationId: "not-a-location", checkInDate: "2026-06-24", checkOutDate: "2026-06-25" }]),
   "lodging not in trip"
 );
+
+// ── Trip-edge anchors (ADR-0005, #54): arrival on Day 1, departure on the last Day ──
+const AP = createLocation(trip.id, { name: "Airport In", lat: 35.0, lng: 139.0 }).id;
+const DP = createLocation(trip.id, { name: "Airport Out", lat: 35.9, lng: 139.9 }).id;
+// One Stay at A across all nights, so days 2/3 are plain round-trips at A (no travel-day noise).
+setStays(trip.id, [{ lodgingLocationId: A, checkInDate: "2026-06-24", checkOutDate: "2026-06-27" }]);
+setTripEndpoints(trip.id, { arrivalLocationId: AP, departureLocationId: DP });
+
+const e = getTripWithDetails(trip.id)!;
+assert.equal(e.arrivalLocationId, AP, "trip records arrival");
+assert.equal(e.departureLocationId, DP, "trip records departure");
+const [e1, e2, e3] = e.days;
+assert.equal(e1.startAnchor?.id, AP, "day1 starts at the arrival anchor");
+assert.deepEqual(e1.startAnchor?.roles, ["arrival"], "arrival Location derives the arrival role");
+assert.equal(e1.endAnchor?.id, A, "day1 still overnights at A");
+assert.equal(e2.startAnchor?.id, A, "middle day is a plain round-trip at A");
+assert.equal(e2.endAnchor, null, "middle day round-trips → no separate end");
+assert.equal(e3.endAnchor?.id, DP, "last day ends at the departure anchor");
+assert.deepEqual(e3.endAnchor?.roles, ["departure"], "departure Location derives the departure role");
+// Endpoints surface to the optimizer; arrival/departure are non-excluded so the inputs carry them.
+const eopt = getOptimizationInputs(trip.id)!;
+assert.equal(eopt.arrivalLocationId, AP);
+assert.equal(eopt.departureLocationId, DP);
+
+// Fallback: clearing the endpoints restores the pure lodging bookends.
+setTripEndpoints(trip.id, { arrivalLocationId: null, departureLocationId: null });
+const f = getTripWithDetails(trip.id)!;
+assert.equal(f.days[0].startAnchor, null, "no arrival → day1 has no origin again");
+assert.equal(f.days[2].endAnchor, null, "no departure → last day round-trips at A");
+
+expectRejected(
+  () => setTripEndpoints(trip.id, { arrivalLocationId: "nope", departureLocationId: null }),
+  "endpoint not in trip"
+);
+
+// ── Optimizer: Day 1 routes from arrival, the last Day to departure; anchors are never stops ──
+const optPlan = optimizeItinerary(
+  [
+    { id: "ap", lat: 35.0, lng: 139.0 },   // arrival (one end)
+    { id: "dp", lat: 35.9, lng: 139.9 },   // departure (other end)
+    { id: "lo", lat: 35.5, lng: 139.5 },   // lodging (anchor, not a stop)
+    { id: "s1", lat: 35.2, lng: 139.2 },   // nearer arrival
+    { id: "s2", lat: 35.7, lng: 139.7 },   // nearer departure
+  ],
+  1,
+  [{ lodgingId: "lo", startNight: 1, endNight: 1 }],
+  undefined,
+  undefined,
+  [],
+  { arrivalId: "ap", departureId: "dp" }
+);
+const day1Ids = optPlan[0].locationIds;
+assert.ok(!["ap", "dp", "lo"].some((id) => day1Ids.includes(id)), "anchors are not emitted as stops");
+assert.deepEqual(day1Ids, ["s1", "s2"], "stops ordered arrival → … → departure");
 
 fs.rmSync(dir, { recursive: true, force: true });
 console.log("✓ lodging.test.ts passed");

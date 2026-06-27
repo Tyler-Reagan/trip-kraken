@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "dbb07582-691f-470b-b5f3-e7a71c7c5cc9",
+  "id": "dc14988c-3edc-40b5-b6d5-35895807b94a",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "ItineraryDay": {
@@ -405,6 +405,20 @@
           "notNull": false,
           "autoincrement": false
         },
+        "arrivalLocationId": {
+          "name": "arrivalLocationId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "departureLocationId": {
+          "name": "departureLocationId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "createdAt": {
           "name": "createdAt",
           "type": "text",
@@ -423,7 +437,34 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {},
+      "foreignKeys": {
+        "Trip_arrivalLocationId_Location_id_fk": {
+          "name": "Trip_arrivalLocationId_Location_id_fk",
+          "tableFrom": "Trip",
+          "tableTo": "Location",
+          "columnsFrom": [
+            "arrivalLocationId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "Trip_departureLocationId_Location_id_fk": {
+          "name": "Trip_departureLocationId_Location_id_fk",
+          "tableFrom": "Trip",
+          "tableTo": "Location",
+          "columnsFrom": [
+            "departureLocationId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}

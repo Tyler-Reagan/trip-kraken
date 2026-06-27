@@ -56,6 +56,10 @@ CREATE TABLE `Trip` (
 	`sourceUrl` text,
 	`numDays` integer,
 	`startDate` text,
+	`arrivalLocationId` text,
+	`departureLocationId` text,
 	`createdAt` text DEFAULT (datetime('now')) NOT NULL,
-	`updatedAt` text DEFAULT (datetime('now')) NOT NULL
+	`updatedAt` text DEFAULT (datetime('now')) NOT NULL,
+	FOREIGN KEY (`arrivalLocationId`) REFERENCES `Location`(`id`) ON UPDATE no action ON DELETE set null,
+	FOREIGN KEY (`departureLocationId`) REFERENCES `Location`(`id`) ON UPDATE no action ON DELETE set null
 );

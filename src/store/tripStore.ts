@@ -38,6 +38,7 @@ interface TripStore {
   setStopLocked: (stopId: string, locked: boolean) => Promise<void>;
   addLocationToDay: (locationId: string, dayId: string) => Promise<void>;
   saveStays: (stays: Array<{ lodgingLocationId: string; checkInDate: string; checkOutDate: string }>) => Promise<string | null>;
+  saveEndpoints: (endpoints: { arrivalLocationId: string | null; departureLocationId: string | null }) => Promise<string | null>;
   enrich: () => Promise<void>;
 
   // Enrichment progress (shown during manual retry)
@@ -147,6 +148,22 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       return (data as { error?: string }).error ?? "Failed to save stays";
+    }
+    await get().reload();
+    return null;
+  },
+
+  saveEndpoints: async (endpoints) => {
+    const tripId = get().tripId;
+    if (!tripId) return "No trip loaded";
+    const res = await fetch(`/api/trips/${tripId}/endpoints`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(endpoints),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return (data as { error?: string }).error ?? "Failed to save endpoints";
     }
     await get().reload();
     return null;
