@@ -37,7 +37,7 @@ interface TripStore {
   removeStop: (stopId: string) => Promise<void>;
   setStopLocked: (stopId: string, locked: boolean) => Promise<void>;
   addLocationToDay: (locationId: string, dayId: string) => Promise<void>;
-  saveStays: (stays: Array<{ lodgingLocationId: string; checkIn: string; checkOut: string }>) => Promise<string | null>;
+  saveStays: (stays: Array<{ lodgingLocationId: string; checkInDate: string; checkOutDate: string }>) => Promise<string | null>;
   enrich: () => Promise<void>;
 
   // Enrichment progress (shown during manual retry)

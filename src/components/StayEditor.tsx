@@ -4,11 +4,7 @@ import { useState } from "react";
 import { useTripStore } from "@/store/tripStore";
 
 /** A booking row in the editor. Dates are `yyyy-mm-dd` (what <input type="date"> speaks). */
-type DraftStay = { lodgingLocationId: string; checkIn: string; checkOut: string };
-
-// Phase 1 enters dates only; default times make them datetimes (ADR-0013).
-const CHECK_IN_TIME = "T15:00:00";
-const CHECK_OUT_TIME = "T11:00:00";
+type DraftStay = { lodgingLocationId: string; checkInDate: string; checkOutDate: string };
 
 const dateOf = (iso: string) => iso.slice(0, 10);
 const addDays = (date: string, n: number) =>
@@ -26,8 +22,8 @@ export default function StayEditor() {
     () =>
       trip?.stays.map((s) => ({
         lodgingLocationId: s.lodgingLocationId,
-        checkIn: dateOf(s.checkIn),
-        checkOut: dateOf(s.checkOut),
+        checkInDate: s.checkInDate,
+        checkOutDate: s.checkOutDate,
       })) ?? []
   );
   const [error, setError] = useState<string | null>(null);
@@ -44,10 +40,10 @@ export default function StayEditor() {
   function addRow() {
     // New booking starts where the last one ended (or the trip start), one night long.
     const last = draft[draft.length - 1];
-    const checkIn = last?.checkOut || tripStart || new Date().toISOString().slice(0, 10);
+    const checkInDate = last?.checkOutDate || tripStart || new Date().toISOString().slice(0, 10);
     setDraft((d) => [
       ...d,
-      { lodgingLocationId: locations[0]?.id ?? "", checkIn, checkOut: addDays(checkIn, 1) },
+      { lodgingLocationId: locations[0]?.id ?? "", checkInDate, checkOutDate: addDays(checkInDate, 1) },
     ]);
   }
 
@@ -61,18 +57,12 @@ export default function StayEditor() {
       setError("Pick a lodging for every booking");
       return;
     }
-    if (draft.some((s) => !s.checkIn || !s.checkOut)) {
+    if (draft.some((s) => !s.checkInDate || !s.checkOutDate)) {
       setError("Every booking needs a check-in and check-out date");
       return;
     }
     setSaving(true);
-    const err = await saveStays(
-      draft.map((s) => ({
-        lodgingLocationId: s.lodgingLocationId,
-        checkIn: s.checkIn + CHECK_IN_TIME,
-        checkOut: s.checkOut + CHECK_OUT_TIME,
-      }))
-    );
+    const err = await saveStays(draft);
     setSaving(false);
     if (err) setError(err);
     else close();
@@ -107,17 +97,17 @@ export default function StayEditor() {
                 </select>
                 <input
                   type="date"
-                  value={s.checkIn}
-                  onChange={(e) => update(i, { checkIn: e.target.value })}
+                  value={s.checkInDate}
+                  onChange={(e) => update(i, { checkInDate: e.target.value })}
                   aria-label="Check-in date"
                   className="input w-36 py-1.5 text-sm"
                 />
                 <span className="text-gray-400 shrink-0">→</span>
                 <input
                   type="date"
-                  value={s.checkOut}
-                  min={s.checkIn || undefined}
-                  onChange={(e) => update(i, { checkOut: e.target.value })}
+                  value={s.checkOutDate}
+                  min={s.checkInDate || undefined}
+                  onChange={(e) => update(i, { checkOutDate: e.target.value })}
                   aria-label="Check-out date"
                   className="input w-36 py-1.5 text-sm"
                 />

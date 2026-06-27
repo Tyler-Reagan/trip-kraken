@@ -268,7 +268,7 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
             ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/30 border-brand-200 dark:border-brand-800"
             : isInspected
               ? "bg-gray-100 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700"
-              : loc.isLodging
+              : loc.roles.includes("lodging")
                 ? "bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-900/30"
                 : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
           }`}
@@ -303,7 +303,7 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
         {/* Lock toggle — stays visible when locked so the pin reads at rest (ADR-0006).
             Hidden on lodging stops: lodging is owned by the Stay timeline, not individually
             lockable, and the optimizer ignores locks on lodging anyway. */}
-        {!loc.isLodging && (
+        {!loc.roles.includes("lodging") && (
           <button
             onClick={(e) => { e.stopPropagation(); setStopLocked(stop.id, !stop.locked); }}
             title={stop.locked ? "Locked to this day & order — click to unlock" : "Lock to this day & order"}
@@ -331,7 +331,7 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
           </button>
           {/* Remove is hidden on lodging stops — a lodging is removed by dissolving its Stay
               in the Stay editor (relegation), not by trashing one auto-generated day stop. */}
-          {!loc.isLodging && (
+          {!loc.roles.includes("lodging") && (
             <button
               onClick={(e) => { e.stopPropagation(); doRemoveStop(); }}
               title="Remove location from this day"

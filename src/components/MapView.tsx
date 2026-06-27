@@ -299,7 +299,7 @@ export default function MapView() {
       {/* Legend */}
       {mapReady && (
         <div className="absolute bottom-3 left-3 bg-black/70 text-white text-xs rounded-lg px-3 py-2 space-y-1 backdrop-blur-sm pointer-events-none">
-          {trip.locations.some((l) => l.isLodging && l.lat !== null) && (
+          {trip.locations.some((l) => l.roles.includes("lodging") && l.lat !== null) && (
             <div className="flex items-center gap-2">
               <span
                 className="inline-block w-3 h-3 rounded-full shrink-0 border-2"

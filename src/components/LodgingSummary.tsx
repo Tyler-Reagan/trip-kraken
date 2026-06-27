@@ -3,11 +3,12 @@
 import { useTripStore } from "@/store/tripStore";
 
 /**
- * Read-only timeline of lodging bookings (ADR-0013). Days derive their start/end anchors from
+ * Read-only timeline of lodging bookings (ADR-0014). Days derive their start/end anchors from
  * these; this just shows the bookings themselves. Editing happens in StayEditor.
  */
-const shortDate = (iso: string) =>
-  new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const shortDate = (date: string) =>
+  // Parse as local midnight so a "YYYY-MM-DD" date isn't shifted a day by UTC interpretation.
+  new Date(date.slice(0, 10) + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 export default function LodgingSummary() {
   const trip = useTripStore((s) => s.trip);
@@ -23,7 +24,7 @@ export default function LodgingSummary() {
           <span className="font-medium text-gray-700 dark:text-gray-200">
             {nameById.get(s.lodgingLocationId) ?? "Lodging"}
           </span>{" "}
-          · {shortDate(s.checkIn)} → {shortDate(s.checkOut)}
+          · {shortDate(s.checkInDate)} → {shortDate(s.checkOutDate)}
         </span>
       ))}
     </div>

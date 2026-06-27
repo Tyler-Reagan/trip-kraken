@@ -169,7 +169,7 @@ export default function LocationInspector() {
       </div>
 
       {/* Duration editor — hidden for lodging */}
-      {!loc.isLodging && <DurationEditor loc={loc} />}
+      {!loc.roles.includes("lodging") && <DurationEditor loc={loc} />}
 
       {/* Categories */}
       {loc.categories && loc.categories.length > 0 && (

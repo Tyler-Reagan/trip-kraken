@@ -11,14 +11,21 @@ export type TripWithDetails = {
   days: ItineraryDay[];
 };
 
-/** A timed accommodation booking — a Lodging with check-in/check-out datetimes (ADR-0013). */
+/** A date accommodation booking — a Lodging with check-in/check-out dates (ADR-0014). */
 export type Stay = {
   id: string;
   tripId: string;
   lodgingLocationId: string;
-  checkIn: string;  // ISO datetime
-  checkOut: string; // ISO datetime
+  checkInDate: string;  // "YYYY-MM-DD"
+  checkOutDate: string; // "YYYY-MM-DD" — half-open: nights are [checkInDate, checkOutDate)
 };
+
+/**
+ * A role a Location plays in a trip, *derived* from what references it — not a stored flag
+ * (ADR-0014). A Location is a "lodging" because a Stay references it. Arrival/departure roles
+ * arrive with the trip-edge anchors (ADR-0005, #54).
+ */
+export type LocationRole = "lodging";
 
 export type Location = {
   id: string;
@@ -29,7 +36,7 @@ export type Location = {
   lng: number | null;
   placeId: string | null;
   excluded: boolean;
-  isLodging: boolean;
+  roles: LocationRole[]; // derived from references (ADR-0014); [] for a plain candidate
   note: string | null;
   stops?: ItineraryStop[];
   rating: number | null;

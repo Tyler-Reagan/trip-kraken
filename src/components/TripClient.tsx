@@ -63,7 +63,7 @@ export default function TripClient({ trip: initial }: Props) {
   const unscheduledCount = hasItinerary
     ? (() => {
         const scheduled = new Set(trip.days.flatMap((d) => d.stops.map((s) => s.locationId)));
-        return trip.locations.filter((l) => !scheduled.has(l.id) && !l.isLodging).length;
+        return trip.locations.filter((l) => !scheduled.has(l.id) && !l.roles.includes("lodging")).length;
       })()
     : 0;
 

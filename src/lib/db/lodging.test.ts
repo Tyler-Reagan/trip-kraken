@@ -1,5 +1,5 @@
 /**
- * Integration test for the booking → derived-anchor / night-range conversion (ADR-0013).
+ * Integration test for date bookings → derived day-anchors / optimizer night-ranges (ADR-0014).
  * Standalone (no test runner): run with `pnpm exec tsx src/lib/db/lodging.test.ts`. It points
  * the repository's global Drizzle handle at a throwaway temp DB, then exercises setStays,
  * getTripWithDetails, and getOptimizationInputs end-to-end.
@@ -50,10 +50,10 @@ for (const dayNumber of [1, 2, 3]) {
 const A = trip.locations.find((l) => l.name === "A")!.id;
 const B = trip.locations.find((l) => l.name === "B")!.id;
 
-// ── Happy path: A covers 06-24→06-26, B covers 06-26→06-27 ──
+// ── Happy path: A covers 06-24→06-26, B covers 06-26→06-27 (adjacent — a same-day switch) ──
 setStays(trip.id, [
-  { lodgingLocationId: A, checkIn: "2026-06-24T15:00:00", checkOut: "2026-06-26T11:00:00" },
-  { lodgingLocationId: B, checkIn: "2026-06-26T15:00:00", checkOut: "2026-06-27T11:00:00" },
+  { lodgingLocationId: A, checkInDate: "2026-06-24", checkOutDate: "2026-06-26" },
+  { lodgingLocationId: B, checkInDate: "2026-06-26", checkOutDate: "2026-06-27" },
 ]);
 
 const details = getTripWithDetails(trip.id)!;
@@ -82,17 +82,17 @@ assert.deepEqual(
 expectRejected(
   () =>
     setStays(trip.id, [
-      { lodgingLocationId: A, checkIn: "2026-06-24T15:00:00", checkOut: "2026-06-26T11:00:00" },
-      { lodgingLocationId: B, checkIn: "2026-06-25T15:00:00", checkOut: "2026-06-27T11:00:00" },
+      { lodgingLocationId: A, checkInDate: "2026-06-24", checkOutDate: "2026-06-26" },
+      { lodgingLocationId: B, checkInDate: "2026-06-25", checkOutDate: "2026-06-27" },
     ]),
   "overlapping bookings"
 );
 expectRejected(
-  () => setStays(trip.id, [{ lodgingLocationId: A, checkIn: "2026-06-26T15:00:00", checkOut: "2026-06-24T11:00:00" }]),
-  "checkIn >= checkOut"
+  () => setStays(trip.id, [{ lodgingLocationId: A, checkInDate: "2026-06-26", checkOutDate: "2026-06-24" }]),
+  "checkInDate >= checkOutDate"
 );
 expectRejected(
-  () => setStays(trip.id, [{ lodgingLocationId: "not-a-location", checkIn: "2026-06-24T15:00:00", checkOut: "2026-06-25T11:00:00" }]),
+  () => setStays(trip.id, [{ lodgingLocationId: "not-a-location", checkInDate: "2026-06-24", checkOutDate: "2026-06-25" }]),
   "lodging not in trip"
 );
 
