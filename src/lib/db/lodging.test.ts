@@ -70,6 +70,12 @@ assert.equal(d2.endAnchor, null, "day2 round-trips at A → no separate end");
 // Day 3 is the travel day: woke at A, sleep at B.
 assert.equal(d3.startAnchor?.id, A, "day3 starts at A (travel day)");
 assert.equal(d3.endAnchor?.id, B, "day3 ends at B (travel day)");
+// Check-in waypoint (ADR-0013 Phase 2): a lodging you sleep at but didn't wake at is dropped into
+// the route mid-day to leave bags, then reappears as the overnight end anchor (visited twice).
+assert.equal(d1.checkInWaypoint?.id, A, "day1 checks into A on arrival");
+assert.equal(d2.checkInWaypoint, null, "day2 round-trips at A → no check-in");
+assert.equal(d3.checkInWaypoint?.id, B, "day3 checks into B mid-route");
+assert.equal(d3.checkInWaypoint?.id, d3.endAnchor?.id, "day3 check-in and overnight are the same B");
 
 const opt = getOptimizationInputs(trip.id)!;
 assert.deepEqual(
@@ -113,6 +119,8 @@ const [e1, e2, e3] = e.days;
 assert.equal(e1.startAnchor?.id, AP, "day1 starts at the arrival anchor");
 assert.deepEqual(e1.startAnchor?.roles, ["arrival"], "arrival Location derives the arrival role");
 assert.equal(e1.endAnchor?.id, A, "day1 still overnights at A");
+assert.equal(e1.checkInWaypoint?.id, A, "day1 checks into A even though it arrives via transport");
+assert.equal(e3.checkInWaypoint, null, "departure day has no lodging check-in");
 assert.equal(e2.startAnchor?.id, A, "middle day is a plain round-trip at A");
 assert.equal(e2.endAnchor, null, "middle day round-trips → no separate end");
 assert.equal(e3.endAnchor?.id, DP, "last day ends at the departure anchor");

@@ -151,6 +151,9 @@ export default function MapView() {
 
       const routeCoords: [number, number][] = [];
       if (day.startAnchor?.lat != null && day.startAnchor.lng != null) routeCoords.push([day.startAnchor.lng, day.startAnchor.lat]);
+      // Check-in waypoint: drop bags at the new lodging on arrival, before the day's stops
+      // (same place as the overnight anchor below; ADR-0013 Phase 2).
+      if (day.checkInWaypoint?.lat != null && day.checkInWaypoint.lng != null) routeCoords.push([day.checkInWaypoint.lng, day.checkInWaypoint.lat]);
       for (const s of geocodedStops) routeCoords.push([s.location.lng, s.location.lat]);
       if (day.endAnchor?.lat != null && day.endAnchor.lng != null) routeCoords.push([day.endAnchor.lng, day.endAnchor.lat]);
 
