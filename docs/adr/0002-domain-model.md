@@ -4,6 +4,7 @@
 - **Date:** 2026-06-23
 - **Supersedes:** —
 - **Superseded by:** —
+- **Amended by:** ADR-0015 (Location typed by `kind`; `Stay`→Lodging fields; `Stop`→`Placement`; roles derived)
 - **Constrained by:** ADR-0001 (north star), ADR-0005 (topology), ADR-0006 (authority)
 - **Note:** Vocabulary sharpened by the 2026-06-23 grilling session; see `CONTEXT.md`.
 - **Amended by ADR-0013 (2026-06-25):** a **Stay** is a timed booking (Lodging + check-in/

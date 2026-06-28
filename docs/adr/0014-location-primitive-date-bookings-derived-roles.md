@@ -1,9 +1,9 @@
 # ADR-0014: Location as primitive; stays as date bookings; roles and anchors derived
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-06-26
 - **Supersedes:** —
-- **Superseded by:** —
+- **Superseded by:** ADR-0015 (the `Stay` entity and reference-derived roles are replaced by one Location typed by `kind`)
 - **Amends:** ADR-0002 (drop `isLodging`, roles derived), ADR-0013 (datetimes → dates)
 - **Constrained by:** ADR-0001 (intent ranks above optimality), ADR-0008 (persistence)
 - **Constrains:** ADR-0003 (time-window constraints), ADR-0011 (time-of-day transit)

@@ -1,9 +1,9 @@
 # ADR-0013: Accommodations as timed bookings; day anchors derived
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-06-25
 - **Supersedes:** —
-- **Superseded by:** —
+- **Superseded by:** ADR-0015 (via ADR-0014 — the timed/dated Stay model is fully retired; ADR-0015 is authoritative)
 - **Amended by:** ADR-0014 (2026-06-26): check-in/out become **dates**, not datetimes; the time
   dimension moves to optional Lodging policy and Phase-2 optimizer constraints. "Booking is the
   primitive" and "anchors are derived" stand.

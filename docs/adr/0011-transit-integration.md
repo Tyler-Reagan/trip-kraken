@@ -4,6 +4,7 @@
 - **Date:** 2026-06-24
 - **Supersedes:** —
 - **Superseded by:** —
+- **Amended by:** ADR-0015 (transit becomes a Location `kind`; times are constraint fields)
 - **Constrained by:** ADR-0001 (scope-out: real-time, booking), ADR-0004 (travel cost)
 - **Mirrors:** ADR-0009 (pluggable providers with regional applicability)
 - **Note:** Decided in the 2026-06-24 grilling session.

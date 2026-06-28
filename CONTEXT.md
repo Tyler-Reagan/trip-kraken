@@ -7,53 +7,65 @@ ubiquitous language — definitions only, no implementation detail.
 ## Language
 
 **Trip**:
-The whole plan: a set of candidate Locations and the itinerary built from them, over an
-ordered run of Days.
+The whole plan: a set of Locations over a **required date range**, and the Plan built from
+them. Day-numbers are a derived label over the dates.
 
 **Location**:
-A *candidate* place a traveler might visit (name, coordinates, enrichment, hours). Being
-a Location means being in the candidate pool — not being scheduled.
+The one place primitive (name, coordinates, enrichment, hours), typed by `kind`. A Location
+carries the constraint-fields its kind warrants; being a Location is not being scheduled.
 _Avoid_: place, point, POI, spot
 
-**Lodging**:
-The *place* a traveler sleeps — a Location used as accommodation. A Lodging serves as the
-Anchor for its Stay's Days; it is never a scheduled Stop and never a nearby-search candidate.
-_Avoid_: base, hotel
+**kind**:
+The place taxonomy — `activity` · `transit` · `lodging` — with leaf types (Restaurant,
+Airport, Hotel, …) added only when they carry their own fields. One primitive, narrowed by
+kind; never separate objects or tables.
 
-**Stay**:
-A timed accommodation **booking** — a Lodging with a check-in and a check-out datetime. A
-Trip has an ordered list of Stays; revisiting the same hotel later is a second Stay sharing
-one Lodging. Which Days a Stay covers, and the nights it spans, derive from its datetimes.
-_Avoid_: base, leg, night-range
+**Activity (kind)**:
+A Location you visit; carries a `visitDuration`. The schedulable pool — the only kind the
+optimizer *places*.
 
-**Day**:
-One day of the itinerary. Belongs to one Stay and holds an ordered run of Stops.
+**Lodging (kind)**:
+A Location you sleep at; carries `checkIn` / `checkOut` **dates** (one continuous stay).
+Multiple lodgings in a Trip are simply multiple lodging Locations.
+_Avoid_: base, hotel, Stay
 
-**Anchor**:
-The fixed point a Day's route starts and ends at. Usually the Lodging of the Day's Stay (a
-normal day round-trips); a travel day runs from the previous Stay's Lodging to the current
-one; arrival/departure days use an entry/exit point (airport, station). A Day has a start
-Anchor and an end Anchor.
+**Transit (kind)**:
+A Location you pass through — airport, station; carries scheduled times. The Trip's
+arrival/departure are *derived* from the earliest/latest transit.
 _Avoid_: terminus, endpoint, base
 
-**Stop**:
-A *scheduled instance* of a Location on a Day — the Location's committed appearance in the
-plan, with an order and a locked flag. (Location = candidate; Stop = commitment.)
-_Avoid_: visit, waypoint, item
+**Constraint**:
+An intrinsic temporal fact stored as a **field on a Location** (lodging dates, transit
+times) — true regardless of planning, and an optimizer *input*.
 
-**Locked (Stop)**:
-A Stop the traveler has pinned to its Day and to its order relative to other locked Stops.
-The optimizer arranges unlocked Stops around it and never moves it off its Day or past
-another locked Stop; honored even when suboptimal.
+**Plan**:
+The optimizer's *output*: the Locations contextualized onto the timeline as Placements,
+clustered by Day across the Trip's dates.
+
+**Placement**:
+A *scheduled activity* on a Day — `{ date, locationId, order }` — the activity's committed
+appearance in the Plan. (Location = candidate; Placement = commitment.)
+_Avoid_: stop, visit, waypoint, item
+
+**Day**:
+A date in the Trip; clusters the Placements that fall on it and may carry a label. Derived
+from the Trip's date range, not an entity in its own right.
+
+**Anchor (derived)**:
+A Location that bookends a Day, *projected* from a constraint-field — the lodging you sleep
+at, the transit you enter or exit by. Computed every read, never stored.
+_Avoid_: terminus, base
+
+**Role (derived)**:
+An adjective for how a Location is used — `lodging` · `arrival` · `departure` · `candidate`.
+Reflected from a Location's `kind` and constraint-fields; **never stored**. A place is never
+*a lodging*; it is a Location of `kind: lodging`.
 
 **Excluded (Location)**:
-A Location kept in the Trip but ignored by the optimizer — present but not a candidate for
-scheduling.
+A Location kept in the Trip but ignored by the optimizer — present, but not placed.
 
-**Unassigned (Stop)**:
-A Stop that belongs to the Trip but is not placed on any Day — awaiting placement (e.g. an
-orphaned locked Stop whose Day was removed). A Stop in this state has no day-pin; any lock
-is inert until it is re-placed.
+**Unassigned (candidate)**:
+An activity Location with no Placement yet — in the cast, awaiting the Plan.
 _Avoid_: unscheduled, floating
 
 **Enrichment**:

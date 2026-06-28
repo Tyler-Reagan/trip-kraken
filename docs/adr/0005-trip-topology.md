@@ -4,6 +4,7 @@
 - **Date:** 2026-06-23
 - **Supersedes:** —
 - **Superseded by:** —
+- **Amended by:** ADR-0015 (arrival/departure fold into the Transit kind; trip edges derived)
 - **Constrains:** ADR-0002 (domain model), ADR-0003 (optimizer)
 - **Note:** Term "Base" replaced by Lodging + Stay during the 2026-06-23 grilling
   session; see `CONTEXT.md` and ADR-0002.

@@ -4,6 +4,7 @@
 - **Date:** 2026-06-23
 - **Supersedes:** —
 - **Superseded by:** —
+- **Amended by:** ADR-0015 (schema reshaped: `kind` column, no `Stay` table, `Placement`, required dates, edges/locks removed)
 - **Constrained by:** ADR-0002 (domain model), ADR-0005 (topology), ADR-0006 (locks)
 - **Cashes bills from:** ADR-0002, ADR-0005, ADR-0006
 - **Note:** Shaped by the 2026-06-23 grilling session, which overrode the original

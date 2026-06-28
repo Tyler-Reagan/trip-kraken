@@ -1,9 +1,9 @@
 # ADR-0006: Lock-and-fill — manual intent survives re-optimization
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-06-23
 - **Supersedes:** —
-- **Superseded by:** —
+- **Superseded by:** ADR-0015 (locking removed; re-optimize is wholesale, manual edits persist until the next optimize)
 - **Constrained by:** ADR-0001 (intent ranks above optimality)
 - **Constrains:** ADR-0002 (Stop.locked), ADR-0003 (solver honors locks), ADR-0008 (reconciling write)
 - **Note:** Lock semantics & lifecycle (the section below) were pinned down in the

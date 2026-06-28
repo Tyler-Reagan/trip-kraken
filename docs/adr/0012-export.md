@@ -4,6 +4,7 @@
 - **Date:** 2026-06-24
 - **Supersedes:** —
 - **Superseded by:** —
+- **Amended by:** ADR-0015 (`Stop`→`Placement`; the plan is day-clustered placements)
 - **Constrained by:** ADR-0002 (domain model), ADR-0011 (handoff pattern)
 - **Mirrors:** ADR-0009 / ADR-0011 (pluggable providers)
 - **Note:** Decided in the 2026-06-24 grilling session.

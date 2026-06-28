@@ -32,12 +32,13 @@ status to **Superseded by ADR-NNNN**.
 | [0003](0003-optimization-formulation.md) | Optimization behind a pluggable solver interface | Accepted |
 | [0004](0004-travel-cost-model.md) | Travel cost behind a pluggable provider | Accepted |
 | [0005](0005-trip-topology.md) | Multi-lodging sequential trip topology | Accepted |
-| [0006](0006-optimize-vs-refine-authority.md) | Lock-and-fill: manual intent survives re-optimization | Accepted |
+| [0006](0006-optimize-vs-refine-authority.md) | Lock-and-fill: manual intent survives re-optimization | Superseded by 0015 |
 | [0007](0007-pipeline-shape-and-compute.md) | Phased pipeline, server-side compute | Accepted |
 | [0008](0008-persistence-and-state-model.md) | Persistence & schema management (Drizzle) | Accepted |
 | [0009](0009-enrichment-and-data-sources.md) | Enrichment & external data sources | Accepted |
 | [0010](0010-import-strategy.md) | Trip creation: blank-slate + search; My Maps accelerator | Accepted |
 | [0011](0011-transit-integration.md) | Transit integration (pluggable, handoff) | Accepted |
 | [0012](0012-export.md) | Export (pluggable, Markdown baseline) | Accepted |
-| [0013](0013-accommodation-bookings-and-derived-anchors.md) | Accommodations as timed bookings; day anchors derived | Accepted |
-| [0014](0014-location-primitive-date-bookings-derived-roles.md) | Location as primitive; stays as date bookings; roles and anchors derived | Accepted |
+| [0013](0013-accommodation-bookings-and-derived-anchors.md) | Accommodations as timed bookings; day anchors derived | Superseded by 0015 |
+| [0014](0014-location-primitive-date-bookings-derived-roles.md) | Location as primitive; stays as date bookings; roles and anchors derived | Superseded by 0015 |
+| [0015](0015-locations-typed-by-kind-constraints-and-plan.md) | Locations typed by kind; constraints as fields, plan as placements | Accepted |

@@ -4,6 +4,7 @@
 - **Date:** 2026-06-24
 - **Supersedes:** —
 - **Superseded by:** —
+- **Amended by:** ADR-0015 (authority model retired — re-optimize is wholesale, no lock-and-fill)
 - **Constrained by:** ADR-0006 (authority model)
 - **Note:** Decided in the 2026-06-24 grilling session.
 

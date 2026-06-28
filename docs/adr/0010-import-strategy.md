@@ -4,6 +4,7 @@
 - **Date:** 2026-06-24
 - **Supersedes:** —
 - **Superseded by:** —
+- **Amended by:** ADR-0015 (step-2 "Stay creation" → lodging-kind Location; Manifest groups by kind)
 - **Constrained by:** ADR-0002 (Location), ADR-0009 (discovery + enrichment)
 - **Note:** Reframed in the 2026-06-24 grilling session — the foundation is
   create-and-discover, not bulk import; My Maps demoted from "primary" to accelerator.
