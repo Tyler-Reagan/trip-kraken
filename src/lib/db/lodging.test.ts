@@ -217,5 +217,10 @@ expectRejected(
   "overlapping booking import"
 );
 
+// ── Blank-slate trip (ADR-0010, C1): null sourceUrl, no locations ──
+const blank = createTripWithLocations({ name: "Blank trip", sourceUrl: null, locations: [] });
+assert.equal(blank.sourceUrl, null, "blank-slate trip has a null sourceUrl");
+assert.equal(blank.locations.length, 0, "blank-slate trip starts with no locations");
+
 fs.rmSync(dir, { recursive: true, force: true });
 console.log("✓ lodging.test.ts passed");

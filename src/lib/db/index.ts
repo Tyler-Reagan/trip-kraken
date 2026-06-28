@@ -310,7 +310,8 @@ export function getLockedStops(tripId: string): Array<{ locationId: string; dayN
 
 export function createTripWithLocations(data: {
   name: string;
-  sourceUrl: string;
+  /** Null for blank-slate trips (ADR-0010); the My Maps import passes the source URL. */
+  sourceUrl?: string | null;
   locations: Array<{
     name: string;
     address?: string | null;
@@ -322,7 +323,7 @@ export function createTripWithLocations(data: {
   const tripId = newId();
 
   getDrizzle().transaction((tx) => {
-    tx.insert(trip).values({ id: tripId, name: data.name, sourceUrl: data.sourceUrl }).run();
+    tx.insert(trip).values({ id: tripId, name: data.name, sourceUrl: data.sourceUrl ?? null }).run();
     for (const loc of data.locations) {
       tx.insert(location)
         .values({
