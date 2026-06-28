@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getLocationCoords, getDayCategories } from "@/lib/db";
-import { searchNearby } from "@/lib/places";
-import { searchTabelog, enrichTabelogAddresses } from "@/lib/tabelog";
-import { approximateAnchorDistance, haversineMeters } from "@/lib/stations";
-import type { NearbyPlace } from "@/types";
+import { getDiscoveryProvider, scoreAndSort } from "@/lib/discovery";
 
 export async function GET(
   req: NextRequest,
@@ -25,61 +22,26 @@ export async function GET(
   const limit   = Math.max(1, parseInt(searchParams.get("limit")   ?? "20", 10));
   const openNow = searchParams.get("openNow") === "true";
   const dayId   = searchParams.get("dayId")   ?? undefined;
-  const source         = searchParams.get("source") === "tabelog" ? "tabelog" : "google";
   const enrichAddresses = searchParams.get("enrichAddresses") === "true";
+  const source  = searchParams.get("source") ?? "google";
+
+  const provider = getDiscoveryProvider(source);
+  if (!provider || !provider.modes.includes("anchored") || !provider.searchAnchored) {
+    return NextResponse.json({ error: `Unknown discovery source: ${source}` }, { status: 400 });
+  }
+  // Regional providers (e.g. Tabelog outside Japan) don't serve this anchor → no results.
+  if (!provider.appliesAt(loc.lat, loc.lng)) {
+    return NextResponse.json([]);
+  }
 
   try {
-    let places: NearbyPlace[] = source === "tabelog"
-      ? await searchTabelog(loc.lat, loc.lng, { keyword, limit })
-      : await searchNearby(loc.lat, loc.lng, { radius, keyword, type, limit, openNow });
+    const places = await provider.searchAnchored({
+      lat: loc.lat, lng: loc.lng, radius, keyword, type, limit, openNow, enrichAddresses,
+    });
 
-    if (source === "tabelog" && enrichAddresses) {
-      places = await enrichTabelogAddresses(places);
-    }
-
-    // For Google results: compute exact Haversine anchor→place distance.
-    // searchNearby returns precise lat/lng for every result, so this is a
-    // pure in-process calculation with no additional API calls.
-    if (source === "google") {
-      places = places.map((p) =>
-        p.lat !== null && p.lng !== null
-          ? { ...p, distanceMeters: Math.round(haversineMeters(loc.lat!, loc.lng!, p.lat, p.lng)) }
-          : p
-      );
-    }
-
-    // For Tabelog results: compute approximate anchor→restaurant distance.
-    // anchor→station (Haversine, static dataset) + station→restaurant (listing text).
-    // Overwrites the station-only distanceMeters set by the parser.
-    if (source === "tabelog") {
-      places = places.map((p) => {
-        const approx = approximateAnchorDistance(
-          p.address, p.distanceMeters, loc.lat!, loc.lng!
-        );
-        // Always overwrite: null means station not in dataset — better to show
-        // nothing than to display the raw station-to-restaurant distance as if
-        // it were anchor proximity.
-        return { ...p, distanceMeters: approx };
-      });
-    }
-
-    // Build category set for the target day (used for diversity scoring)
-    const dayCategorySet = new Set<string>(dayId ? getDayCategories(dayId) : []);
-
-    // Score and sort: rating quality + review depth + category diversity bonus
-    function scorePlace(p: NearbyPlace): number {
-      const ratingScore    = p.rating    !== null ? (p.rating / 5) * 60              : 0;
-      const reviewBonus    = p.reviewCount !== null ? Math.min(p.reviewCount / 1000, 1) * 20 : 0;
-      const diversityBonus = dayCategorySet.size > 0 && p.categories.some((c) => !dayCategorySet.has(c)) ? 20 : 0;
-      return ratingScore + reviewBonus + diversityBonus;
-    }
-
-    const scored = places
-      .map((p) => ({ p, score: scorePlace(p) }))
-      .sort((a, b) => b.score - a.score)
-      .map(({ p }) => p);
-
-    return NextResponse.json(scored);
+    // Category set for the target day (diversity bonus in the ranking).
+    const dayCategories = new Set<string>(dayId ? getDayCategories(dayId) : []);
+    return NextResponse.json(scoreAndSort(places, dayCategories));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
