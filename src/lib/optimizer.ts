@@ -1,21 +1,23 @@
 /**
- * Itinerary optimizer — two-phase approach:
+ * Itinerary optimizer — a pure, day-indexed, two-phase solver (ADR-0015). It takes activities plus
+ * lodging night-ranges and returns a plan as day-indexed `DayPlan`s; the caller (optimize.ts) maps
+ * day numbers to dates and persists them as `Placement`s. It knows nothing of the DB, calendar
+ * dates, or locking — re-optimize is wholesale, so there is no pinned state to honor.
  *
  * Phase 1 — Cluster locations into days (k-means on lat/lng)
- *   Geographically close locations are grouped into the same day to minimize
- *   travel between days. When the trip has Stays (ADR-0005), each day's centroid is
- *   tethered toward its Stay's lodging, so a location's Stay (its city) emerges from
- *   the same clustering cost rather than a separate assignment step.
+ *   Geographically close locations are grouped into the same day to minimize travel between days.
+ *   When the trip has lodgings, each day's centroid is tethered toward the night's lodging, so a
+ *   location's city emerges from the same clustering cost rather than a separate assignment step.
  *
  * Phase 2 — Order stops within each day (nearest-neighbor TSP + 2-opt)
  *   Within a cluster, find a short visiting order between the day's start anchor (where you woke)
  *   and end anchor (where you sleep) — the same lodging on a round-trip day, a different one on a
- *   travel day (ADR-0005). Unlocked-only round-trip days use nearest-neighbor + 2-opt; days with a
- *   distinct end anchor (travel/arrival/departure) route by cheapest insertion toward that end.
+ *   travel day (ADR-0005). Round-trip days use nearest-neighbor + 2-opt; days with a distinct end
+ *   anchor (travel day, or a trip edge) route by cheapest insertion toward that end.
  *
- *   Time-window awareness: if locations carry openTime/closeTime fields, both phases
- *   add a km-equivalent soft penalty for arriving outside those windows. The penalty
- *   discourages out-of-hours visits but never hard-blocks them.
+ *   Time-window awareness: if locations carry openTime/closeTime fields, both phases add a
+ *   km-equivalent soft penalty for arriving outside those windows. The penalty discourages
+ *   out-of-hours visits but never hard-blocks them.
  */
 
 export interface LocationInput {
@@ -28,28 +30,22 @@ export interface LocationInput {
   categories?: string[];    // Google Places categories; used for cross-day balance
 }
 
-/** A lodging occupied over a contiguous night-range (ADR-0005). */
+/** A lodging occupied over a contiguous night-range (ADR-0015 — derived from its booking dates). */
 export interface StayPlan {
   lodgingId: string;
   startNight: number;
   endNight: number;
 }
 
-/** Trip-edge transport anchors (ADR-0005, #54): the Day-1 start and last-Day end Locations. */
+/**
+ * Trip-edge transport anchors (ADR-0005, #54): the Day-1 start and last-Day end Locations. Under
+ * ADR-0015 these derive from the earliest/latest transit; that derivation is parked until transit
+ * gains its constraint fields, so callers currently pass none. The routing below is kept so edge
+ * anchoring re-activates for free once a source feeds it.
+ */
 export interface EdgeAnchors {
   arrivalId?: string | null;
   departureId?: string | null;
-}
-
-/**
- * A Stop the user has pinned (ADR-0006). A lock fixes the Location's **Day** and its order
- * **relative to other locked Stops on that Day**; the optimizer routes all unlocked Stops
- * freely around it. `lockOrder` is the stored `ord`, used only to recover relative order.
- */
-export interface LockedStop {
-  locationId: string;
-  dayNumber: number;
-  lockOrder: number;
 }
 
 export interface DayPlan {
@@ -63,7 +59,6 @@ export function optimizeItinerary(
   stays: StayPlan[] = [],
   dayBudgetMinutes?: number,
   dayStartMins = 9 * 60,   // assumed start-of-day for time-window simulation (default 09:00)
-  locked: LockedStop[] = [],
   edges: EdgeAnchors = {}
 ): DayPlan[] {
   if (locations.length === 0) return [];
@@ -80,8 +75,8 @@ export function optimizeItinerary(
   const arrival = resolveAnchor(edges.arrivalId);
   const departure = resolveAnchor(edges.departureId);
 
-  // Anchors are never clustered or emitted as stops: lodgings (Stay timeline) plus the trip
-  // edges. Clustering pull stays on lodgings; arrival/departure only override the *sequencing*
+  // Anchors are never clustered or emitted as stops: lodgings (from their night-ranges) plus the
+  // trip edges. Clustering pull stays on lodgings; arrival/departure only override the *sequencing*
   // endpoints at the first/last Day.
   const anchorIds = new Set(stays.map((s) => s.lodgingId));
   if (edges.arrivalId) anchorIds.add(edges.arrivalId);
@@ -109,45 +104,28 @@ export function optimizeItinerary(
     seqEnd.push(end && end.id !== start?.id ? end : null);
   }
 
-  // Locked Stops are pinned to their Day in their relative order, and held out of
-  // clustering. Lodging is managed by the Stay timeline, never by a lock. A lock pinned to
-  // a no-longer-existing Day is left out here; the reconciling writer orphans it (ADR-0006).
-  const lockedByDay = new Map<number, string[]>();
-  const lockedIds = new Set<string>();
-  for (const l of [...locked].sort((a, b) => a.lockOrder - b.lockOrder)) {
-    if (l.dayNumber < 1 || l.dayNumber > days) continue;
-    if (anchorIds.has(l.locationId) || !byId.has(l.locationId)) continue;
-    lockedIds.add(l.locationId);
-    const arr = lockedByDay.get(l.dayNumber) ?? [];
-    arr.push(l.locationId);
-    lockedByDay.set(l.dayNumber, arr);
-  }
-  const lockedSeqFor = (dayIdx: number): LocationInput[] =>
-    (lockedByDay.get(dayIdx + 1) ?? []).map((id) => byId.get(id)).filter((l): l is LocationInput => !!l);
-
-  // Unlocked, non-anchor Locations are the clustering pool; locked ones merge in per-day.
-  const pool = locations.filter((l) => !anchorIds.has(l.id) && !lockedIds.has(l.id));
+  // Non-anchor Locations are the clustering pool (lodgings/edges are anchors, never stops).
+  const pool = locations.filter((l) => !anchorIds.has(l.id));
   const valid = pool.filter((l) => l.lat !== 0 || l.lng !== 0);
   const invalid = pool.filter((l) => l.lat === 0 && l.lng === 0);
 
-  // Fewer unlocked locations than days: one per day, merged with that day's locked stops.
+  // Fewer locations than days: one per day, anchored at that day's lodging.
   if (valid.length <= days) {
     const plans: DayPlan[] = [];
     for (let d = 0; d < days; d++) {
-      const ordered = sequenceWithLocks(lockedSeqFor(d), valid[d] ? [valid[d]] : [], seqStart[d] ?? undefined, dayStartMins, seqEnd[d] ?? undefined);
+      const ordered = sequenceDay(valid[d] ? [valid[d]] : [], seqStart[d] ?? undefined, dayStartMins, seqEnd[d] ?? undefined);
       plans.push({ dayNumber: d + 1, locationIds: ordered.map((l) => l.id) });
     }
     if (invalid.length > 0) plans[plans.length - 1].locationIds.push(...invalid.map((l) => l.id));
     return plans;
   }
 
-  // Phase 1: k-means clustering of unlocked stops, centroids tethered toward each lodging.
+  // Phase 1: k-means clustering of stops, centroids tethered toward each lodging.
   const clusters = kMeans(valid, days, dayAnchor, dayBudgetMinutes);
 
-  // Phase 2: per day, sequence unlocked stops around the day's fixed locked skeleton,
-  // anchored at its lodging.
+  // Phase 2: per day, sequence its stops between the day's woke/sleep anchors.
   const plans: DayPlan[] = clusters.map((cluster, d) => {
-    const ordered = sequenceWithLocks(lockedSeqFor(d), cluster, seqStart[d] ?? undefined, dayStartMins, seqEnd[d] ?? undefined);
+    const ordered = sequenceDay(cluster, seqStart[d] ?? undefined, dayStartMins, seqEnd[d] ?? undefined);
     return { dayNumber: d + 1, locationIds: ordered.map((l) => l.id) };
   });
 
@@ -160,30 +138,23 @@ export function optimizeItinerary(
 }
 
 /**
- * Order one day's stops. With no locked stops this is the original nearest-neighbor + 2-opt
- * route (anchored at lodging), so unlocked-only days are unchanged. When the day has locked
- * stops, they form a fixed skeleton in their pinned relative order and each unlocked stop is
- * placed by cheapest insertion into the gap that adds the least travel — preserving the
- * locked order by construction (ADR-0006). 2-opt is skipped here because it would reorder
- * the skeleton.
+ * Order one day's stops. A round-trip day (no distinct end anchor) uses the nearest-neighbor +
+ * 2-opt route anchored at its lodging. A day with a distinct end anchor (a travel day, or a trip
+ * edge) builds by cheapest insertion toward that end: each stop is slotted into the gap that adds
+ * the least travel, with `anchor` as the virtual pre-start and `endAnchor` as the virtual tail, so
+ * the route is pulled to run anchor → … → endAnchor without either being emitted as a stop.
  */
-function sequenceWithLocks(
-  lockedSeq: LocationInput[],
-  unlocked: LocationInput[],
+function sequenceDay(
+  stops: LocationInput[],
   anchor: LocationInput | undefined,
   dayStartMins: number,
   endAnchor?: LocationInput
 ): LocationInput[] {
-  // Unlocked-only day with no fixed end: original nearest-neighbor + 2-opt route (start-anchored).
-  if (lockedSeq.length === 0 && !endAnchor) {
-    return twoOpt(nearestNeighborOrder(unlocked, dayStartMins, anchor), dayStartMins);
+  if (!endAnchor) {
+    return twoOpt(nearestNeighborOrder(stops, dayStartMins, anchor), dayStartMins);
   }
-  // Otherwise build by cheapest insertion: a locked skeleton (possibly empty), each unlocked stop
-  // slotted into the gap that adds the least travel. `anchor` is the virtual pre-start and
-  // `endAnchor` the virtual tail, so the route is pulled toward starting at `anchor` and ending at
-  // `endAnchor` (the trip-edge / travel-day anchors) without either being emitted as a stop.
-  const route = [...lockedSeq];
-  for (const u of unlocked) {
+  const route: LocationInput[] = [];
+  for (const u of stops) {
     let bestPos = route.length;
     let bestCost = Infinity;
     for (let pos = 0; pos <= route.length; pos++) {
