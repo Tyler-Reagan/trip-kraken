@@ -205,6 +205,7 @@ export default function TripClient({ trip: initial }: Props) {
               draggingStop={null}
               onDragStartLocation={() => {}}
               onDropStop={() => {}}
+              schedulable={false}
             />
           </div>
         ) : (

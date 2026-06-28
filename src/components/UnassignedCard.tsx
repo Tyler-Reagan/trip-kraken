@@ -10,6 +10,8 @@ interface Props {
   draggingStop: ItineraryStop | null;
   onDragStartLocation: (loc: Location) => void;
   onDropStop: () => void;
+  /** False before the first optimize: there are no days to drag a location onto yet. */
+  schedulable?: boolean;
 }
 
 function formatHoursSubtext(loc: Location): string {
@@ -26,7 +28,7 @@ function formatDuration(mins: number): string {
   return `${h}h ${m}m`;
 }
 
-export default function UnassignedCard({ locations, draggingStop, onDragStartLocation, onDropStop }: Props) {
+export default function UnassignedCard({ locations, draggingStop, onDragStartLocation, onDropStop, schedulable = true }: Props) {
   const [dragOver, setDragOver] = useState(false);
 
   function handleDragOver(e: React.DragEvent) {
@@ -73,6 +75,7 @@ export default function UnassignedCard({ locations, draggingStop, onDragStartLoc
             <UnassignedRow
               key={loc.id}
               loc={loc}
+              schedulable={schedulable}
               onDragStart={() => onDragStartLocation(loc)}
             />
           ))}
@@ -82,7 +85,7 @@ export default function UnassignedCard({ locations, draggingStop, onDragStartLoc
   );
 }
 
-function UnassignedRow({ loc, onDragStart }: { loc: Location; onDragStart: () => void }) {
+function UnassignedRow({ loc, schedulable, onDragStart }: { loc: Location; schedulable: boolean; onDragStart: () => void }) {
   const tripId = useTripStore((s) => s.tripId);
   const reload = useTripStore((s) => s.reload);
   const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
@@ -100,8 +103,8 @@ function UnassignedRow({ loc, onDragStart }: { loc: Location; onDragStart: () =>
 
   return (
     <li
-      draggable
-      onDragStart={onDragStart}
+      draggable={schedulable}
+      onDragStart={schedulable ? onDragStart : undefined}
       className={`group flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none
         ${isInspected
           ? "bg-gray-100 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700"
@@ -112,13 +115,15 @@ function UnassignedRow({ loc, onDragStart }: { loc: Location; onDragStart: () =>
         setInspectedLocationId(isInspected ? null : loc.id);
       }}
     >
-      {/* Drag handle */}
-      <span
-        className="shrink-0 text-gray-300 dark:text-gray-600 cursor-grab active:cursor-grabbing mt-0.5 text-base leading-none select-none"
-        title="Drag to a day to schedule"
-      >
-        ≡
-      </span>
+      {/* Drag handle — only meaningful once there are days to drag onto */}
+      {schedulable && (
+        <span
+          className="shrink-0 text-gray-300 dark:text-gray-600 cursor-grab active:cursor-grabbing mt-0.5 text-base leading-none select-none"
+          title="Drag to a day to schedule"
+        >
+          ≡
+        </span>
+      )}
 
       {/* Name + subtext */}
       <div className="flex-1 min-w-0">
