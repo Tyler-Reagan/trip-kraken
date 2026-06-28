@@ -4,6 +4,7 @@ import { getDrizzle } from "./client";
 import { trip, location, stay, itineraryDay, itineraryStop } from "./schema";
 import type { TripWithDetails, Location, ItineraryDay, LocationRole } from "@/types";
 import type { LocationEnrichment } from "@/lib/places";
+import type { ParsedBooking } from "@/lib/bookingImport";
 
 /**
  * Repository layer (ADR-0008). The schema lives in ./schema.ts and is applied by the
@@ -643,6 +644,47 @@ export function setTripEndpoints(
     .where(eq(trip.id, tripId))
     .run();
   return requireTrip(tripId);
+}
+
+/**
+ * Import a parsed booking confirmation as a Stay (ADR-0013 Phase 2 / ADR-0010, #57). The property
+ * is resolved to an existing trip Location by case-insensitive name, else created (pending
+ * enrichment so it gets geocoded like any new place). The Stay is appended to the timeline;
+ * setStays re-validates ordering and non-overlap. Overlap is pre-checked so a rejected import
+ * doesn't leave behind a freshly-created lodging Location.
+ */
+export function importBookingStay(tripId: string, booking: ParsedBooking): TripWithDetails {
+  const db = getDrizzle();
+  if (!tripExists(tripId)) throw new StayValidationError("Trip not found");
+  if (Number.isNaN(Date.parse(booking.checkInDate)) || Number.isNaN(Date.parse(booking.checkOutDate)))
+    throw new StayValidationError("Invalid check-in/check-out date");
+  if (booking.checkInDate >= booking.checkOutDate)
+    throw new StayValidationError("Check-in must be before check-out");
+
+  const existing = db
+    .select({ lodgingLocationId: stay.lodgingLocationId, checkInDate: stay.checkInDate, checkOutDate: stay.checkOutDate })
+    .from(stay)
+    .where(eq(stay.tripId, tripId))
+    .all();
+  for (const s of existing) {
+    if (booking.checkInDate < s.checkOutDate && s.checkInDate < booking.checkOutDate)
+      throw new StayValidationError("Booking overlaps an existing stay");
+  }
+
+  const locs = db
+    .select({ id: location.id, name: location.name })
+    .from(location)
+    .where(eq(location.tripId, tripId))
+    .all();
+  const match = locs.find((l) => l.name.trim().toLowerCase() === booking.property.trim().toLowerCase());
+  const lodgingLocationId = match
+    ? match.id
+    : createLocation(tripId, { name: booking.property, enrichmentStatus: "pending" }).id;
+
+  return setStays(tripId, [
+    ...existing,
+    { lodgingLocationId, checkInDate: booking.checkInDate, checkOutDate: booking.checkOutDate },
+  ]);
 }
 
 // ─── Location mutations ───────────────────────────────────────────────────────

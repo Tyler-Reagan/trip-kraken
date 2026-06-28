@@ -14,6 +14,7 @@ export default function StayEditor() {
   const trip = useTripStore((s) => s.trip);
   const saveStays = useTripStore((s) => s.saveStays);
   const saveEndpoints = useTripStore((s) => s.saveEndpoints);
+  const importBooking = useTripStore((s) => s.importBooking);
   const setShowStays = useTripStore((s) => s.setShowStays);
 
   const locations = trip?.locations ?? [];
@@ -32,9 +33,33 @@ export default function StayEditor() {
   const [departureLocationId, setDepartureLocationId] = useState(trip?.departureLocationId ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importing, setImporting] = useState(false);
 
   function close() {
     setShowStays(false);
+  }
+
+  // Import a pasted confirmation as a Stay (ADR-0013 Phase 2). The server persists it; on success
+  // we re-seed the draft from the freshly-loaded trip so the new booking shows in the list.
+  async function runImport() {
+    setError(null);
+    setImporting(true);
+    const err = await importBooking(importText);
+    setImporting(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setImportText("");
+    const stays = useTripStore.getState().trip?.stays ?? [];
+    setDraft(
+      stays.map((s) => ({
+        lodgingLocationId: s.lodgingLocationId,
+        checkInDate: s.checkInDate,
+        checkOutDate: s.checkOutDate,
+      }))
+    );
   }
 
   function update(i: number, patch: Partial<DraftStay>) {
@@ -164,6 +189,30 @@ export default function StayEditor() {
         <button onClick={addRow} className="btn-secondary text-sm" disabled={locations.length === 0}>
           + Add booking
         </button>
+
+        {/* Import a booking confirmation: paste the text, the server parses it into a Stay and
+            resolves/creates the lodging (ADR-0013 Phase 2 / ADR-0010). */}
+        <details className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <summary className="text-sm text-gray-600 dark:text-gray-300 cursor-pointer select-none">
+            Import from a booking confirmation
+          </summary>
+          <div className="mt-2 space-y-2">
+            <textarea
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              rows={4}
+              placeholder={"Paste a confirmation. Helps to include lines like:\nProperty: Hotel Sakura\nCheck-in: Aug 3, 2026\nCheck-out: Aug 6, 2026"}
+              className="input w-full text-sm font-mono"
+            />
+            <button
+              onClick={runImport}
+              disabled={importing || !importText.trim()}
+              className="btn-secondary text-sm disabled:opacity-50"
+            >
+              {importing ? "Importing…" : "Import booking"}
+            </button>
+          </div>
+        </details>
 
         {error && (
           <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
