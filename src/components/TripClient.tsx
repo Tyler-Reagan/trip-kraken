@@ -11,6 +11,7 @@ import AddLocationModal from "./AddLocationModal";
 import NearbyDrawer from "./NearbyDrawer";
 import StayEditor from "./StayEditor";
 import LodgingSummary from "./LodgingSummary";
+import UnassignedCard from "./UnassignedCard";
 
 const MapView = dynamic(() => import("./MapView"), { ssr: false });
 
@@ -60,12 +61,14 @@ export default function TripClient({ trip: initial }: Props) {
   const pendingCount = trip?.locations.filter((l) => l.enrichmentStatus === "pending").length ?? 0;
   const failedCount = trip?.locations.filter((l) => l.enrichmentStatus === "failed").length ?? 0;
 
-  const unscheduledCount = hasItinerary
-    ? (() => {
-        const scheduled = new Set(trip.days.flatMap((d) => d.stops.map((s) => s.locationId)));
-        return trip.locations.filter((l) => !scheduled.has(l.id) && l.roles.length === 0).length;
-      })()
-    : 0;
+  // Role-less candidates not yet placed on a day — the schedulable pool (ADR-0014).
+  // Computed regardless of hasItinerary so a blank-slate trip can show added
+  // locations before its first optimize (when trip.days is still empty).
+  const scheduledLocationIds = new Set(trip.days.flatMap((d) => d.stops.map((s) => s.locationId)));
+  const candidateLocations = trip.locations.filter(
+    (l) => !scheduledLocationIds.has(l.id) && l.roles.length === 0
+  );
+  const unscheduledCount = candidateLocations.length;
 
   useEffect(() => {
     pollEnrichment();
@@ -185,14 +188,37 @@ export default function TripClient({ trip: initial }: Props) {
       )}
 
       {!hasItinerary && (
-        <div className="card p-8 text-center text-gray-500 dark:text-gray-400 space-y-3">
-          <p className="text-4xl">🗺️</p>
-          <p className="font-medium">No itinerary yet</p>
-          <p className="text-sm">
-            Click <strong className="text-gray-700 dark:text-gray-200">Plan itinerary</strong> to
-            cluster your locations into days.
-          </p>
-        </div>
+        candidateLocations.length > 0 ? (
+          <div className="space-y-4">
+            <div className="card p-5 text-center text-gray-500 dark:text-gray-400 space-y-1">
+              <p className="font-medium text-gray-700 dark:text-gray-200">
+                {candidateLocations.length} location{candidateLocations.length !== 1 ? "s" : ""} added
+              </p>
+              <p className="text-sm">
+                Keep adding, then click{" "}
+                <strong className="text-gray-700 dark:text-gray-200">Plan itinerary</strong> to
+                cluster them into days.
+              </p>
+            </div>
+            <UnassignedCard
+              locations={candidateLocations}
+              draggingStop={null}
+              onDragStartLocation={() => {}}
+              onDropStop={() => {}}
+            />
+          </div>
+        ) : (
+          <div className="card p-8 text-center text-gray-500 dark:text-gray-400 space-y-3">
+            <p className="text-4xl">🗺️</p>
+            <p className="font-medium">No locations yet</p>
+            <p className="text-sm">
+              Click <strong className="text-gray-700 dark:text-gray-200">+ Add location</strong> to
+              search Google for places, then{" "}
+              <strong className="text-gray-700 dark:text-gray-200">Plan itinerary</strong> to
+              cluster them into days.
+            </p>
+          </div>
+        )
       )}
 
       <div className="flex gap-4 items-start">
