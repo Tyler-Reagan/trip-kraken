@@ -10,7 +10,8 @@ type PlacesApiResponse = {
   results: Array<{
     place_id: string;
     name: string;
-    vicinity: string;
+    vicinity?: string;            // Nearby Search
+    formatted_address?: string;   // Text Search
     geometry: { location: { lat: number; lng: number } };
     rating?: number;
     user_ratings_total?: number;
@@ -58,7 +59,7 @@ export async function searchNearby(
   return data.results.slice(0, limit).map((r) => ({
     placeId: r.place_id,
     name: r.name,
-    address: r.vicinity,
+    address: r.vicinity ?? "",
     lat: r.geometry.location.lat,
     lng: r.geometry.location.lng,
     rating: r.rating ?? null,
@@ -66,6 +67,50 @@ export async function searchNearby(
     categories: r.types.filter((t) => t !== "point_of_interest" && t !== "establishment"),
     priceLevel: r.price_level ?? null,
     distanceMeters: null, // Nearby Search doesn't return distance; use radius for context
+  }));
+}
+
+/**
+ * Unanchored Places discovery (ADR-0009): a free-text query → a list of candidate
+ * places. The list-returning sibling of findPlaceFromText (which returns only the
+ * single best match). Used to seed an empty trip (ADR-0010 blank-slate).
+ *
+ * Text Search returns the same rich fields as Nearby Search (name, address, rating,
+ * coordinates), so results map straight onto the NearbyPlace shape with no distance.
+ */
+export async function searchText(
+  query: string,
+  opts: { limit?: number } = {}
+): Promise<NearbyPlace[]> {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY is not set");
+
+  const params = new URLSearchParams({ query, key: apiKey });
+  const res = await fetch(`${TEXTSEARCH_BASE}?${params}`);
+  if (!res.ok) throw new Error(`Google Places API error: HTTP ${res.status}`);
+
+  const data = (await res.json()) as PlacesApiResponse;
+
+  if (data.status === "REQUEST_DENIED") {
+    throw new Error(data.error_message ?? "Google Places API request denied. Check your API key.");
+  }
+  if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+    throw new Error(data.error_message ?? `Google Places API error: ${data.status}`);
+  }
+
+  const limit = Math.min(opts.limit ?? 20, 60);
+  return (data.results ?? []).slice(0, limit).map((r) => ({
+    placeId: r.place_id,
+    name: r.name,
+    // Text Search returns formatted_address; Nearby returns vicinity. Either lands here.
+    address: r.formatted_address ?? r.vicinity ?? "",
+    lat: r.geometry.location.lat,
+    lng: r.geometry.location.lng,
+    rating: r.rating ?? null,
+    reviewCount: r.user_ratings_total ?? null,
+    categories: r.types.filter((t) => t !== "point_of_interest" && t !== "establishment"),
+    priceLevel: r.price_level ?? null,
+    distanceMeters: null, // unanchored — no reference point for distance
   }));
 }
 
