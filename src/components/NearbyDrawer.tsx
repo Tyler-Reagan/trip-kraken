@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { NearbyPlace } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 
+type ProviderOption = { id: string; label: string };
+
 const PRICE_LABELS = ["Free", "$", "$$", "$$$", "$$$$"];
 
 const RATING_OPTIONS = [
@@ -52,7 +54,8 @@ export default function NearbyDrawer() {
   const [radius, setRadius] = useState(1000);
   const [type, setType] = useState("");
   const [keyword, setKeyword] = useState("");
-  const [source, setSource] = useState<"google" | "tabelog">("google");
+  const [providers, setProviders] = useState<ProviderOption[]>([{ id: "google", label: "Google" }]);
+  const [source, setSource] = useState<string>("google");
   const [openNow, setOpenNow] = useState(false);
   const [minRating, setMinRating] = useState<number | null>(null);
   const [priceLevels, setPriceLevels] = useState<Set<number>>(new Set());
@@ -70,8 +73,27 @@ export default function NearbyDrawer() {
 
   if (!tripId || !trip || !searchLocation) return null;
 
+  // Anchored providers that apply at this location (Tabelog is dropped outside
+  // Japan via appliesAt) — drives the source toggle (ADR-0009).
+  useEffect(() => {
+    const params = new URLSearchParams({ mode: "anchored" });
+    if (searchLocation.lat !== null && searchLocation.lng !== null) {
+      params.set("lat", String(searchLocation.lat));
+      params.set("lng", String(searchLocation.lng));
+    }
+    fetch(`/api/discovery/providers?${params}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((list: ProviderOption[] | null) => { if (list?.length) setProviders(list); })
+      .catch(() => { /* keep the default google-only toggle */ });
+  }, [searchLocation.lat, searchLocation.lng]);
+
+  // If the selected source no longer applies (e.g. anchor moved out of Japan), fall back.
+  useEffect(() => {
+    if (!providers.some((p) => p.id === source)) setSource(providers[0]?.id ?? "google");
+  }, [providers, source]);
+
   const fetchNearby = useCallback(async (
-    r: number, t: string, kw: string, on: boolean, dId: string | null, src: "google" | "tabelog"
+    r: number, t: string, kw: string, on: boolean, dId: string | null, src: string
   ) => {
     setLoading(true);
     setError(null);
@@ -81,7 +103,7 @@ export default function NearbyDrawer() {
       if (kw.trim()) params.set("keyword", kw.trim());
       if (on) params.set("openNow", "true");
       if (dId) params.set("dayId", dId);
-      if (src === "tabelog") params.set("source", "tabelog");
+      params.set("source", src);
       const res = await fetch(
         `/api/trips/${tripId}/locations/${searchLocation.id}/nearby?${params}`
       );
@@ -226,27 +248,24 @@ export default function NearbyDrawer() {
 
       {/* Controls */}
       <div className="p-4 border-b border-gray-100 dark:border-gray-800 space-y-3 shrink-0">
-        {/* Source toggle */}
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden text-xs">
-            {(["google", "tabelog"] as const).map((s) => (
+        {/* Source toggle — only shown when more than one provider applies here */}
+        {providers.length > 1 && (
+          <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden text-xs w-fit">
+            {providers.map((p) => (
               <button
-                key={s}
-                onClick={() => setSource(s)}
-                className={`px-3 py-1.5 font-medium transition-colors capitalize
-                  ${source === s
+                key={p.id}
+                onClick={() => setSource(p.id)}
+                className={`px-3 py-1.5 font-medium transition-colors
+                  ${source === p.id
                     ? "bg-brand-600 dark:bg-brand-500 text-white"
                     : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
                   }`}
               >
-                {s === "google" ? "Google" : "Tabelog"}
+                {p.label}
               </button>
             ))}
           </div>
-          {source === "tabelog" && (
-            <span className="text-xs text-gray-400 dark:text-gray-500">Japan only</span>
-          )}
-        </div>
+        )}
 
         {/* Type filter — Google only */}
         {source === "google" && <div className="flex gap-1.5 flex-wrap">
