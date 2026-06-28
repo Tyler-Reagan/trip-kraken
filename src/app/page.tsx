@@ -1,4 +1,5 @@
 import { listTrips } from "@/lib/db";
+import NewTripForm from "@/components/NewTripForm";
 import ImportForm from "@/components/ImportForm";
 import TripList from "@/components/TripList";
 import HelpButton from "@/components/HelpButton";
@@ -10,18 +11,22 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-10">
-      {/* Hero / import section */}
+      {/* Hero section */}
       <section className="text-center space-y-4 pt-4">
         <h1 className="text-4xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
           Turn a list into a trip
         </h1>
         <p className="text-gray-500 dark:text-gray-400 max-w-xl mx-auto">
-          Paste a Google My Maps link and Trip Kraken will cluster your
-          locations into optimized days, ready for you to tweak.
+          Start a blank trip and add places by searching Google, or import a Google
+          My Maps you already have. Trip Kraken clusters them into optimized days.
         </p>
       </section>
 
-      <ImportForm />
+      {/* Two co-equal entry points (ADR-0010) */}
+      <div className="grid gap-6 md:grid-cols-2 max-w-4xl mx-auto items-stretch">
+        <NewTripForm />
+        <ImportForm />
+      </div>
 
       {trips.length > 0 && (
         <section className="space-y-4">

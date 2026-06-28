@@ -38,7 +38,14 @@ export default function ImportForm() {
   }
 
   return (
-    <div className="card p-6 space-y-5 max-w-2xl mx-auto">
+    <div className="card p-6 space-y-5 h-full">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Import from Google My Maps</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          Already have a published map? Bring its places in with exact coordinates.
+        </p>
+      </div>
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <label htmlFor="url" className="text-sm font-medium text-gray-700 dark:text-gray-300">
