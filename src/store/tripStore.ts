@@ -15,10 +15,9 @@ interface TripStore {
   highlightedLocationId: string | null;
   inspectedLocationId: string | null;
   nearbySearchLocation: Location | null;
-  nearbySearchDayId: string | null;
+  nearbySearchDate: string | null;
   showOptimize: boolean;
   showAddLocation: boolean;
-  showStays: boolean;
 
   // Setters
   setTrip: (trip: TripWithDetails) => void;
@@ -26,19 +25,21 @@ interface TripStore {
   setSelectedDayNumber: (n: ScheduleFilter) => void;
   setHighlightedLocationId: (id: string | null) => void;
   setInspectedLocationId: (id: string | null) => void;
-  setNearbySearchLocation: (loc: Location | null, dayId?: string | null) => void;
+  setNearbySearchLocation: (loc: Location | null, date?: string | null) => void;
   setShowOptimize: (v: boolean) => void;
   setShowAddLocation: (v: boolean) => void;
-  setShowStays: (v: boolean) => void;
 
   // Async mutations — use get().tripId internally
   reload: () => Promise<void>;
-  moveStop: (stopId: string, targetDayId: string, targetOrder: number) => Promise<void>;
-  removeStop: (stopId: string) => Promise<void>;
-  setStopLocked: (stopId: string, locked: boolean) => Promise<void>;
-  addLocationToDay: (locationId: string, dayId: string) => Promise<void>;
-  saveStays: (stays: Array<{ lodgingLocationId: string; checkInDate: string; checkOutDate: string }>) => Promise<string | null>;
-  saveEndpoints: (endpoints: { arrivalLocationId: string | null; departureLocationId: string | null }) => Promise<string | null>;
+  optimize: (opts?: { dayBudgetHours?: number; balanceCategories?: boolean }) => Promise<void>;
+  addPlacement: (locationId: string, date: string, order?: number) => Promise<void>;
+  movePlacement: (placementId: string, date: string, order: number) => Promise<void>;
+  removePlacement: (placementId: string) => Promise<void>;
+  saveLodgingDates: (
+    locationId: string,
+    dates: { checkInDate: string; checkOutDate: string } | null
+  ) => Promise<string | null>;
+  setDayLabel: (date: string, label: string | null) => Promise<void>;
   importBooking: (text: string) => Promise<string | null>;
   enrich: () => Promise<void>;
 
@@ -61,10 +62,9 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   highlightedLocationId: null,
   inspectedLocationId: null,
   nearbySearchLocation: null,
-  nearbySearchDayId: null,
+  nearbySearchDate: null,
   showOptimize: false,
   showAddLocation: false,
-  showStays: false,
   isEnriching: false,
   enrichProgress: null,
   _pollTimer: null,
@@ -74,10 +74,9 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   setSelectedDayNumber: (n) => set({ selectedDayNumber: n, inspectedLocationId: null }),
   setHighlightedLocationId: (id) => set({ highlightedLocationId: id }),
   setInspectedLocationId: (id) => set({ inspectedLocationId: id }),
-  setNearbySearchLocation: (loc, dayId) => set({ nearbySearchLocation: loc, nearbySearchDayId: dayId ?? null }),
+  setNearbySearchLocation: (loc, date) => set({ nearbySearchLocation: loc, nearbySearchDate: date ?? null }),
   setShowOptimize: (v) => set({ showOptimize: v }),
   setShowAddLocation: (v) => set({ showAddLocation: v }),
-  setShowStays: (v) => set({ showStays: v }),
 
   reload: async () => {
     const tripId = get().tripId;
@@ -98,82 +97,79 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     set({ _pollTimer: timer });
   },
 
-  moveStop: async (stopId, targetDayId, targetOrder) => {
+  optimize: async (opts) => {
     const tripId = get().tripId;
     if (!tripId) return;
-    await fetch(`/api/trips/${tripId}/stops`, {
+    await fetch(`/api/trips/${tripId}/optimize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stopId, targetDayId, targetOrder }),
+      body: JSON.stringify(opts ?? {}),
     });
     await get().reload();
   },
 
-  removeStop: async (stopId) => {
+  addPlacement: async (locationId, date, order) => {
     const tripId = get().tripId;
     if (!tripId) return;
-    await fetch(`/api/trips/${tripId}/stops/${stopId}?keepLocation=true`, { method: "DELETE" });
+    await fetch(`/api/trips/${tripId}/placements`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ locationId, date, order }),
+    });
     await get().reload();
   },
 
-  setStopLocked: async (stopId, locked) => {
+  movePlacement: async (placementId, date, order) => {
     const tripId = get().tripId;
     if (!tripId) return;
-    await fetch(`/api/trips/${tripId}/stops/${stopId}`, {
+    await fetch(`/api/trips/${tripId}/placements`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ placementId, date, order }),
+    });
+    await get().reload();
+  },
+
+  removePlacement: async (placementId) => {
+    const tripId = get().tripId;
+    if (!tripId) return;
+    await fetch(`/api/trips/${tripId}/placements/${placementId}`, { method: "DELETE" });
+    await get().reload();
+  },
+
+  saveLodgingDates: async (locationId, dates) => {
+    const tripId = get().tripId;
+    if (!tripId) return "No trip loaded";
+    // dates === null clears the booking (relegates to activity); otherwise sets check-in/out.
+    const body = dates === null ? { checkInDate: null } : dates;
+    const res = await fetch(`/api/trips/${tripId}/locations/${locationId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ locked }),
+      body: JSON.stringify(body),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return (data as { error?: string }).error ?? "Failed to save lodging dates";
+    }
     await get().reload();
+    return null;
   },
 
-  addLocationToDay: async (locationId, dayId) => {
+  setDayLabel: async (date, label) => {
     const tripId = get().tripId;
     if (!tripId) return;
-    await fetch(`/api/trips/${tripId}/stops`, {
-      method: "POST",
+    await fetch(`/api/trips/${tripId}/days`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ locationId, targetDayId: dayId }),
+      body: JSON.stringify({ date, label }),
     });
     await get().reload();
-  },
-
-  saveStays: async (stays) => {
-    const tripId = get().tripId;
-    if (!tripId) return "No trip loaded";
-    const res = await fetch(`/api/trips/${tripId}/stays`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stays }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      return (data as { error?: string }).error ?? "Failed to save stays";
-    }
-    await get().reload();
-    return null;
-  },
-
-  saveEndpoints: async (endpoints) => {
-    const tripId = get().tripId;
-    if (!tripId) return "No trip loaded";
-    const res = await fetch(`/api/trips/${tripId}/endpoints`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(endpoints),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      return (data as { error?: string }).error ?? "Failed to save endpoints";
-    }
-    await get().reload();
-    return null;
   },
 
   importBooking: async (text) => {
     const tripId = get().tripId;
     if (!tripId) return "No trip loaded";
-    const res = await fetch(`/api/trips/${tripId}/stays/import`, {
+    const res = await fetch(`/api/trips/${tripId}/lodging/import`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),

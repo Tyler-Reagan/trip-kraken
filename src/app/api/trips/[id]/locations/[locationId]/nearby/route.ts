@@ -21,7 +21,7 @@ export async function GET(
   const type    = searchParams.get("type")    ?? undefined;
   const limit   = Math.max(1, parseInt(searchParams.get("limit")   ?? "20", 10));
   const openNow = searchParams.get("openNow") === "true";
-  const dayId   = searchParams.get("dayId")   ?? undefined;
+  const date    = searchParams.get("date")    ?? undefined;
   const enrichAddresses = searchParams.get("enrichAddresses") === "true";
   const source  = searchParams.get("source") ?? "google";
 
@@ -40,7 +40,7 @@ export async function GET(
     });
 
     // Category set for the target day (diversity bonus in the ranking).
-    const dayCategories = new Set<string>(dayId ? getDayCategories(dayId) : []);
+    const dayCategories = new Set<string>(date ? getDayCategories(tripId, date) : []);
     return NextResponse.json(scoreAndSort(places, dayCategories));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
