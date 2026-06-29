@@ -1,0 +1,129 @@
+/**
+ * Optimizer tests (ADR-0015). Two layers:
+ *  - the pure solver `optimizeItinerary` — clustering, travel-day routing, trip-edge routing, and
+ *    the invariant that anchors (lodgings/edges) are never emitted as stops;
+ *  - the `optimizeTrip` orchestrator end-to-end over a temp DB — lodging dates → night anchoring,
+ *    excluded/lodging places left unplaced, and the plan emitted as date-bucketed Placements.
+ * Standalone (no test runner): run with `tsx src/lib/optimizer.test.ts`.
+ */
+
+import { tmpdir } from "node:os";
+import path from "node:path";
+import fs from "node:fs";
+import assert from "node:assert/strict";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import * as schema from "@/lib/db/schema";
+import { optimizeItinerary } from "@/lib/optimizer";
+import { optimizeTrip } from "@/lib/optimize";
+import { createTripWithLocations, createLocation, setLodgingDates, updateLocation, getTripWithDetails } from "@/lib/db";
+import { isActivity } from "@/types";
+
+// ── Pure solver ──────────────────────────────────────────────────────────────
+
+// Empty input → empty plan.
+assert.deepEqual(optimizeItinerary([], 3), [], "no locations → no plan");
+
+// Trip-edge routing: Day 1 runs arrival → … → departure; anchors (lodging + edges) are never stops.
+const edgePlan = optimizeItinerary(
+  [
+    { id: "ap", lat: 35.0, lng: 139.0 }, // arrival (one end)
+    { id: "dp", lat: 35.9, lng: 139.9 }, // departure (other end)
+    { id: "lo", lat: 35.5, lng: 139.5 }, // lodging (anchor, not a stop)
+    { id: "s1", lat: 35.2, lng: 139.2 }, // nearer arrival
+    { id: "s2", lat: 35.7, lng: 139.7 }, // nearer departure
+  ],
+  1,
+  [{ lodgingId: "lo", startNight: 1, endNight: 1 }],
+  undefined,
+  undefined,
+  { arrivalId: "ap", departureId: "dp" }
+);
+const day1 = edgePlan[0].locationIds;
+assert.ok(!["ap", "dp", "lo"].some((id) => day1.includes(id)), "anchors are not emitted as stops");
+assert.deepEqual(day1, ["s1", "s2"], "stops ordered arrival → … → departure");
+
+// Travel-day routing (ADR-0005): a hotel-change day routes from where you woke (A) toward where you
+// sleep (B). Lodging A night 1, lodging B night 2 (far apart); two stops on the leg between them.
+const travelPlan = optimizeItinerary(
+  [
+    { id: "la", lat: 35.0, lng: 139.0 }, // lodging A (night 1)
+    { id: "lb", lat: 35.0, lng: 140.0 }, // lodging B (night 2)
+    { id: "a1", lat: 35.0, lng: 139.05 }, // near A → Day 1
+    { id: "m1", lat: 35.0, lng: 139.6 }, // A's side of the leg → earlier on Day 2
+    { id: "m2", lat: 35.0, lng: 139.8 }, // B's side → later on Day 2
+  ],
+  2,
+  [
+    { lodgingId: "la", startNight: 1, endNight: 1 },
+    { lodgingId: "lb", startNight: 2, endNight: 2 },
+  ]
+);
+const travelDay = travelPlan.find((p) => p.dayNumber === 2)!.locationIds;
+assert.ok(!["la", "lb"].some((id) => travelDay.includes(id)), "lodgings are not stops on the travel day");
+assert.deepEqual(travelDay, ["m1", "m2"], "travel day routes woke A → … → sleep B");
+
+// Clustering: two tight clusters far apart over 2 days land on different days.
+const clusterPlan = optimizeItinerary(
+  [
+    { id: "w1", lat: 35.0, lng: 139.0 },
+    { id: "w2", lat: 35.01, lng: 139.01 },
+    { id: "e1", lat: 35.0, lng: 141.0 },
+    { id: "e2", lat: 35.01, lng: 141.01 },
+  ],
+  2
+);
+const dayOf = (id: string) => clusterPlan.find((p) => p.locationIds.includes(id))!.dayNumber;
+assert.equal(dayOf("w1"), dayOf("w2"), "the west pair shares a day");
+assert.equal(dayOf("e1"), dayOf("e2"), "the east pair shares a day");
+assert.notEqual(dayOf("w1"), dayOf("e1"), "the two clusters are on different days");
+
+// ── optimizeTrip orchestrator (over a temp DB) ────────────────────────────────
+
+const dir = fs.mkdtempSync(path.join(tmpdir(), "tk-opt-"));
+const sqlite = new Database(path.join(dir, "test.db"));
+sqlite.pragma("journal_mode = WAL");
+sqlite.pragma("foreign_keys = ON");
+const db = drizzle(sqlite, { schema });
+migrate(db, { migrationsFolder: path.join(process.cwd(), "db", "migrations") });
+(globalThis as unknown as { _drizzle?: typeof db })._drizzle = db;
+
+// 3-day trip; lodging H across all nights; three activities with coords; one excluded.
+const trip = createTripWithLocations({
+  name: "Opt trip",
+  sourceUrl: "",
+  startDate: "2026-06-24",
+  endDate: "2026-06-26",
+  locations: [
+    { name: "H", lat: 35.0, lng: 139.0 },
+    { name: "X", lat: 35.01, lng: 139.01 },
+    { name: "Y", lat: 35.5, lng: 139.5 },
+    { name: "Z", lat: 35.9, lng: 139.9 },
+  ],
+});
+const id = (n: string) => trip.locations.find((l) => l.name === n)!.id;
+setLodgingDates(trip.id, id("H"), { checkInDate: "2026-06-24", checkOutDate: "2026-06-27" });
+const W = createLocation(trip.id, { name: "W (excluded)", lat: 35.2, lng: 139.2 }).id;
+updateLocation(trip.id, W, { excluded: true });
+
+const after = optimizeTrip(trip.id);
+const placed = new Set(after.placements.map((p) => p.locationId));
+assert.ok(!placed.has(id("H")), "the lodging is an anchor, never placed");
+assert.ok(!placed.has(W), "the excluded activity is not placed");
+assert.deepEqual([...placed].sort(), [id("X"), id("Y"), id("Z")].sort(), "all three activities are placed");
+
+// Placements sit on real trip dates and only on activities.
+const tripDateSet = new Set(["2026-06-24", "2026-06-25", "2026-06-26"]);
+for (const p of after.placements) {
+  assert.ok(tripDateSet.has(p.date), `placement date ${p.date} is within the trip`);
+  assert.ok(isActivity(after.locations.find((l) => l.id === p.locationId)!), "only activities are placed");
+}
+
+// Re-optimize is wholesale: the count stays put, not appended.
+const again = optimizeTrip(trip.id);
+assert.equal(again.placements.length, after.placements.length, "re-optimize replaces, never appends");
+assert.equal(getTripWithDetails(trip.id)!.placements.length, 3, "exactly the three activities remain placed");
+
+fs.rmSync(dir, { recursive: true, force: true });
+console.log("✓ optimizer.test.ts passed");
