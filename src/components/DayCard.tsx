@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ItineraryDay, ItineraryStop, Location } from "@/types";
+import type { DerivedDay, ScheduledStop, Lodging, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
-import { SearchIcon, TrashIcon, LockClosedIcon, LockOpenIcon } from "./icons";
+import { SearchIcon, TrashIcon } from "./icons";
 
 interface Props {
-  day: ItineraryDay;
-  draggingStop: ItineraryStop | null;
+  day: DerivedDay;
+  draggingStop: ScheduledStop | null;
   draggingLocation: Location | null;
-  onDragStart: (stop: ItineraryStop) => void;
-  onDrop: (day: ItineraryDay, order: number) => void;
+  onDragStart: (stop: ScheduledStop) => void;
+  onDrop: (day: DerivedDay, order: number) => void;
 }
 
 const LIGHT_DAY_THRESHOLD = 240;
@@ -23,8 +23,8 @@ function formatDuration(mins: number): string {
   return `${h}h ${m}m`;
 }
 
-function formatHoursSubtext(loc: Location, dayOfWeek?: number): string {
-  if (dayOfWeek !== undefined && loc.hoursJson) {
+function formatHoursSubtext(loc: Location, dayOfWeek: number): string {
+  if (loc.hoursJson) {
     const entry = loc.hoursJson[String(dayOfWeek)];
     if (!entry) return "Closed";
     if (entry.open === "00:00" && entry.close === "23:59") return "Always open";
@@ -36,71 +36,43 @@ function formatHoursSubtext(loc: Location, dayOfWeek?: number): string {
 }
 
 export default function DayCard({ day, draggingStop, draggingLocation, onDragStart, onDrop }: Props) {
-  const tripId = useTripStore((s) => s.tripId);
-  const reload = useTripStore((s) => s.reload);
+  const setDayLabel = useTripStore((s) => s.setDayLabel);
   const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
   const [dragOver, setDragOver] = useState(false);
-  const dayOfWeek = day.date ? new Date(day.date).getDay() : undefined;
   const [editingLabel, setEditingLabel] = useState(false);
   const [label, setLabel] = useState(day.label ?? "");
 
+  const dayOfWeek = new Date(day.date + "T00:00:00").getDay();
   const totalMinutes = day.stops.reduce((sum, s) => sum + (s.location.visitDuration ?? 0), 0);
   const anyHasDuration = day.stops.some((s) => s.location.visitDuration !== null);
   const isLightDay = anyHasDuration && totalMinutes < LIGHT_DAY_THRESHOLD && day.stops.length > 0;
-  const nearbyAnchorLoc = day.startAnchor ?? day.stops[0]?.location ?? null;
+  const nearbyAnchorLoc: Location | null = day.startAnchor ?? day.stops[0]?.location ?? null;
 
-  const dateStr = day.date
-    ? new Date(day.date).toLocaleDateString("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-      })
-    : null;
+  const dateStr = new Date(day.date + "T00:00:00").toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 
-  async function saveLabel() {
+  function saveLabel() {
     setEditingLabel(false);
-    await fetch(`/api/trips/${tripId}/days/${day.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label: label.trim() || null }),
-    });
-    reload();
-  }
-
-  function handleDragOver(e: React.DragEvent) {
-    e.preventDefault();
-    setDragOver(true);
-  }
-
-  function handleDragLeave() {
-    setDragOver(false);
-  }
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    setDragOver(false);
-    onDrop(day, day.stops.length);
+    setDayLabel(day.date, label.trim() || null);
   }
 
   const isDragTarget = dragOver && (draggingStop !== null || draggingLocation !== null);
 
   return (
     <div
-      className={`card p-4 space-y-3 transition-all
-        ${isDragTarget ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/20" : ""}`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      className={`card p-4 space-y-3 transition-all ${isDragTarget ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/20" : ""}`}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => { e.preventDefault(); setDragOver(false); onDrop(day, day.stops.length); }}
     >
       {/* Day header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="font-semibold text-brand-600 dark:text-brand-400 shrink-0">
-            Day {day.dayNumber}
-          </span>
-          {dateStr && (
-            <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">{dateStr}</span>
-          )}
+          <span className="font-semibold text-brand-600 dark:text-brand-400 shrink-0">Day {day.dayNumber}</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">{dateStr}</span>
           {editingLabel ? (
             <input
               autoFocus
@@ -124,20 +96,14 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {anyHasDuration && (
-            <span className="text-xs text-gray-400 dark:text-gray-500">
-              {formatDuration(totalMinutes)}
-            </span>
-          )}
-          {isLightDay && (
-            <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Light day</span>
-          )}
+          {anyHasDuration && <span className="text-xs text-gray-400 dark:text-gray-500">{formatDuration(totalMinutes)}</span>}
+          {isLightDay && <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Light day</span>}
           <span className="text-xs text-gray-400 dark:text-gray-500">
             {day.stops.length} stop{day.stops.length !== 1 ? "s" : ""}
           </span>
           {nearbyAnchorLoc && (
             <button
-              onClick={() => setNearbySearchLocation(nearbyAnchorLoc, day.id)}
+              onClick={() => setNearbySearchLocation(nearbyAnchorLoc, day.date)}
               disabled={nearbyAnchorLoc.lat === null}
               title="Find nearby stops for this day"
               className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 disabled:text-gray-300 dark:disabled:text-gray-600 transition-colors"
@@ -148,68 +114,37 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
         </div>
       </div>
 
-      {/* Stops list */}
+      {/* Stops list, between the day's projected lodging bookends */}
       <ol className="space-y-2">
-        {day.startAnchor && <AnchorRow loc={day.startAnchor} role="start" dayId={day.id} />}
-        {/* On a check-in day, the new lodging is dropped into the route to leave bags, then
-            reappears as the overnight end anchor below (ADR-0013 Phase 2). */}
-        {day.checkInWaypoint && <AnchorRow loc={day.checkInWaypoint} role="checkin" dayId={day.id} />}
+        {day.startAnchor && <AnchorRow loc={day.startAnchor} role="start" date={day.date} />}
+        {day.checkInWaypoint && <AnchorRow loc={day.checkInWaypoint} role="checkin" date={day.date} />}
         {day.stops.map((stop, idx) => (
           <StopRow
-            key={stop.id}
+            key={stop.placement.id}
             stop={stop}
             index={idx}
-            isDragging={draggingStop?.id === stop.id}
+            isDragging={draggingStop?.placement.id === stop.placement.id}
             dayOfWeek={dayOfWeek}
-            dayId={day.id}
+            date={day.date}
             onDragStart={onDragStart}
             onDropBefore={() => onDrop(day, idx)}
           />
         ))}
-        {day.endAnchor && <AnchorRow loc={day.endAnchor} role="end" dayId={day.id} />}
+        {day.endAnchor && <AnchorRow loc={day.endAnchor} role="end" date={day.date} />}
       </ol>
       {day.stops.length === 0 && (
-        <p className="text-sm text-gray-400 dark:text-gray-500 italic py-1 text-center">
-          Drag stops here or re-optimize
-        </p>
+        <p className="text-sm text-gray-400 dark:text-gray-500 italic py-1 text-center">Drag stops here or re-optimize</p>
       )}
     </div>
   );
 }
 
-/**
- * A Day's fixed start/end anchor row. The anchor's derived role decides how it reads: a lodging
- * shows as "Stay", an arrival/departure transport anchor (ADR-0005) shows as its edge and uses a
- * cooler palette to distinguish a place you pass through from a place you sleep.
- */
-function AnchorRow({ loc, role, dayId }: { loc: Location; role: "start" | "end" | "checkin"; dayId: string }) {
+/** A day's projected lodging bookend (ADR-0015): where you woke / sleep / dropped bags. Lodging is
+ *  derived from booking dates, never a stored stop, so these rows are read-only anchors. */
+function AnchorRow({ loc, role, date }: { loc: Lodging; role: "start" | "end" | "checkin"; date: string }) {
   const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
-
-  const isArrival = loc.roles.includes("arrival");
-  const isDeparture = loc.roles.includes("departure");
-  const isTransport = isArrival || isDeparture;
-  const chip = isArrival ? "Arrival" : isDeparture ? "Departure" : role === "checkin" ? "Check-in" : "Stay";
-  const subtext = isArrival
-    ? "Trip start"
-    : isDeparture
-      ? "Trip end"
-      : role === "checkin"
-        ? "Check-in · drop bags"
-        : role === "start"
-          ? "Start of day"
-          : "Overnight";
-  const palette = isTransport
-    ? {
-        row: "border-sky-200 dark:border-sky-800 bg-sky-50/60 dark:bg-sky-950/20 hover:bg-sky-50 dark:hover:bg-sky-900/30",
-        chip: "bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-400",
-        sub: "text-sky-600/80 dark:text-sky-400/80",
-      }
-    : {
-        row: "border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-900/30",
-        chip: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400",
-        sub: "text-amber-600/80 dark:text-amber-400/80",
-      };
+  const subtext = role === "checkin" ? "Check-in · drop bags" : role === "start" ? "Start of day" : "Overnight";
 
   return (
     <li
@@ -217,19 +152,17 @@ function AnchorRow({ loc, role, dayId }: { loc: Location; role: "start" | "end" 
         if ((e.target as HTMLElement).closest("button")) return;
         setInspectedLocationId(loc.id);
       }}
-      className={`group flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${palette.row}`}
+      className="group flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-900/30"
     >
-      <span className={`shrink-0 px-1.5 h-5 flex items-center rounded text-[10px] font-semibold uppercase tracking-wide ${palette.chip}`}>
-        {chip}
+      <span className="shrink-0 px-1.5 h-5 flex items-center rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400">
+        {role === "checkin" ? "Check-in" : "Stay"}
       </span>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{loc.name}</p>
-        <p className={`text-xs mt-0.5 ${palette.sub}`}>
-          {subtext}
-        </p>
+        <p className="text-xs mt-0.5 text-amber-600/80 dark:text-amber-400/80">{subtext}</p>
       </div>
       <button
-        onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, dayId); }}
+        onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, date); }}
         disabled={loc.lat === null}
         title="Find nearby places"
         aria-label="Find nearby places"
@@ -242,44 +175,35 @@ function AnchorRow({ loc, role, dayId }: { loc: Location; role: "start" | "end" 
 }
 
 interface StopRowProps {
-  stop: ItineraryStop;
+  stop: ScheduledStop;
   index: number;
   isDragging: boolean;
-  dayOfWeek?: number;
-  dayId: string;
-  onDragStart: (stop: ItineraryStop) => void;
+  dayOfWeek: number;
+  date: string;
+  onDragStart: (stop: ScheduledStop) => void;
   onDropBefore: () => void;
 }
 
-function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDropBefore }: StopRowProps) {
-  const tripId = useTripStore((s) => s.tripId);
-  const reload = useTripStore((s) => s.reload);
-  const setStopLocked = useTripStore((s) => s.setStopLocked);
+function StopRow({ stop, index, isDragging, dayOfWeek, date, onDragStart, onDropBefore }: StopRowProps) {
+  const removePlacement = useTripStore((s) => s.removePlacement);
   const highlightedLocationId = useTripStore((s) => s.highlightedLocationId);
   const setHighlightedLocationId = useTripStore((s) => s.setHighlightedLocationId);
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
   const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
 
-  const isHighlighted = highlightedLocationId === stop.locationId;
-  const isInspected = inspectedLocationId === stop.locationId;
+  const loc = stop.location;
+  const isHighlighted = highlightedLocationId === loc.id;
+  const isInspected = inspectedLocationId === loc.id;
   const [dropTarget, setDropTarget] = useState(false);
   const rowRef = useRef<HTMLLIElement>(null);
 
-  const loc = stop.location;
   const hoursText = formatHoursSubtext(loc, dayOfWeek);
   const durText = loc.visitDuration !== null ? formatDuration(loc.visitDuration) : "—";
 
   useEffect(() => {
-    if (isHighlighted && rowRef.current) {
-      rowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
+    if (isHighlighted && rowRef.current) rowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [isHighlighted]);
-
-  async function doRemoveStop() {
-    await fetch(`/api/trips/${tripId}/stops/${stop.id}`, { method: "DELETE" });
-    reload();
-  }
 
   return (
     <>
@@ -296,27 +220,21 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
         onDragStart={() => onDragStart(stop)}
         className={`group flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none
           ${isDragging ? "opacity-40" : ""}
-          ${stop.locked ? "ring-1 ring-inset ring-brand-300 dark:ring-brand-700" : ""}
           ${isHighlighted
             ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/30 border-brand-200 dark:border-brand-800"
             : isInspected
               ? "bg-gray-100 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700"
-              : loc.roles.includes("lodging")
-                ? "bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-900/30"
-                : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
+              : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
           }`}
         onClick={(e) => {
           if ((e.target as HTMLElement).closest("button")) return;
           if (isHighlighted) { setHighlightedLocationId(null); return; }
-          setInspectedLocationId(isInspected ? null : stop.locationId);
+          setInspectedLocationId(isInspected ? null : loc.id);
         }}
       >
-        {/* Stop number */}
         <span className="shrink-0 w-5 h-5 rounded-full bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-400 text-xs flex items-center justify-center font-semibold mt-0.5">
           {index + 1}
         </span>
-
-        {/* Drag handle */}
         <span
           className="shrink-0 text-gray-300 dark:text-gray-600 cursor-grab active:cursor-grabbing mt-0.5 text-base leading-none select-none"
           title="Drag to reorder"
@@ -324,37 +242,13 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
         >
           ≡
         </span>
-
-        {/* Name + subtext */}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{loc.name}</p>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-            {hoursText} · {durText}
-          </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{hoursText} · {durText}</p>
         </div>
-
-        {/* Lock toggle — stays visible when locked so the pin reads at rest (ADR-0006).
-            Hidden on lodging stops: lodging is owned by the Stay timeline, not individually
-            lockable, and the optimizer ignores locks on lodging anyway. */}
-        {!loc.roles.includes("lodging") && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setStopLocked(stop.id, !stop.locked); }}
-            title={stop.locked ? "Locked to this day & order — click to unlock" : "Lock to this day & order"}
-            aria-label={stop.locked ? "Unlock stop" : "Lock stop"}
-            aria-pressed={stop.locked}
-            className={`shrink-0 w-7 h-7 flex items-center justify-center rounded transition-all hover:bg-gray-100 dark:hover:bg-gray-800
-              ${stop.locked
-                ? "text-brand-600 dark:text-brand-400 opacity-100"
-                : "text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 focus-within:opacity-100 hover:text-brand-600 dark:hover:text-brand-400"}`}
-          >
-            {stop.locked ? <LockClosedIcon /> : <LockOpenIcon />}
-          </button>
-        )}
-
-        {/* Action buttons */}
         <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           <button
-            onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, dayId); }}
+            onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, date); }}
             disabled={loc.lat === null}
             title={loc.lat === null ? "No coordinates — run Enrich first" : "Find nearby places anchored to this location"}
             aria-label="Find nearby places"
@@ -362,18 +256,14 @@ function StopRow({ stop, index, isDragging, dayOfWeek, dayId, onDragStart, onDro
           >
             <SearchIcon />
           </button>
-          {/* Remove is hidden on lodging stops — a lodging is removed by dissolving its Stay
-              in the Stay editor (relegation), not by trashing one auto-generated day stop. */}
-          {!loc.roles.includes("lodging") && (
-            <button
-              onClick={(e) => { e.stopPropagation(); doRemoveStop(); }}
-              title="Remove location from this day"
-              aria-label="Remove location"
-              className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-            >
-              <TrashIcon />
-            </button>
-          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); removePlacement(stop.placement.id); }}
+            title="Remove from this day (keeps the place)"
+            aria-label="Remove from day"
+            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+          >
+            <TrashIcon />
+          </button>
         </div>
       </li>
     </>

@@ -10,8 +10,6 @@
  *  across timezones, and ISO date strings sort and compare chronologically as-is. */
 export type IsoDate = string;
 
-export type LocationKind = "activity" | "transit" | "lodging";
-
 /** Fields every Location carries, independent of kind. */
 type LocationBase = {
   id: string;
@@ -122,6 +120,55 @@ export const lodgingOnNight = (lodgings: Lodging[], date: IsoDate): Lodging | nu
  *  constraint fields (parked), so they are not produced here yet. */
 export const rolesOf = (location: Location): LocationRole[] =>
   isLodging(location) ? ["lodging"] : [];
+
+// ─── The Timeline projection (ADR-0015: day-presence is derived, never stored) ──
+
+/** A placed activity, joined to its Location for rendering. */
+export type ScheduledStop = { placement: Placement; location: Activity };
+
+/** One day of the plan, projected from the trip's date range, placements, and lodging dates. */
+export type DerivedDay = {
+  date: IsoDate;
+  dayNumber: number;
+  label: string | null;
+  stops: ScheduledStop[];
+  /** Where you woke — the prior night's lodging (null on the first day / an arrival). */
+  startAnchor: Lodging | null;
+  /** Where you sleep, when it differs from where you woke (a travel day) — else null. */
+  endAnchor: Lodging | null;
+  /** A lodging you sleep at but didn't wake at: visited mid-day to drop bags (ADR-0013). */
+  checkInWaypoint: Lodging | null;
+};
+
+/**
+ * Project the stored plan into day-clustered form (ADR-0015). Days come from the required date
+ * range; each day's stops are its placements (ordered); lodging anchors are projected from the
+ * booking dates via `lodgingOnNight` — woke = prior night, sleep = this night. Nothing here is
+ * stored; this is the single rule the Timeline and Map both read.
+ */
+export function deriveDays(trip: TripWithDetails): DerivedDay[] {
+  const lodgings = trip.locations.filter(isLodging);
+  const byId = new Map(trip.locations.map((l) => [l.id, l]));
+  return tripDates(trip.startDate, trip.endDate).map((date, i) => {
+    const stops = trip.placements
+      .filter((p) => p.date === date)
+      .sort((a, b) => a.order - b.order)
+      .map((placement) => ({ placement, location: byId.get(placement.locationId) }))
+      .filter((s): s is ScheduledStop => !!s.location && isActivity(s.location));
+    const woke = lodgingOnNight(lodgings, addDaysIso(date, -1));
+    const sleep = lodgingOnNight(lodgings, date);
+    const travelled = !!sleep && sleep.id !== woke?.id;
+    return {
+      date,
+      dayNumber: i + 1,
+      label: trip.dayLabels?.[date] ?? null,
+      stops,
+      startAnchor: woke,
+      endAnchor: travelled ? sleep : null,
+      checkInWaypoint: travelled ? sleep : null,
+    };
+  });
+}
 
 export type NearbyPlace = {
   placeId: string;

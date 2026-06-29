@@ -6,7 +6,7 @@ import Map, { Source, Layer, MapMouseEvent } from "react-map-gl/maplibre";
 import type { MapRef, LayerProps } from "react-map-gl/maplibre";
 import type { FeatureCollection, LineString, Point } from "geojson";
 import { useTripStore } from "@/store/tripStore";
-import type { Location } from "@/types";
+import { deriveDays, isLodging, type Location } from "@/types";
 
 const CARTO_DARK =
   "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
@@ -105,6 +105,9 @@ export default function MapView() {
     [trip?.id]
   );
 
+  // Day-clustered plan, projected from placements + lodging dates (ADR-0015).
+  const days = useMemo(() => (trip ? deriveDays(trip) : []), [trip]);
+
   // Build GeoJSON for route lines and stop dots
   const { pointsGeoJSON, routesGeoJSON } = useMemo(() => {
     const points: FeatureCollection<Point> = { type: "FeatureCollection", features: [] };
@@ -118,7 +121,7 @@ export default function MapView() {
       else lodgingMap[loc.id] = { locationId: loc.id, name: loc.name, lat: loc.lat, lng: loc.lng, dayNumbers: [dayNumber] };
     };
 
-    for (const day of (trip?.days ?? [])) {
+    for (const day of days) {
       const rgb = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length];
       const isActive = selectedDayNumber === null || selectedDayNumber === day.dayNumber;
       const alpha = isActive ? 1 : 0.18;
@@ -187,7 +190,7 @@ export default function MapView() {
     }
 
     return { pointsGeoJSON: points, routesGeoJSON: routes };
-  }, [trip?.days, selectedDayNumber, highlightedLocationId]);
+  }, [days, selectedDayNumber, highlightedLocationId]);
 
   const routeLayer: LayerProps = {
     id: "routes",
@@ -302,7 +305,7 @@ export default function MapView() {
       {/* Legend */}
       {mapReady && (
         <div className="absolute bottom-3 left-3 bg-black/70 text-white text-xs rounded-lg px-3 py-2 space-y-1 backdrop-blur-sm pointer-events-none">
-          {trip.locations.some((l) => l.roles.includes("lodging") && l.lat !== null) && (
+          {trip.locations.some((l) => isLodging(l) && l.lat !== null) && (
             <div className="flex items-center gap-2">
               <span
                 className="inline-block w-3 h-3 rounded-full shrink-0 border-2"
@@ -311,12 +314,12 @@ export default function MapView() {
               <span>Lodging</span>
             </div>
           )}
-          {trip.days.map((day) => {
+          {days.map((day) => {
             const [r, g, b] = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length];
             const isActive = selectedDayNumber === null || selectedDayNumber === day.dayNumber;
             return (
               <div
-                key={day.id}
+                key={day.date}
                 className={`flex items-center gap-2 transition-opacity ${isActive ? "opacity-100" : "opacity-30"}`}
               >
                 <span
