@@ -18,7 +18,11 @@ import {
   createTripWithLocations,
   createLocation,
   setLodgingDates,
+  clearLodging,
   setPlacements,
+  addPlacement,
+  movePlacement,
+  removePlacement,
   setDayLabel,
   importBookingLodging,
   getTripWithDetails,
@@ -115,6 +119,30 @@ assert.equal(plan[0].date, "2026-06-24", "placement moved to the new plan");
 expectRejected(() => setLodgingDates(trip.id, B, { checkInDate: "2026-06-25", checkOutDate: "2026-06-24" }), "checkIn >= checkOut");
 expectRejected(() => setLodgingDates(trip.id, B, { checkInDate: "2026-06-25", checkOutDate: "2026-06-27" }), "overlaps A's nights");
 expectRejected(() => setLodgingDates(trip.id, "not-a-location", { checkInDate: "2026-06-24", checkOutDate: "2026-06-25" }), "location not in trip");
+
+// ── Manual placement edits: hand placements that persist until the next optimize (ADR-0015) ──
+const P = createLocation(trip.id, { name: "P (activity)" }).id;
+const Q = createLocation(trip.id, { name: "Q (activity)" }).id;
+const orderOn = (t: ReturnType<typeof getTripWithDetails>, date: string) =>
+  t!.placements.filter((p) => p.date === date).sort((a, b) => a.order - b.order).map((p) => p.locationId);
+
+addPlacement(trip.id, P, "2026-06-25"); // appends → order 0
+const afterQ = addPlacement(trip.id, Q, "2026-06-25", 0); // inserts at 0 → P shifts to 1
+assert.deepEqual(orderOn(afterQ, "2026-06-25"), [Q, P], "explicit order inserts and shifts siblings down");
+
+const pId = afterQ.placements.find((p) => p.locationId === P)!.id;
+const afterMove = movePlacement(trip.id, pId, "2026-06-26", 0); // P leaves the 25th
+assert.deepEqual(orderOn(afterMove, "2026-06-25"), [Q], "source date re-densifies after a move");
+assert.deepEqual(orderOn(afterMove, "2026-06-26"), [P], "P landed on the new date");
+
+const qId = afterMove.placements.find((p) => p.locationId === Q)!.id;
+const afterRemove = removePlacement(trip.id, qId);
+assert.ok(!afterRemove.placements.some((p) => p.id === qId), "removed placement is gone");
+assert.ok(afterRemove.locations.some((l) => l.id === Q), "but its Location stays a candidate");
+
+// clearLodging relegates a lodging back to a plain activity (removing its constraint).
+const relegated = clearLodging(trip.id, B);
+assert.ok(isActivity(relegated.locations.find((l) => l.id === B)!), "cleared lodging is an activity again");
 
 // ── Day labels live in a {date → label} map on the Trip (days are not an entity, ADR-0015) ──
 const labelled = setDayLabel(trip.id, "2026-06-25", "Museum day");

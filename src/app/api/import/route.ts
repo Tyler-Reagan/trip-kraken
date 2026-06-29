@@ -5,16 +5,22 @@ import { parseKml } from "@/lib/parsers/kml";
 import { enqueueLocationEnrichment } from "@/lib/enrichmentQueue";
 
 export async function POST(req: NextRequest) {
-  let body: { url?: string; name?: string };
+  let body: { url?: string; name?: string; startDate?: string; endDate?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { url, name } = body;
+  const { url, name, startDate, endDate } = body;
   if (!url || typeof url !== "string") {
     return NextResponse.json({ error: "url is required" }, { status: 400 });
+  }
+  // Per ADR-0015 §3 every trip has a required date range; the import dialog forces it (D4).
+  const isIsoDate = (s: unknown): s is string =>
+    typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+  if (!isIsoDate(startDate) || !isIsoDate(endDate) || startDate > endDate) {
+    return NextResponse.json({ error: "A valid startDate/endDate range (YYYY-MM-DD) is required" }, { status: 400 });
   }
 
   const mid = extractMid(url);
@@ -63,6 +69,8 @@ export async function POST(req: NextRequest) {
   const trip = createTripWithLocations({
     name: tripName,
     sourceUrl: url,
+    startDate,
+    endDate,
     locations: places.map((p) => ({
       name: p.name,
       address: p.description ?? null,

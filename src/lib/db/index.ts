@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { eq, and, asc, desc, ne, sql, count, inArray, getTableColumns } from "drizzle-orm";
+import { eq, and, asc, desc, ne, gt, gte, max, sql, count, inArray, getTableColumns } from "drizzle-orm";
 import { getDrizzle } from "./client";
 import { trip, location, placement } from "./schema";
 import type { TripWithDetails, Location, Placement, IsoDate } from "@/types";
@@ -251,6 +251,92 @@ export function setPlacements(
   return requireTrip(tripId);
 }
 
+/**
+ * Manually place an activity on a date (ADR-0015) — a hand edit that persists until the next
+ * optimize. Appends to the end of the date unless `order` is given, in which case siblings at or
+ * after it shift down to make room.
+ */
+export function addPlacement(
+  tripId: string,
+  locationId: string,
+  date: IsoDate,
+  order?: number
+): TripWithDetails {
+  getDrizzle().transaction((tx) => {
+    const loc = tx
+      .select({ id: location.id })
+      .from(location)
+      .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
+      .get();
+    if (!loc) throw new Error("Location not found in trip");
+
+    let ord = order;
+    if (ord === undefined) {
+      const m = tx
+        .select({ maxOrder: max(placement.order) })
+        .from(placement)
+        .where(and(eq(placement.tripId, tripId), eq(placement.date, date)))
+        .get();
+      ord = (m?.maxOrder ?? -1) + 1;
+    } else {
+      tx.update(placement)
+        .set({ order: sql`${placement.order} + 1` })
+        .where(and(eq(placement.tripId, tripId), eq(placement.date, date), gte(placement.order, ord)))
+        .run();
+    }
+    tx.insert(placement).values({ id: newId(), tripId, locationId, date, order: ord }).run();
+  });
+  return requireTrip(tripId);
+}
+
+/**
+ * Move a placement to a date and order (ADR-0015). Siblings at/after the target order shift down;
+ * if the placement left another date, that date's remaining placements are re-densified to 0..n.
+ */
+export function movePlacement(
+  tripId: string,
+  placementId: string,
+  date: IsoDate,
+  order: number
+): TripWithDetails {
+  getDrizzle().transaction((tx) => {
+    const row = tx
+      .select({ id: placement.id, date: placement.date })
+      .from(placement)
+      .where(and(eq(placement.id, placementId), eq(placement.tripId, tripId)))
+      .get();
+    if (!row) throw new Error("Placement not found");
+    const sourceDate = row.date;
+
+    tx.update(placement)
+      .set({ order: sql`${placement.order} + 1` })
+      .where(and(eq(placement.tripId, tripId), eq(placement.date, date), gte(placement.order, order)))
+      .run();
+    tx.update(placement).set({ date, order }).where(eq(placement.id, placementId)).run();
+
+    if (sourceDate !== date) {
+      const remaining = tx
+        .select({ id: placement.id })
+        .from(placement)
+        .where(and(eq(placement.tripId, tripId), eq(placement.date, sourceDate)))
+        .orderBy(asc(placement.order))
+        .all();
+      remaining.forEach((p, i) => tx.update(placement).set({ order: i }).where(eq(placement.id, p.id)).run());
+    }
+  });
+  return requireTrip(tripId);
+}
+
+/** Unschedule an activity (ADR-0015): delete the placement, never the Location — it stays a
+ *  candidate in the Manifest. */
+export function removePlacement(tripId: string, placementId: string): TripWithDetails {
+  getDrizzle()
+    .delete(placement)
+    .where(and(eq(placement.id, placementId), eq(placement.tripId, tripId)))
+    .run();
+  return requireTrip(tripId);
+}
+
 // ─── Lodging ────────────────────────────────────────────────────────────────
 
 /** Thrown when a proposed lodging booking violates ADR-0015 invariants. */
@@ -296,6 +382,17 @@ export function setLodgingDates(
   db.update(location)
     .set({ kind: "lodging", checkInDate, checkOutDate })
     .where(eq(location.id, locationId))
+    .run();
+  return requireTrip(tripId);
+}
+
+/** Relegate a lodging back to a plain activity (ADR-0015): removing the booking — its constraint —
+ *  drops it to kind=activity and clears the dates. */
+export function clearLodging(tripId: string, locationId: string): TripWithDetails {
+  getDrizzle()
+    .update(location)
+    .set({ kind: "activity", checkInDate: null, checkOutDate: null })
+    .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
     .run();
   return requireTrip(tripId);
 }
