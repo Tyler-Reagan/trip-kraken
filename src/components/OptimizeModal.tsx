@@ -6,17 +6,11 @@ import { useTripStore } from "@/store/tripStore";
 export default function OptimizeModal() {
   const trip = useTripStore((s) => s.trip);
   const setShowOptimize = useTripStore((s) => s.setShowOptimize);
-  const reload = useTripStore((s) => s.reload);
-  // useState initializers use optional chaining so hooks are always called
-  const [numDays, setNumDays] = useState<number>(trip?.numDays ?? 3);
-  const [startDate, setStartDate] = useState<string>(
-    trip?.startDate ? new Date(trip.startDate).toISOString().slice(0, 10) : ""
-  );
+  const optimize = useTripStore((s) => s.optimize);
   const [dayBudgetHours, setDayBudgetHours] = useState<number>(8);
   const [balanceCategories, setBalanceCategories] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [warnings, setWarnings] = useState<string[]>([]);
 
   const hasCategoryData = trip?.locations.some((l) => l.categories && l.categories.length > 0) ?? false;
 
@@ -25,36 +19,12 @@ export default function OptimizeModal() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setWarnings([]);
     setLoading(true);
-
     try {
-      if (!trip) return;
-      const res = await fetch(`/api/trips/${trip.id}/optimize`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          numDays,
-          startDate: startDate || undefined,
-          dayBudgetHours,
-          balanceCategories,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Optimization failed.");
-        return;
-      }
-
-      await reload();
-      // Keep the modal open to surface any reconciliation warnings (e.g. locks orphaned by
-      // a day-count cut, ADR-0006); close immediately when there's nothing to report.
-      if (Array.isArray(data.warnings) && data.warnings.length > 0) {
-        setWarnings(data.warnings);
-      } else {
-        setShowOptimize(false);
-      }
+      // The day count and dates come from the trip's required range (ADR-0015); only the soft
+      // knobs are chosen here. Re-optimize replaces the plan wholesale.
+      await optimize({ dayBudgetHours, balanceCategories });
+      setShowOptimize(false);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -91,34 +61,6 @@ export default function OptimizeModal() {
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Number of days
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={30}
-              required
-              value={numDays}
-              onChange={(e) => setNumDays(Number(e.target.value))}
-              className="input"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Start date{" "}
-              <span className="text-gray-400 dark:text-gray-500 font-normal">(optional)</span>
-            </label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="input"
-            />
-          </div>
-
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -165,25 +107,16 @@ export default function OptimizeModal() {
             </p>
           )}
 
-          {warnings.length > 0 && (
-            <div className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2 space-y-1">
-              <p className="font-medium">Itinerary updated, with notes:</p>
-              <ul className="list-disc list-inside space-y-0.5">
-                {warnings.map((w, i) => <li key={i}>{w}</li>)}
-              </ul>
-            </div>
-          )}
-
           <div className="flex gap-3">
             <button
               type="button"
               onClick={() => setShowOptimize(false)}
               className="btn-secondary flex-1"
             >
-              {warnings.length > 0 ? "Done" : "Cancel"}
+              Cancel
             </button>
             <button type="submit" disabled={loading} className="btn-primary flex-1">
-              {loading ? "Optimizing…" : warnings.length > 0 ? "Re-run" : "Generate itinerary"}
+              {loading ? "Optimizing…" : "Generate itinerary"}
             </button>
           </div>
         </form>

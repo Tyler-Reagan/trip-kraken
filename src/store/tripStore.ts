@@ -32,6 +32,10 @@ interface TripStore {
   // Async mutations — use get().tripId internally
   reload: () => Promise<void>;
   optimize: (opts?: { dayBudgetHours?: number; balanceCategories?: boolean }) => Promise<void>;
+  updateLocation: (
+    locationId: string,
+    fields: { excluded?: boolean; note?: string | null; name?: string; visitDuration?: number | null }
+  ) => Promise<void>;
   addPlacement: (locationId: string, date: string, order?: number) => Promise<void>;
   movePlacement: (placementId: string, date: string, order: number) => Promise<void>;
   removePlacement: (placementId: string) => Promise<void>;
@@ -104,6 +108,17 @@ export const useTripStore = create<TripStore>()((set, get) => ({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(opts ?? {}),
+    });
+    await get().reload();
+  },
+
+  updateLocation: async (locationId, fields) => {
+    const tripId = get().tripId;
+    if (!tripId) return;
+    await fetch(`/api/trips/${tripId}/locations/${locationId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fields),
     });
     await get().reload();
   },
