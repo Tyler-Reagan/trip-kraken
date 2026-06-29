@@ -1,67 +1,47 @@
 "use client";
 
 import { useState } from "react";
-import type { ItineraryDay, ItineraryStop, Location } from "@/types";
+import { deriveDays, isActivity, type DerivedDay, type ScheduledStop, type Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import DayCard from "./DayCard";
 import UnassignedCard from "./UnassignedCard";
 
 type DragItem =
-  | { kind: "stop"; stop: ItineraryStop }
+  | { kind: "stop"; stop: ScheduledStop }
   | { kind: "location"; location: Location };
 
 export default function ScheduleView() {
   const trip = useTripStore((s) => s.trip);
   const selectedDayNumber = useTripStore((s) => s.selectedDayNumber);
-  const moveStop = useTripStore((s) => s.moveStop);
-  const removeStop = useTripStore((s) => s.removeStop);
-  const addLocationToDay = useTripStore((s) => s.addLocationToDay);
+  const movePlacement = useTripStore((s) => s.movePlacement);
+  const removePlacement = useTripStore((s) => s.removePlacement);
+  const addPlacement = useTripStore((s) => s.addPlacement);
 
   const [dragging, setDragging] = useState<DragItem | null>(null);
 
   if (!trip) return null;
 
-  const scheduledLocationIds = new Set(
-    trip.days.flatMap((d) => d.stops.map((s) => s.locationId))
-  );
-  const unscheduledLocations = trip.locations.filter(
-    // Anchors (lodging / arrival / departure) are never schedulable activities — only role-less
-    // candidates appear in the unscheduled pool (ADR-0014).
-    (l) => !scheduledLocationIds.has(l.id) && l.roles.length === 0
-  );
+  const days = deriveDays(trip);
+  const placedIds = new Set(trip.placements.map((p) => p.locationId));
+  // Only activities are placed; lodging/transit are projected, never in the unscheduled pool.
+  const unscheduledLocations = trip.locations.filter((l) => isActivity(l) && !placedIds.has(l.id));
 
-  function handleDragStartStop(stop: ItineraryStop) {
-    setDragging({ kind: "stop", stop });
-  }
-
-  function handleDragStartLocation(loc: Location) {
-    setDragging({ kind: "location", location: loc });
-  }
-
-  function handleDrop(targetDay: ItineraryDay, targetOrder: number) {
+  function handleDrop(targetDay: DerivedDay, targetOrder: number) {
     if (!dragging) return;
-    if (dragging.kind === "stop") {
-      moveStop(dragging.stop.id, targetDay.id, targetOrder);
-    } else {
-      addLocationToDay(dragging.location.id, targetDay.id);
-    }
+    if (dragging.kind === "stop") movePlacement(dragging.stop.placement.id, targetDay.date, targetOrder);
+    else addPlacement(dragging.location.id, targetDay.date, targetOrder);
     setDragging(null);
   }
 
   function handleDropUnassigned() {
-    if (!dragging || dragging.kind !== "stop") return;
-    removeStop(dragging.stop.id);
+    if (dragging?.kind === "stop") removePlacement(dragging.stop.placement.id);
     setDragging(null);
   }
 
   const filter = selectedDayNumber;
   const showUnassigned = filter === null || filter === "unassigned";
-  const visibleDays: ItineraryDay[] =
-    filter === null
-      ? trip.days
-      : filter === "unassigned"
-        ? []
-        : trip.days.filter((d) => d.dayNumber === filter);
+  const visibleDays =
+    filter === null ? days : filter === "unassigned" ? [] : days.filter((d) => d.dayNumber === filter);
 
   const draggingStop = dragging?.kind === "stop" ? dragging.stop : null;
   const draggingLocation = dragging?.kind === "location" ? dragging.location : null;
@@ -72,17 +52,17 @@ export default function ScheduleView() {
         <UnassignedCard
           locations={unscheduledLocations}
           draggingStop={draggingStop}
-          onDragStartLocation={handleDragStartLocation}
+          onDragStartLocation={(location) => setDragging({ kind: "location", location })}
           onDropStop={handleDropUnassigned}
         />
       )}
       {visibleDays.map((day) => (
         <DayCard
-          key={day.id}
+          key={day.date}
           day={day}
           draggingStop={draggingStop}
           draggingLocation={draggingLocation}
-          onDragStart={handleDragStartStop}
+          onDragStart={(stop) => setDragging({ kind: "stop", stop })}
           onDrop={handleDrop}
         />
       ))}

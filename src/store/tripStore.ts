@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { TripWithDetails, Location } from "@/types";
 
-type ActiveView = "itinerary" | "map";
+type ActiveView = "manifest" | "itinerary" | "map";
 export type ScheduleFilter = number | "unassigned" | null;
 
 interface TripStore {
@@ -61,7 +61,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   trip: null,
   tripId: null,
 
-  activeView: "itinerary",
+  activeView: "manifest",
   selectedDayNumber: null,
   highlightedLocationId: null,
   inspectedLocationId: null,
@@ -115,6 +115,9 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   updateLocation: async (locationId, fields) => {
     const tripId = get().tripId;
     if (!tripId) return;
+    // Optimistic: reflect the edit immediately (exclude toggle, duration), then reconcile on reload.
+    const t = get().trip;
+    if (t) set({ trip: { ...t, locations: t.locations.map((l) => (l.id === locationId ? { ...l, ...fields } : l)) } });
     await fetch(`/api/trips/${tripId}/locations/${locationId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -148,6 +151,9 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   removePlacement: async (placementId) => {
     const tripId = get().tripId;
     if (!tripId) return;
+    // Optimistic: drop the placement immediately so the stop leaves the day without a round-trip lag.
+    const t = get().trip;
+    if (t) set({ trip: { ...t, placements: t.placements.filter((p) => p.id !== placementId) } });
     await fetch(`/api/trips/${tripId}/placements/${placementId}`, { method: "DELETE" });
     await get().reload();
   },

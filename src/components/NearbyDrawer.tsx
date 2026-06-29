@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { NearbyPlace } from "@/types";
+import { deriveDays, type NearbyPlace } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 
 type ProviderOption = { id: string; label: string };
@@ -30,18 +30,18 @@ export default function NearbyDrawer() {
   const tripId = useTripStore((s) => s.tripId);
   const trip = useTripStore((s) => s.trip);
   const searchLocation = useTripStore((s) => s.nearbySearchLocation);
-  const searchDayId = useTripStore((s) => s.nearbySearchDayId);
+  const searchDate = useTripStore((s) => s.nearbySearchDate);
   const setSearchLocation = useTripStore((s) => s.setNearbySearchLocation);
   const reload = useTripStore((s) => s.reload);
 
-  // Use the stored dayId when available (avoids picking Day 1 for lodging that appears on every day)
-  const searchDay = trip && searchDayId
-    ? (trip.days.find((d) => d.id === searchDayId) ?? null)
-    : trip && searchLocation
-      ? (trip.days.find((d) => d.stops.some((s) => s.locationId === searchLocation.id)) ?? null)
-      : null;
-  const anchorDayId = searchDay?.id ?? null;
-  // All stops on the search day — used to populate the location picker dropdown.
+  // The day the search is anchored to: the date it was opened with, else the day this location is
+  // placed on. Drives the diversity bonus and the location picker (ADR-0015 — days are derived).
+  const days = trip ? deriveDays(trip) : [];
+  const searchDay =
+    (searchDate ? days.find((d) => d.date === searchDate) : null) ??
+    (searchLocation ? days.find((d) => d.stops.some((s) => s.location.id === searchLocation.id)) : null) ??
+    null;
+  const anchorDate = searchDay?.date ?? searchDate ?? null;
   const dayStops = searchDay?.stops ?? [];
 
   const existingPlaceIds = new Set(
@@ -93,7 +93,7 @@ export default function NearbyDrawer() {
   }, [providers, source]);
 
   const fetchNearby = useCallback(async (
-    r: number, t: string, kw: string, on: boolean, dId: string | null, src: string
+    r: number, t: string, kw: string, on: boolean, date: string | null, src: string
   ) => {
     setLoading(true);
     setError(null);
@@ -102,7 +102,7 @@ export default function NearbyDrawer() {
       if (t) params.set("type", t);
       if (kw.trim()) params.set("keyword", kw.trim());
       if (on) params.set("openNow", "true");
-      if (dId) params.set("dayId", dId);
+      if (date) params.set("date", date);
       params.set("source", src);
       const res = await fetch(
         `/api/trips/${tripId}/locations/${searchLocation.id}/nearby?${params}`
@@ -125,13 +125,13 @@ export default function NearbyDrawer() {
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(
-      () => fetchNearby(radius, type, keyword, openNow, anchorDayId, source),
+      () => fetchNearby(radius, type, keyword, openNow, anchorDate, source),
       400
     );
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [radius, type, keyword, openNow, anchorDayId, source, fetchNearby]);
+  }, [radius, type, keyword, openNow, anchorDate, source, fetchNearby]);
 
   async function handleAdd(place: NearbyPlace) {
     setAddingId(place.placeId);
@@ -171,17 +171,12 @@ export default function NearbyDrawer() {
       const newLocation = await res.json();
       setAddedIds((prev) => new Set(prev).add(place.placeId));
 
-      // If the anchor is on a day, insert the new stop immediately after the
-      // anchor's position rather than appending to the end of the day.
-      if (anchorDayId && newLocation.id) {
-        await fetch(`/api/trips/${tripId}/stops`, {
+      // If the search is anchored to a day, place the new activity on that day (ADR-0015).
+      if (anchorDate && newLocation.id) {
+        await fetch(`/api/trips/${tripId}/placements`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            locationId: newLocation.id,
-            targetDayId: anchorDayId,
-            afterLocationId: searchLocation?.id ?? null,
-          }),
+          body: JSON.stringify({ locationId: newLocation.id, date: anchorDate }),
         });
       }
 
@@ -223,7 +218,7 @@ export default function NearbyDrawer() {
               value={searchLocation.id}
               onChange={(e) => {
                 const picked = dayStops.find((s) => s.location.id === e.target.value);
-                if (picked) setSearchLocation(picked.location, searchDayId);
+                if (picked) setSearchLocation(picked.location, anchorDate);
               }}
               className="w-full text-xs text-gray-500 dark:text-gray-400 bg-transparent border-none outline-none cursor-pointer truncate mt-0.5 pr-1"
             >

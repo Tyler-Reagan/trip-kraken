@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { ItineraryStop, Location } from "@/types";
+import type { ScheduledStop, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import { SearchIcon, TrashIcon } from "./icons";
 
 interface Props {
   locations: Location[];
-  draggingStop: ItineraryStop | null;
+  draggingStop: ScheduledStop | null;
   onDragStartLocation: (loc: Location) => void;
   onDropStop: () => void;
   /** False before the first optimize: there are no days to drag a location onto yet. */
