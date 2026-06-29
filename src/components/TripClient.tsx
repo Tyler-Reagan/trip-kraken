@@ -1,25 +1,19 @@
 "use client";
 
-import { useRef, useEffect } from "react";
-import dynamic from "next/dynamic";
-import type { TripWithDetails } from "@/types";
+import { useEffect, useRef } from "react";
+import { numDaysOf, type TripWithDetails } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import OptimizeModal from "./OptimizeModal";
-import ScheduleView from "./ScheduleView";
 import LocationInspector from "./LocationInspector";
 import AddLocationModal from "./AddLocationModal";
-import NearbyDrawer from "./NearbyDrawer";
-import StayEditor from "./StayEditor";
-import LodgingSummary from "./LodgingSummary";
-import UnassignedCard from "./UnassignedCard";
-
-const MapView = dynamic(() => import("./MapView"), { ssr: false });
-
-type ActiveView = "itinerary" | "map";
+import Manifest from "./Manifest";
 
 interface Props {
   trip: TripWithDetails;
 }
+
+const fmt = (d: string) =>
+  new Date(d.slice(0, 10) + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 export default function TripClient({ trip: initial }: Props) {
   const initialized = useRef(false);
@@ -28,47 +22,28 @@ export default function TripClient({ trip: initial }: Props) {
     useTripStore.setState({
       trip: initial,
       tripId: initial.id,
-      showOptimize: !initial.numDays,
-      activeView: "itinerary",
-      selectedDayNumber: null,
-      nearbySearchLocation: null,
-      highlightedLocationId: null,
+      showOptimize: false,
       inspectedLocationId: null,
     });
   }
 
   const trip = useTripStore((s) => s.trip) ?? initial;
-  const activeView = useTripStore((s) => s.activeView);
-  const selectedDayNumber = useTripStore((s) => s.selectedDayNumber);
-  const nearbySearchLocation = useTripStore((s) => s.nearbySearchLocation);
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
   const showOptimize = useTripStore((s) => s.showOptimize);
   const showAddLocation = useTripStore((s) => s.showAddLocation);
-  const showStays = useTripStore((s) => s.showStays);
 
   const isEnriching = useTripStore((s) => s.isEnriching);
   const enrichProgress = useTripStore((s) => s.enrichProgress);
   const enrich = useTripStore((s) => s.enrich);
   const pollEnrichment = useTripStore((s) => s.pollEnrichment);
 
-  const setActiveView = useTripStore((s) => s.setActiveView);
-  const setSelectedDayNumber = useTripStore((s) => s.setSelectedDayNumber);
   const setShowOptimize = useTripStore((s) => s.setShowOptimize);
   const setShowAddLocation = useTripStore((s) => s.setShowAddLocation);
-  const setShowStays = useTripStore((s) => s.setShowStays);
 
-  const hasItinerary = trip?.days.length > 0;
-  const pendingCount = trip?.locations.filter((l) => l.enrichmentStatus === "pending").length ?? 0;
-  const failedCount = trip?.locations.filter((l) => l.enrichmentStatus === "failed").length ?? 0;
-
-  // Role-less candidates not yet placed on a day — the schedulable pool (ADR-0014).
-  // Computed regardless of hasItinerary so a blank-slate trip can show added
-  // locations before its first optimize (when trip.days is still empty).
-  const scheduledLocationIds = new Set(trip.days.flatMap((d) => d.stops.map((s) => s.locationId)));
-  const candidateLocations = trip.locations.filter(
-    (l) => !scheduledLocationIds.has(l.id) && l.roles.length === 0
-  );
-  const unscheduledCount = candidateLocations.length;
+  const hasPlan = trip.placements.length > 0;
+  const pendingCount = trip.locations.filter((l) => l.enrichmentStatus === "pending").length;
+  const failedCount = trip.locations.filter((l) => l.enrichmentStatus === "failed").length;
+  const numDays = numDaysOf(trip.startDate, trip.endDate);
 
   useEffect(() => {
     pollEnrichment();
@@ -80,18 +55,15 @@ export default function TripClient({ trip: initial }: Props) {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{trip?.name}</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{trip.name}</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            {trip?.locations.length} locations
-            {trip?.numDays ? ` · ${trip?.numDays} days` : ""}
+            {trip.locations.length} location{trip.locations.length !== 1 ? "s" : ""}
+            {` · ${fmt(trip.startDate)} → ${fmt(trip.endDate)} · ${numDays} day${numDays !== 1 ? "s" : ""}`}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => setShowAddLocation(true)} className="btn-secondary text-sm">
             + Add location
-          </button>
-          <button onClick={() => setShowStays(true)} className="btn-secondary text-sm">
-            Lodging{trip?.stays.length ? ` (${trip.stays.length})` : ""}
           </button>
           {pendingCount > 0 && (
             <span className="text-sm text-gray-400 dark:text-gray-500 animate-pulse self-center">
@@ -113,129 +85,27 @@ export default function TripClient({ trip: initial }: Props) {
             </button>
           )}
           <button onClick={() => setShowOptimize(true)} className="btn-primary text-sm">
-            {hasItinerary ? "Re-optimize" : "Plan itinerary"}
+            {hasPlan ? "Re-optimize" : "Plan itinerary"}
           </button>
         </div>
       </div>
 
-      {/* Derived lodging timeline (read-only) */}
-      <LodgingSummary />
-
-      {/* View tabs + day filter */}
-      {hasItinerary && (
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
-            {(["itinerary", "map"] as ActiveView[]).map((view) => (
-              <button
-                key={view}
-                onClick={() => setActiveView(view)}
-                className={`px-4 py-1.5 text-sm font-medium transition-colors capitalize
-                  ${activeView === view
-                    ? "bg-brand-600 dark:bg-brand-500 text-white"
-                    : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
-                  }`}
-              >
-                {view === "itinerary" ? "Itinerary" : "Map"}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex gap-1.5 flex-wrap">
-            {/* Unassigned filter */}
-            <button
-              onClick={() => setSelectedDayNumber(selectedDayNumber === "unassigned" ? null : "unassigned")}
-              className={`px-3 py-1 text-xs rounded-full border transition-colors
-                ${selectedDayNumber === "unassigned"
-                  ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100"
-                  : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-                }`}
-            >
-              Unassigned{unscheduledCount > 0 ? ` ●${unscheduledCount}` : ""}
-            </button>
-
-            {/* All filter */}
-            <button
-              onClick={() => setSelectedDayNumber(null)}
-              className={`px-3 py-1 text-xs rounded-full border transition-colors
-                ${selectedDayNumber === null
-                  ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100"
-                  : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-                }`}
-            >
-              All
-            </button>
-
-            {/* Per-day filters */}
-            {trip?.days.map((day) => (
-              <button
-                key={day.id}
-                onClick={() =>
-                  setSelectedDayNumber(selectedDayNumber === day.dayNumber ? null : day.dayNumber)
-                }
-                className={`px-3 py-1 text-xs rounded-full border transition-colors
-                  ${selectedDayNumber === day.dayNumber
-                    ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100"
-                    : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-                  }`}
-              >
-                Day {day.dayNumber}
-                {day.stops.length > 0 ? ` ●${day.stops.length}` : ""}
-                {day.label ? ` – ${day.label}` : ""}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!hasItinerary && (
-        candidateLocations.length > 0 ? (
-          <div className="space-y-4">
-            <div className="card p-5 text-center text-gray-500 dark:text-gray-400 space-y-1">
-              <p className="font-medium text-gray-700 dark:text-gray-200">
-                {candidateLocations.length} location{candidateLocations.length !== 1 ? "s" : ""} added
-              </p>
-              <p className="text-sm">
-                Keep adding, then click{" "}
-                <strong className="text-gray-700 dark:text-gray-200">Plan itinerary</strong> to
-                cluster them into days.
-              </p>
-            </div>
-            <UnassignedCard
-              locations={candidateLocations}
-              draggingStop={null}
-              onDragStartLocation={() => {}}
-              onDropStop={() => {}}
-              schedulable={false}
-            />
-          </div>
-        ) : (
-          <div className="card p-8 text-center text-gray-500 dark:text-gray-400 space-y-3">
-            <p className="text-4xl">🗺️</p>
-            <p className="font-medium">No locations yet</p>
-            <p className="text-sm">
-              Click <strong className="text-gray-700 dark:text-gray-200">+ Add location</strong> to
-              search Google for places, then{" "}
-              <strong className="text-gray-700 dark:text-gray-200">Plan itinerary</strong> to
-              cluster them into days.
-            </p>
-          </div>
-        )
-      )}
-
       <div className="flex gap-4 items-start">
         <div className="flex-1 min-w-0 space-y-4">
-          {hasItinerary && activeView === "itinerary" && <ScheduleView />}
-          {hasItinerary && activeView === "map" && <MapView />}
+          <Manifest />
+          {/* The day-by-day Timeline lands in D5; until then the plan is summarized. */}
+          {hasPlan && (
+            <p className="text-sm text-gray-400 dark:text-gray-500">
+              Itinerary planned · {trip.placements.length} stop{trip.placements.length !== 1 ? "s" : ""} across the trip.
+            </p>
+          )}
         </div>
 
-        {/* Right panels — both mount independently; Inspector shifts inward when Nearby opens */}
         {inspectedLocationId && <LocationInspector />}
-        {nearbySearchLocation && <NearbyDrawer />}
       </div>
 
       {showOptimize && <OptimizeModal />}
       {showAddLocation && <AddLocationModal />}
-      {showStays && <StayEditor />}
     </div>
   );
 }

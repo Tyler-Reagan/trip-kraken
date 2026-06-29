@@ -6,19 +6,25 @@ import { useRouter } from "next/navigation";
 export default function NewTripForm() {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!startDate || !endDate || startDate > endDate) {
+      setError("Pick a start and end date (start on or before end).");
+      return;
+    }
     setLoading(true);
 
     try {
       const res = await fetch("/api/trips", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() || undefined }),
+        body: JSON.stringify({ name: name.trim() || undefined, startDate, endDate }),
       });
 
       const data = await res.json();
@@ -59,6 +65,21 @@ export default function NewTripForm() {
             onChange={(e) => setName(e.target.value)}
             className="input"
           />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <label htmlFor="trip-start" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Start date
+            </label>
+            <input id="trip-start" type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className="input" />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="trip-end" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              End date
+            </label>
+            <input id="trip-end" type="date" required value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} className="input" />
+          </div>
         </div>
 
         {error && (

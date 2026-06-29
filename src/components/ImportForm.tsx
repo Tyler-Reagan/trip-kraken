@@ -7,19 +7,25 @@ export default function ImportForm() {
   const router = useRouter();
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!startDate || !endDate || startDate > endDate) {
+      setError("Pick a start and end date (start on or before end).");
+      return;
+    }
     setLoading(true);
 
     try {
       const res = await fetch("/api/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim(), name: name.trim() || undefined }),
+        body: JSON.stringify({ url: url.trim(), name: name.trim() || undefined, startDate, endDate }),
       });
 
       const data = await res.json();
@@ -75,6 +81,21 @@ export default function ImportForm() {
             onChange={(e) => setName(e.target.value)}
             className="input"
           />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <label htmlFor="import-start" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Start date
+            </label>
+            <input id="import-start" type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className="input" />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="import-end" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              End date
+            </label>
+            <input id="import-end" type="date" required value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} className="input" />
+          </div>
         </div>
 
         <p className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2 leading-relaxed">

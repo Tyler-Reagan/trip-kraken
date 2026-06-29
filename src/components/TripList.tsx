@@ -7,10 +7,14 @@ import { useState } from "react";
 interface TripSummary {
   id: string;
   name: string;
-  numDays: number | null;
+  startDate: string;
+  endDate: string;
   createdAt: Date | string;
   _count: { locations: number };
 }
+
+const shortDate = (date: string) =>
+  new Date(date.slice(0, 10) + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 export default function TripList({ trips }: { trips: TripSummary[] }) {
   const router = useRouter();
@@ -36,7 +40,7 @@ export default function TripList({ trips }: { trips: TripSummary[] }) {
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               {trip._count.locations} location
               {trip._count.locations !== 1 ? "s" : ""}
-              {trip.numDays ? ` · ${trip.numDays} days` : ""}
+              {` · ${shortDate(trip.startDate)} → ${shortDate(trip.endDate)}`}
             </p>
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
               {new Date(trip.createdAt).toLocaleDateString()}

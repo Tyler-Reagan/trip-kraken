@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTripStore } from "@/store/tripStore";
-import type { Location } from "@/types";
+import { isActivity, type Location } from "@/types";
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Mon–Sun display order
@@ -168,8 +168,8 @@ export default function LocationInspector() {
         <HoursDisplay loc={loc} />
       </div>
 
-      {/* Duration editor — hidden for lodging */}
-      {loc.roles.length === 0 && <DurationEditor loc={loc} />}
+      {/* Duration editor — only activities are scheduled, so only they carry a visit duration */}
+      {isActivity(loc) && <DurationEditor loc={loc} />}
 
       {/* Categories */}
       {loc.categories && loc.categories.length > 0 && (
