@@ -1,13 +1,17 @@
 # Place & Plan Model Rebuild — Status & Roadmap (ADR-0015)
 
-> **Handoff doc.** To resume cold, read this + [ADR-0015](adr/0015-locations-typed-by-kind-constraints-and-plan.md) + [`CONTEXT.md`](../CONTEXT.md). As of 2026-06-28.
+> **Status: COMPLETE.** The D1→D5 rebuild shipped as five stacked PRs (#70–#74), all merged to
+> `main` on 2026-06-29. `tsc`/`next build`/`knip` clean, tests green, and the create→add→lodging→
+> optimize→Itinerary flow is browser-verified. This doc is kept as the record of the rebuild;
+> [ADR-0015](adr/0015-locations-typed-by-kind-constraints-and-plan.md) + [`CONTEXT.md`](../CONTEXT.md)
+> remain the authoritative model.
 
 ## TL;DR
 
-**ADR-0015 is the authoritative model**; all preceding docs and issues have been reconciled so
-nothing stale outranks it. The **code still implements the old model** (Stay table, `Stop` + locks,
-reconcile, datetime/day-number duality, stored trip edges). The work ahead is a **layer-by-layer
-rebuild of the code to ADR-0015**, sequenced as **five stacked PRs, D1→D5**, off `main`.
+**ADR-0015 is the authoritative model and the code now implements it.** `Location` is typed by
+`kind`, the plan is stored as `Placement`s, and day-presence / trip edges are derived by projection.
+**Removed:** the `Stay` table, locking, `reconcileItinerary`, stored trip edges, and the
+datetime/day-number duality. The rebuild ran as **five stacked layer-PRs, D1→D5**, off `main`.
 
 ---
 
@@ -67,13 +71,13 @@ Glossary: [`CONTEXT.md`](../CONTEXT.md). Visual brief: `scratchpad/trip-model-br
 
 ### Slices (stacked, bottom-up — off `main`)
 
-| # | Slice | Scope | Repo state after |
+| # | Slice | Scope | PR |
 |---|---|---|---|
-| **D1** | **Engine** | `schema.ts` (kind, fold lodging dates, drop `Stay`, `Stop`→`Placement`, required dates, drop edges/`Day`); `types`; db repository (projection-based `getTripWithDetails`, kind-aware place CRUD, drop `setStays`/lock/reconcile); regenerate migration; rewrite `lodging.test.ts` → `model.test.ts` | `src/lib/**` + tests **green**; `src/app`/`src/components` **tsc-red** |
-| **D2** | **Optimizer** | `src/lib/optimizer.ts`: lodging dates → night anchoring, transit → edges, as inputs; emit `Placement`s; travel-day/edge routing over projection; remove lock handling; optimizer tests | engine fully green |
-| **D3** | **Store + API** | `tripStore.ts` + `src/app/api/**`: drop `saveStays`/lock/move-with-reconcile; add forced-date trip creation, kind-aware add, lodging-date + placement edits | store/API green; components red |
-| **D4** | **Manifest** | kind-grouped inventory + role-aware inline editing (lodging dates, exclude, duration); forced trip date range on create; **retire** `StayEditor` + manual `AddLocationModal` bits; search-add assigns kind | Manifest demoable |
-| **D5** | **Timeline + cleanup** | day-clustered placements + projected lodging/transit bookends; rework/retire `ScheduleView`/`DayCard`/`UnassignedCard`; `MapView`; delete lock UI + dead reconcile paths; `knip`/`build` clean | **whole app green + demoable** |
+| **D1** ✅ | **Engine** | `schema.ts` (kind, fold lodging dates, drop `Stay`, `Stop`→`Placement`, required dates, drop edges/`Day`); `types` + projection helpers; db repository (projection-based `getTripWithDetails`, kind-aware CRUD, drop `setStays`/lock/reconcile); regenerate migration; `lodging.test.ts` → `model.test.ts` | #70 |
+| **D2** ✅ | **Optimizer** | lock-free `optimizer.ts`; new `optimize.ts` orchestrator (lodging dates → night-ranges → solver → `Placement`s); optimizer tests. Transit→edges left dormant (transit fields parked) | #71 |
+| **D3** ✅ | **Store + API** | `tripStore.ts` + `src/app/api/**`: drop `saveStays`/lock/reconcile; forced-date creation, lodging-date + placement edits (`addPlacement`/`movePlacement`/`removePlacement`/`clearLodging`); `stops/`→`placements/`, `stays/import`→`lodging/import` | #72 |
+| **D4** ✅ | **Manifest** | kind-grouped inventory + inline editing (lodging dates, exclude); forced trip date range on create; **retired** `StayEditor` + `LodgingSummary`; search-add via `AddLocationModal` | #73 |
+| **D5** ✅ | **Timeline + cleanup** | `deriveDays` projection; rebuilt `ScheduleView`/`DayCard`/`UnassignedCard`/`MapView`/`NearbyDrawer` onto placements + projected lodging bookends; **optimistic updates**; deleted lock UI/dead paths; `knip`/`build` clean | #74 |
 
 ### The honest caveat
 
@@ -101,10 +105,15 @@ intentionally mid-rebuild.
 
 ---
 
-## Resume instructions (cold start)
+## Done — what's next
 
-1. Read [ADR-0015](adr/0015-locations-typed-by-kind-constraints-and-plan.md) + [`CONTEXT.md`](../CONTEXT.md) + this doc.
-2. Cut **D1** off `main`: `schema.ts` → `types` → db repository → `model.test.ts`. Regenerate the
-   Drizzle migration and recreate `db/dev.db` (pre-launch: no data migration, per no-backwards-compat).
-3. Goal for D1: `npm test` + `tsc` green for `src/lib/**`; the UI is intentionally tsc-red until D3–D5.
-4. Open as the first stacked PR; proceed D2→D5, each cut off the previous, app green at D5.
+The rebuild is on `main` (D1–D5, #70–#74, merged 2026-06-29). The model now matches ADR-0015
+end-to-end. **Parked by ADR-0015** (deliberately not built; must not be precluded):
+
+- **Transit constraint fields** — `kind: transit` exists but carries no fields yet, so the
+  optimizer's trip-edge (arrival/departure) routing stays dormant until a shape lands.
+- **Partial re-optimization** — re-optimize is wholesale; per-region/partial is a later feature.
+- **Same-place multiplicity** — one continuous binding per constraint; revisit only if it earns it.
+
+Follow-on UI polish noticed during verification: lodging-date *set* and placement drag still reload
+(only exclude/unschedule are optimistic so far).
