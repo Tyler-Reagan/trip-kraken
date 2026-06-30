@@ -36,3 +36,6 @@ Thumbs.db
 .idea/
 *.swp
 tsconfig.tsbuildinfo
+
+# impeccable design tooling (critique snapshots, live-mode config — local, not versioned)
+.impeccable/
