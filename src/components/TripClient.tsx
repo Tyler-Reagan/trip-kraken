@@ -14,7 +14,7 @@ import ScheduleView from "./ScheduleView";
 
 const MapView = dynamic(() => import("./MapView"), { ssr: false });
 
-type ActiveView = "manifest" | "itinerary" | "map";
+type ActiveSurface = "itinerary" | "places";
 
 interface Props {
   trip: TripWithDetails;
@@ -31,7 +31,11 @@ export default function TripClient({ trip: initial }: Props) {
       trip: initial,
       tripId: initial.id,
       showOptimize: false,
-      activeView: "manifest",
+      // Itinerary is the first-class surface — land there once a plan exists, otherwise
+      // start in Places (the staging step that produces the plan).
+      activeSurface: initial.placements.length > 0 ? "itinerary" : "places",
+      mapShown: true,
+      mapExpanded: false,
       selectedDayNumber: null,
       nearbySearchLocation: null,
       highlightedLocationId: null,
@@ -40,10 +44,12 @@ export default function TripClient({ trip: initial }: Props) {
   }
 
   const trip = useTripStore((s) => s.trip) ?? initial;
-  const activeView = useTripStore((s) => s.activeView);
+  const activeSurface = useTripStore((s) => s.activeSurface);
   const selectedDayNumber = useTripStore((s) => s.selectedDayNumber);
   const nearbySearchLocation = useTripStore((s) => s.nearbySearchLocation);
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
+  const mapShown = useTripStore((s) => s.mapShown);
+  const mapExpanded = useTripStore((s) => s.mapExpanded);
   const showOptimize = useTripStore((s) => s.showOptimize);
   const showAddLocation = useTripStore((s) => s.showAddLocation);
 
@@ -52,8 +58,10 @@ export default function TripClient({ trip: initial }: Props) {
   const enrich = useTripStore((s) => s.enrich);
   const pollEnrichment = useTripStore((s) => s.pollEnrichment);
 
-  const setActiveView = useTripStore((s) => s.setActiveView);
+  const setActiveSurface = useTripStore((s) => s.setActiveSurface);
   const setSelectedDayNumber = useTripStore((s) => s.setSelectedDayNumber);
+  const setMapShown = useTripStore((s) => s.setMapShown);
+  const setMapExpanded = useTripStore((s) => s.setMapExpanded);
   const setShowOptimize = useTripStore((s) => s.setShowOptimize);
   const setShowAddLocation = useTripStore((s) => s.setShowAddLocation);
 
@@ -70,8 +78,27 @@ export default function TripClient({ trip: initial }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const tabs: ActiveView[] = ["manifest", "itinerary", "map"];
-  const tabLabel: Record<ActiveView, string> = { manifest: "Places", itinerary: "Itinerary", map: "Map" };
+  // The companion region beside the itinerary shows one thing at a time, by priority:
+  // an active Nearby search, else an inspected location, else the map at rest. A panel
+  // takes precedence over the map and forces the region open even when the map is hidden.
+  const companion: "nearby" | "inspector" | "map" | null =
+    nearbySearchLocation ? "nearby"
+    : inspectedLocationId ? "inspector"
+    : mapShown ? "map"
+    : null;
+  // Full-bleed only applies to the resting map, never over a panel.
+  const expanded = mapExpanded && companion === "map";
+
+  const surfaces: { id: ActiveSurface; label: string }[] = [
+    { id: "itinerary", label: "Itinerary" },
+    { id: "places", label: "Places" },
+  ];
+
+  const dayChip = "inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded-full border transition-colors";
+  const dayChipIdle =
+    "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800";
+  const metaActive =
+    "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100";
 
   return (
     <div className="space-y-6">
@@ -113,83 +140,102 @@ export default function TripClient({ trip: initial }: Props) {
         </div>
       </div>
 
-      {/* View tabs + day filter */}
+      {/* Surface switch · day filter (itinerary) · map controls (itinerary) */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
-          {tabs.map((view) => (
+          {surfaces.map((s) => (
             <button
-              key={view}
-              onClick={() => setActiveView(view)}
+              key={s.id}
+              onClick={() => setActiveSurface(s.id)}
               className={`px-4 py-1.5 text-sm font-medium transition-colors
-                ${activeView === view
+                ${activeSurface === s.id
                   ? "bg-brand-600 dark:bg-brand-500 text-white"
                   : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
                 }`}
             >
-              {tabLabel[view]}
+              {s.label}
             </button>
           ))}
         </div>
 
-        {(activeView === "itinerary" || activeView === "map") && hasPlan && (
-          <div className="flex gap-1.5 flex-wrap">
-            {activeView === "itinerary" && (
+        {activeSurface === "itinerary" && hasPlan && (
+          <>
+            <div className="flex gap-1.5 flex-wrap">
               <button
                 onClick={() => setSelectedDayNumber(selectedDayNumber === "unassigned" ? null : "unassigned")}
-                className={`px-3 py-1 text-xs rounded-full border transition-colors
-                  ${selectedDayNumber === "unassigned"
-                    ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100"
-                    : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-                  }`}
+                className={`${dayChip} ${selectedDayNumber === "unassigned" ? metaActive : dayChipIdle}`}
               >
-                Unassigned{unscheduledCount > 0 ? ` ●${unscheduledCount}` : ""}
+                Unassigned{unscheduledCount > 0 ? ` · ${unscheduledCount}` : ""}
               </button>
-            )}
-            <button
-              onClick={() => setSelectedDayNumber(null)}
-              className={`px-3 py-1 text-xs rounded-full border transition-colors
-                ${selectedDayNumber === null
-                  ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100"
-                  : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-                }`}
-            >
-              All
-            </button>
-            {days.map((day) => {
-              const active = selectedDayNumber === day.dayNumber;
-              const color = dayColorCss(day.dayNumber);
-              return (
-                <button
-                  key={day.date}
-                  onClick={() => setSelectedDayNumber(active ? null : day.dayNumber)}
-                  style={active ? { backgroundColor: `color-mix(in oklab, ${color} 20%, transparent)`, borderColor: color } : undefined}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded-full border transition-colors
-                    ${active
-                      ? "text-gray-900 dark:text-gray-100 font-medium"
-                      : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-                    }`}
-                >
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} aria-hidden />
-                  Day {day.dayNumber}
-                  {day.stops.length > 0 ? ` · ${day.stops.length}` : ""}
-                  {day.label ? ` – ${day.label}` : ""}
+              <button
+                onClick={() => setSelectedDayNumber(null)}
+                className={`${dayChip} ${selectedDayNumber === null ? metaActive : dayChipIdle}`}
+              >
+                All
+              </button>
+              {days.map((day) => {
+                const active = selectedDayNumber === day.dayNumber;
+                const color = dayColorCss(day.dayNumber);
+                return (
+                  <button
+                    key={day.date}
+                    onClick={() => setSelectedDayNumber(active ? null : day.dayNumber)}
+                    style={active ? { backgroundColor: `color-mix(in oklab, ${color} 20%, transparent)`, borderColor: color } : undefined}
+                    className={`${dayChip} ${active ? "text-gray-900 dark:text-gray-100 font-medium" : dayChipIdle}`}
+                  >
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} aria-hidden />
+                    Day {day.dayNumber}
+                    {day.stops.length > 0 ? ` · ${day.stops.length}` : ""}
+                    {day.label ? ` – ${day.label}` : ""}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex gap-1 sm:ml-auto shrink-0">
+              <button onClick={() => setMapShown(!mapShown)} className="btn-ghost">
+                {mapShown ? "Hide map" : "Show map"}
+              </button>
+              {companion === "map" && (
+                <button onClick={() => setMapExpanded(!mapExpanded)} className="btn-ghost">
+                  {expanded ? "Collapse" : "Expand"}
                 </button>
-              );
-            })}
-          </div>
+              )}
+            </div>
+          </>
         )}
       </div>
 
-      <div className="flex gap-4 items-start">
-        <div className="flex-1 min-w-0 space-y-4">
-          {activeView === "manifest" && <Manifest />}
-          {activeView === "itinerary" && (hasPlan ? <ScheduleView /> : <NoPlanHint />)}
-          {activeView === "map" && (hasPlan ? <MapView /> : <NoPlanHint />)}
+      {/* Body */}
+      {activeSurface === "places" ? (
+        <div className="flex flex-col lg:flex-row gap-4 items-start">
+          <div className="flex-1 min-w-0">
+            <Manifest />
+          </div>
+          {inspectedLocationId && (
+            <div className="w-full lg:w-[360px] shrink-0 lg:sticky lg:top-6 self-start">
+              <LocationInspector />
+            </div>
+          )}
         </div>
-
-        {inspectedLocationId && <LocationInspector />}
-        {nearbySearchLocation && <NearbyDrawer />}
-      </div>
+      ) : !hasPlan ? (
+        <NoPlanHint />
+      ) : expanded ? (
+        <MapView heightClass="h-[calc(100vh-13rem)]" />
+      ) : (
+        <div className="flex flex-col lg:flex-row gap-4 items-start">
+          <div className="flex-1 min-w-0 space-y-4">
+            <ScheduleView />
+          </div>
+          {companion && (
+            <div className="w-full lg:w-[360px] shrink-0 lg:sticky lg:top-6 self-start">
+              {companion === "nearby" && <NearbyDrawer />}
+              {companion === "inspector" && <LocationInspector />}
+              {companion === "map" && <MapView />}
+            </div>
+          )}
+        </div>
+      )}
 
       {showOptimize && <OptimizeModal />}
       {showAddLocation && <AddLocationModal />}
@@ -198,12 +244,21 @@ export default function TripClient({ trip: initial }: Props) {
 }
 
 function NoPlanHint() {
+  const setShowOptimize = useTripStore((s) => s.setShowOptimize);
+  const setActiveSurface = useTripStore((s) => s.setActiveSurface);
   return (
-    <div className="card p-8 text-center text-gray-500 dark:text-gray-400 space-y-1">
+    <div className="card p-8 text-center text-gray-500 dark:text-gray-400 space-y-2">
       <p className="font-medium text-gray-700 dark:text-gray-200">No itinerary yet</p>
       <p className="text-sm">
-        Add places under <strong className="text-gray-700 dark:text-gray-200">Places</strong>, then{" "}
-        <strong className="text-gray-700 dark:text-gray-200">Plan itinerary</strong> to cluster them into days.
+        Add places under{" "}
+        <button onClick={() => setActiveSurface("places")} className="text-brand-600 dark:text-brand-400 hover:underline">
+          Places
+        </button>
+        , then{" "}
+        <button onClick={() => setShowOptimize(true)} className="text-brand-600 dark:text-brand-400 hover:underline">
+          plan the itinerary
+        </button>{" "}
+        to cluster them into days.
       </p>
     </div>
   );

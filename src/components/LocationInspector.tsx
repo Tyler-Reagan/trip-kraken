@@ -125,7 +125,7 @@ export default function LocationInspector() {
   if (!loc) return null;
 
   return (
-    <aside className="w-72 shrink-0 card p-4 space-y-4 max-h-[calc(100vh-10rem)] overflow-y-auto">
+    <aside className="w-full card p-4 space-y-4 max-h-[calc(100vh-10rem)] overflow-y-auto">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200 leading-snug">

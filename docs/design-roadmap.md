@@ -22,7 +22,7 @@ items until they are done or consciously dropped.
 
 ## Execution plan (P1s, ordered)
 
-### Phase b — Day-color throughline  ·  status: implemented (branch `feat/day-color-throughline`; visual confirmation + review pending)
+### Phase b — Day-color throughline  ·  status: merged (#75)
 The 14-hue per-day color system exists but lives only on the map. Thread each day's color
 through the schedule so the timeline and map read as one system.
 - DayCard header ("Day N"), the day-filter chips, and the stop-number badges adopt the
@@ -31,8 +31,9 @@ through the schedule so the timeline and map read as one system.
 - **Dependency for Phase c:** the *hues themselves* may be retuned when the language is
   re-established. What's durable here is the plumbing (color flows from a single per-day
   source into header + chip + badge + map). Phase c must sweep back through this.
+- **Merged 2026-06-30 (#75).**
 
-### Phase a — Itinerary-first structure  ·  status: not started
+### Phase a — Itinerary-first structure  ·  status: implemented (branch `feat/itinerary-first-shell`; visual confirmation + review pending)
 Kill the three-equal-peer-tab model. Make the itinerary the surface the user lives in, with
 the map as a bound companion and the Manifest as a staging step.
 - Presentation (persistent split, expandable full-screen map, minimized rail, etc.) is an
@@ -85,4 +86,16 @@ honoring `prefers-reduced-motion`. Not this pass; no new work should foreclose i
   ink/paper text — 6.6:1 worst case), and the day-filter chips (persistent dot + day-tinted active
   state). Brand green stays reserved for actions/selection; day color is wayfinding only. tsc 0,
   tests green, page compiles (200). Visual confirmation of the Itinerary view still pending (the
-  day-colored UI is behind the Itinerary tab; SSR defaults to Places).
+  day-colored UI is behind the Itinerary tab; SSR defaults to Places). **Merged as #75.**
+- 2026-06-30 — Phase a implemented on `feat/itinerary-first-shell`. Replaced the 3-equal-peer-tab
+  IA (Places/Itinerary/Map) with a 2-surface switch (`Itinerary` | `Places`); map is no longer a
+  peer view. Store: `activeView` → `activeSurface` + `mapShown`/`mapExpanded`. Itinerary is now a
+  split — ScheduleView (primary) + a companion rail showing one of Nearby > Inspector > Map by
+  priority, with collapse (`Hide map`) and full-bleed (`Expand`) controls; stacks on narrow widths.
+  Default landing: Itinerary when a plan exists, else Places. Inspector/NearbyDrawer made width-full
+  so the companion column sizes them; MapView gained a `heightClass` prop for the expanded state.
+  Partially retires the deferred P2 "two panels squeeze the main column" (companion shows one at a
+  time). tsc 0, tests green, fresh-server SSR verified (planned trip lands on Itinerary with day
+  colors; empty trip lands on Places; no Map peer tab). Interactive checks (toggles, stop→companion
+  swap, drag) pending a browser. Map remounts when toggling companion content — a known perf
+  follow-up for polish/Phase c (keep the map mounted under overlays).
