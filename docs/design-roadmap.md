@@ -22,7 +22,7 @@ items until they are done or consciously dropped.
 
 ## Execution plan (P1s, ordered)
 
-### Phase b — Day-color throughline  ·  status: not started
+### Phase b — Day-color throughline  ·  status: implemented (branch `feat/day-color-throughline`; visual confirmation + review pending)
 The 14-hue per-day color system exists but lives only on the map. Thread each day's color
 through the schedule so the timeline and map read as one system.
 - DayCard header ("Day N"), the day-filter chips, and the stop-number badges adopt the
@@ -79,3 +79,10 @@ honoring `prefers-reduced-motion`. Not this pass; no new work should foreclose i
 ## Status log
 
 - 2026-06-30 — First critique (22/40). Roadmap created; decisions locked. No code changed yet.
+- 2026-06-30 — Phase b implemented on `feat/day-color-throughline`. Extracted the day palette to
+  `src/lib/dayColors.ts` (single source for map + timeline); threaded color into DayCard headers
+  (dot + neutral label, mirroring the map legend), stop-number badges (filled hue, contrast-picked
+  ink/paper text — 6.6:1 worst case), and the day-filter chips (persistent dot + day-tinted active
+  state). Brand green stays reserved for actions/selection; day color is wayfinding only. tsc 0,
+  tests green, page compiles (200). Visual confirmation of the Itinerary view still pending (the
+  day-colored UI is behind the Itinerary tab; SSR defaults to Places).

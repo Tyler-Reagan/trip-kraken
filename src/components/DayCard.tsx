@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { DerivedDay, ScheduledStop, Lodging, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
+import { dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { SearchIcon, TrashIcon } from "./icons";
 
 interface Props {
@@ -71,7 +72,14 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
       {/* Day header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="font-semibold text-brand-600 dark:text-brand-400 shrink-0">Day {day.dayNumber}</span>
+          <span className="flex items-center gap-1.5 shrink-0">
+            <span
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{ backgroundColor: dayColorCss(day.dayNumber) }}
+              aria-hidden
+            />
+            <span className="font-semibold text-gray-800 dark:text-gray-100">Day {day.dayNumber}</span>
+          </span>
           <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">{dateStr}</span>
           {editingLabel ? (
             <input
@@ -123,6 +131,7 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
             key={stop.placement.id}
             stop={stop}
             index={idx}
+            dayNumber={day.dayNumber}
             isDragging={draggingStop?.placement.id === stop.placement.id}
             dayOfWeek={dayOfWeek}
             date={day.date}
@@ -177,6 +186,7 @@ function AnchorRow({ loc, role, date }: { loc: Lodging; role: "start" | "end" | 
 interface StopRowProps {
   stop: ScheduledStop;
   index: number;
+  dayNumber: number;
   isDragging: boolean;
   dayOfWeek: number;
   date: string;
@@ -184,7 +194,7 @@ interface StopRowProps {
   onDropBefore: () => void;
 }
 
-function StopRow({ stop, index, isDragging, dayOfWeek, date, onDragStart, onDropBefore }: StopRowProps) {
+function StopRow({ stop, index, dayNumber, isDragging, dayOfWeek, date, onDragStart, onDropBefore }: StopRowProps) {
   const removePlacement = useTripStore((s) => s.removePlacement);
   const highlightedLocationId = useTripStore((s) => s.highlightedLocationId);
   const setHighlightedLocationId = useTripStore((s) => s.setHighlightedLocationId);
@@ -232,7 +242,10 @@ function StopRow({ stop, index, isDragging, dayOfWeek, date, onDragStart, onDrop
           setInspectedLocationId(isInspected ? null : loc.id);
         }}
       >
-        <span className="shrink-0 w-5 h-5 rounded-full bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-400 text-xs flex items-center justify-center font-semibold mt-0.5">
+        <span
+          className="shrink-0 w-5 h-5 rounded-full text-xs flex items-center justify-center font-semibold mt-0.5"
+          style={{ backgroundColor: dayColorCss(dayNumber), color: dayTextColor(dayNumber) }}
+        >
           {index + 1}
         </span>
         <span
