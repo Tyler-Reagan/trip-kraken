@@ -7,30 +7,10 @@ import type { MapRef, LayerProps } from "react-map-gl/maplibre";
 import type { FeatureCollection, LineString, Point } from "geojson";
 import { useTripStore } from "@/store/tripStore";
 import { deriveDays, isLodging, type Location } from "@/types";
+import { DAY_COLORS } from "@/lib/dayColors";
 
 const CARTO_DARK =
   "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
-
-/**
- * Per-day color palette — 14 distinct colors, Tailwind 400-level approximations.
- * Colors loop for trips with more than 14 days.
- */
-const DAY_COLORS: [number, number, number][] = [
-  [251, 191, 36],   // amber-400
-  [34, 211, 238],   // cyan-400
-  [163, 230, 53],   // lime-400
-  [251, 146, 60],   // orange-400
-  [167, 139, 250],  // violet-400
-  [248, 113, 113],  // red-400
-  [52, 211, 153],   // emerald-400
-  [250, 204, 21],   // yellow-400
-  [96, 165, 250],   // blue-400
-  [244, 114, 182],  // pink-400
-  [45, 212, 191],   // teal-400
-  [251, 113, 133],  // rose-400
-  [129, 140, 248],  // indigo-400
-  [56, 189, 248],   // sky-400
-];
 
 type TooltipState = {
   x: number;
