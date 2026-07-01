@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { TripWithDetails, Location } from "@/types";
 
-type ActiveView = "manifest" | "itinerary" | "map";
+type ActiveSurface = "itinerary" | "places";
 export type ScheduleFilter = number | "unassigned" | null;
 
 interface TripStore {
@@ -10,7 +10,9 @@ interface TripStore {
   tripId: string | null;
 
   // UI state
-  activeView: ActiveView;
+  activeSurface: ActiveSurface;
+  mapShown: boolean;
+  mapExpanded: boolean;
   selectedDayNumber: ScheduleFilter;
   highlightedLocationId: string | null;
   inspectedLocationId: string | null;
@@ -21,7 +23,9 @@ interface TripStore {
 
   // Setters
   setTrip: (trip: TripWithDetails) => void;
-  setActiveView: (v: ActiveView) => void;
+  setActiveSurface: (v: ActiveSurface) => void;
+  setMapShown: (v: boolean) => void;
+  setMapExpanded: (v: boolean) => void;
   setSelectedDayNumber: (n: ScheduleFilter) => void;
   setHighlightedLocationId: (id: string | null) => void;
   setInspectedLocationId: (id: string | null) => void;
@@ -61,7 +65,9 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   trip: null,
   tripId: null,
 
-  activeView: "manifest",
+  activeSurface: "itinerary",
+  mapShown: true,
+  mapExpanded: false,
   selectedDayNumber: null,
   highlightedLocationId: null,
   inspectedLocationId: null,
@@ -74,7 +80,10 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   _pollTimer: null,
 
   setTrip: (trip) => set({ trip, tripId: trip.id }),
-  setActiveView: (v) => set({ activeView: v, inspectedLocationId: null }),
+  setActiveSurface: (v) =>
+    set({ activeSurface: v, inspectedLocationId: null, nearbySearchLocation: null, mapExpanded: false }),
+  setMapShown: (v) => set({ mapShown: v }),
+  setMapExpanded: (v) => set({ mapExpanded: v }),
   setSelectedDayNumber: (n) => set({ selectedDayNumber: n, inspectedLocationId: null }),
   setHighlightedLocationId: (id) => set({ highlightedLocationId: id }),
   setInspectedLocationId: (id) => set({ inspectedLocationId: id }),
@@ -220,7 +229,9 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   },
 
   handleMapLocationClick: (locationId) => {
-    set({ highlightedLocationId: locationId, activeView: "itinerary" });
+    // Map dots live in the itinerary companion; clicking one surfaces the stop in the
+    // adjacent list. Drop out of full-bleed so the highlighted row is in view.
+    set({ highlightedLocationId: locationId, activeSurface: "itinerary", mapExpanded: false });
     setTimeout(() => set({ highlightedLocationId: null }), 2000);
   },
 }));

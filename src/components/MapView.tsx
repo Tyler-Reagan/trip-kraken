@@ -50,7 +50,7 @@ function computeInitialViewState(trip: { locations: { excluded: boolean; lat: nu
   };
 }
 
-export default function MapView() {
+export default function MapView({ heightClass = "h-[520px]" }: { heightClass?: string }) {
   const trip = useTripStore((s) => s.trip);
   const selectedDayNumber = useTripStore((s) => s.selectedDayNumber);
   const highlightedLocationId = useTripStore((s) => s.highlightedLocationId);
@@ -243,7 +243,7 @@ export default function MapView() {
   if (!trip) return null;
 
   return (
-    <div ref={containerRef} className="relative w-full h-[520px] rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800">
+    <div ref={containerRef} className={`relative w-full ${heightClass} rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800`}>
       {mapReady && (
         <Map
           ref={mapRef}
