@@ -13,10 +13,10 @@ export default async function HomePage() {
     <div className="space-y-10">
       {/* Hero section */}
       <section className="text-center space-y-4 pt-4">
-        <h1 className="text-4xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
+        <h1 className="text-4xl font-bold tracking-tight text-ink">
           Turn a list into a trip
         </h1>
-        <p className="text-gray-500 dark:text-gray-400 max-w-xl mx-auto">
+        <p className="text-sub max-w-xl mx-auto">
           Start a blank trip and add places by searching Google, or import a Google
           My Maps you already have. Trip Kraken clusters them into optimized days.
         </p>
@@ -30,7 +30,7 @@ export default async function HomePage() {
 
       {trips.length > 0 && (
         <section className="space-y-4">
-          <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300">Your trips</h2>
+          <h2 className="text-lg font-semibold text-ink">Your trips</h2>
           <TripList trips={trips} />
         </section>
       )}

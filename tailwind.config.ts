@@ -10,6 +10,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Accent — still an open decision (#2); placeholder is the existing brand green.
         brand: {
           50: "#f0fdf4",
           100: "#dcfce7",
@@ -22,6 +23,22 @@ const config: Config = {
           800: "#166534",
           900: "#14532d",
           950: "#052e16",
+        },
+        // Semantic surface/text/hairline tokens — resolve to CSS vars in globals.css and
+        // flip automatically between light (:root) and dark (.dark).
+        canvas: "var(--canvas)",
+        surface: {
+          DEFAULT: "var(--surface)",
+          2: "var(--surface-2)",
+          3: "var(--surface-3)",
+        },
+        ink: "var(--ink)",
+        sub: "var(--sub)",
+        faint: "var(--faint)",
+        ghost: "var(--ghost)",
+        line: {
+          DEFAULT: "var(--border)",
+          strong: "var(--border-strong)",
         },
       },
     },

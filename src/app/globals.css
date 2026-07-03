@@ -3,14 +3,51 @@
 @tailwind utilities;
 
 @layer base {
+  /* Semantic design tokens — the single source for surfaces, text, and hairlines.
+     :root = light; .dark overrides. Neutral by design: the base never carries a hue for
+     thematic effect; flair lives on accents/branding. The accent itself is intentionally
+     still an open decision and stays in tailwind.config (the `brand` scale), not here. */
+  :root {
+    --canvas: #f4f4f5;
+    --surface: #ffffff;
+    --surface-2: #fafafa;
+    --surface-3: #f4f4f5;
+    --border: rgba(0, 0, 0, 0.08);
+    --border-strong: rgba(0, 0, 0, 0.14);
+    --ink: #18181b;
+    --sub: #52525b;
+    --faint: #6b6b70; /* AA: ~4.8:1 on canvas, 5.3:1 on white — meta text is informational */
+    --ghost: #c9c9cf; /* decorative only (drag handle, disabled) */
+    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 14px rgba(0, 0, 0, 0.05);
+  }
+
+  .dark {
+    --canvas: #0f0f0f;
+    --surface: #181818;
+    --surface-2: #212121;
+    --surface-3: #292929;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.14);
+    --ink: #f4f4f5;
+    --sub: #a8a8ad;
+    --faint: #8a8a90; /* AA: ~4.6:1 on surface-2, 5:1 on surface — meta text is informational */
+    --ghost: #4b4b52; /* decorative only (drag handle, disabled) */
+    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
   body {
-    @apply bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 antialiased;
+    @apply antialiased;
+    background: var(--canvas);
+    color: var(--ink);
   }
 }
 
 @layer utilities {
   .card {
-    @apply bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm;
+    @apply rounded-xl;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--card-shadow);
   }
 
   .btn-primary {
@@ -19,33 +56,39 @@
            text-white font-medium rounded-lg px-4 py-2
            transition-colors disabled:opacity-50 disabled:cursor-not-allowed
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
-           focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-950;
+           focus-visible:ring-offset-2;
+    --tw-ring-offset-color: var(--canvas);
   }
 
   .btn-secondary {
-    @apply bg-white hover:bg-gray-50 active:bg-gray-100
-           dark:bg-gray-800 dark:hover:bg-gray-700 dark:active:bg-gray-600
-           text-gray-700 dark:text-gray-200 font-medium rounded-lg px-4 py-2
-           border border-gray-300 dark:border-gray-700 transition-colors
+    @apply font-medium rounded-lg px-4 py-2 transition-colors
            disabled:opacity-50 disabled:cursor-not-allowed
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
-           focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-950;
+           focus-visible:ring-offset-2;
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--border-strong);
+    --tw-ring-offset-color: var(--canvas);
   }
+  .btn-secondary:hover:not(:disabled) { background: var(--surface-3); }
+  .btn-secondary:active:not(:disabled) { background: var(--surface-2); }
 
   .btn-ghost {
-    @apply hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700
-           text-gray-600 dark:text-gray-400 rounded-lg px-3 py-1.5
-           transition-colors text-sm
+    @apply rounded-lg px-3 py-1.5 transition-colors text-sm
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
-           focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-950;
+           focus-visible:ring-offset-2;
+    color: var(--sub);
+    --tw-ring-offset-color: var(--canvas);
   }
+  .btn-ghost:hover { background: var(--surface-2); }
+  .btn-ghost:active { background: var(--surface-3); }
 
   .input {
-    @apply w-full rounded-lg border border-gray-300 dark:border-gray-700
-           bg-white dark:bg-gray-800
-           text-gray-900 dark:text-gray-100
-           px-3 py-2 text-sm
-           placeholder:text-gray-400 dark:placeholder:text-gray-500
+    @apply w-full rounded-lg px-3 py-2 text-sm
            focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent;
+    background: var(--surface-2);
+    color: var(--ink);
+    border: 1px solid var(--border-strong);
   }
+  .input::placeholder { color: var(--faint); }
 }

@@ -43,30 +43,30 @@ export default function OptimizeModal() {
         className="card w-full max-w-md p-6 space-y-5 shadow-xl"
       >
         <div className="flex items-center justify-between">
-          <h2 id="optimize-modal-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">Plan your itinerary</h2>
+          <h2 id="optimize-modal-title" className="text-lg font-semibold text-ink">Plan your itinerary</h2>
           <button
             onClick={() => setShowOptimize(false)}
             disabled={loading}
-            className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-xl leading-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="text-faint hover:text-sub text-xl leading-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             aria-label="Close"
           >
             ×
           </button>
         </div>
 
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <p className="text-sm text-sub">
           Trip Kraken will cluster your{" "}
-          <strong className="text-gray-700 dark:text-gray-200">{includedCount} locations</strong> into optimized days using
+          <strong className="text-ink">{includedCount} locations</strong> into optimized days using
           geographic proximity.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label className="text-sm font-medium text-ink">
                 Day budget
               </label>
-              <span className="text-sm text-gray-500 dark:text-gray-400">{dayBudgetHours}h</span>
+              <span className="text-sm text-sub">{dayBudgetHours}h</span>
             </div>
             <input
               type="range"
@@ -77,7 +77,7 @@ export default function OptimizeModal() {
               onChange={(e) => setDayBudgetHours(Number(e.target.value))}
               className="w-full accent-brand-600"
             />
-            <p className="text-xs text-gray-400 dark:text-gray-500">
+            <p className="text-xs text-faint">
               Balances days so no single day exceeds this visit time. Only applies when locations have durations set.
             </p>
           </div>
@@ -88,13 +88,13 @@ export default function OptimizeModal() {
                 type="checkbox"
                 checked={balanceCategories}
                 onChange={(e) => setBalanceCategories(e.target.checked)}
-                className="mt-0.5 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 shrink-0"
+                className="mt-0.5 rounded border-line-strong text-brand-600 focus:ring-brand-500 shrink-0"
               />
               <div>
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <span className="text-sm font-medium text-ink">
                   Balance categories across days
                 </span>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                <p className="text-xs text-faint mt-0.5">
                   Spreads location types (restaurants, museums, etc.) evenly so no single day concentrates one category.
                 </p>
               </div>

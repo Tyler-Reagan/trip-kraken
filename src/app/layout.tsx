@@ -17,7 +17,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={inter.className}>
-        <nav className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
+        <nav className="border-b border-line bg-canvas">
           <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
             <a href="/" className="flex items-center gap-2 font-bold text-lg text-brand-600 dark:text-brand-400">
               <span className="text-2xl">🐙</span>

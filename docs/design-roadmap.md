@@ -33,7 +33,7 @@ through the schedule so the timeline and map read as one system.
   source into header + chip + badge + map). Phase c must sweep back through this.
 - **Merged 2026-06-30 (#75).**
 
-### Phase a — Itinerary-first structure  ·  status: implemented (branch `feat/itinerary-first-shell`; visual confirmation + review pending)
+### Phase a — Itinerary-first structure  ·  status: merged 2026-07-01 (#76)
 Kill the three-equal-peer-tab model. Make the itinerary the surface the user lives in, with
 the map as a bound companion and the Manifest as a staging step.
 - Presentation (persistent split, expandable full-screen map, minimized rail, etc.) is an
@@ -42,12 +42,24 @@ the map as a bound companion and the Manifest as a staging step.
 - Selecting a stop in the itinerary should reflect live on the map (and vice versa).
 - Entry point: `$impeccable shape` (structural/IA change — plan before building).
 
-### Phase c — Visual identity re-establishment  ·  status: not started
+### Phase c — Visual identity re-establishment  ·  status: in progress (theme decided; token foundation landed)
 Escape the anonymous-dark-Tailwind look; design the language toward the Things 3 / Felt /
 Linear feel per PRODUCT.md.
+- **Theme — DECIDED.** Neutral, readable dark + light modes; dark is the baseline, both
+  wanted long-term. Base surfaces stay neutral (no thematic tinting); flair is reserved for
+  accents/branding/SVG. Token system landed in `globals.css` (CSS vars: `:root` = light,
+  `.dark` = dark) + `tailwind.config.ts` (`canvas`/`surface`/`ink`/`sub`/`faint`/`ghost`/
+  `line` utilities). See [[feedback_readability_first_theming]].
+  - **Component sweep — DONE.** All ~384 hardcoded `dark:gray-*` utilities across 15 files
+    migrated to semantic tokens (`bg-surface`, `text-ink`, `text-sub`, `border-line`, ...) via
+    the `colorize` pass. `--faint` tuned to clear AA for informational meta text (gray-400 on
+    white was ~2.6:1). Only intentional map furniture keeps raw grays (`MapView` marker
+    `BASE_COLOR` + the dark map tooltip) — deferred to a later map-layer theming pass. Retired
+    the roadmap minor "Add label... placeholder near-invisible" (moved off `ghost`).
+- **Accent — STILL OPEN (decision #2).** Placeholder remains the existing `brand` green.
 - Real type scale + weight strategy so size/space carry hierarchy (not gray value alone).
 - One coherent icon set replacing the emoji/SVG mix (🐙🏨🚆🗺️ + SearchIcon/TrashIcon).
-- Deliberately committed accent and theme decision; retune the day-hue palette as a system.
+- Retune the day-hue palette as a system.
 - Drop the `uppercase tracking-wide` section eyebrows in the Manifest.
 - Entry points: `$impeccable shape` (language direction) → `$impeccable typeset` → `$impeccable colorize`.
 - **Must revisit Phases b and a** with the re-established tokens.
@@ -98,4 +110,20 @@ honoring `prefers-reduced-motion`. Not this pass; no new work should foreclose i
   time). tsc 0, tests green, fresh-server SSR verified (planned trip lands on Itinerary with day
   colors; empty trip lands on Places; no Map peer tab). Interactive checks (toggles, stop→companion
   swap, drag) pending a browser. Map remounts when toggling companion content — a known perf
-  follow-up for polish/Phase c (keep the map mounted under overlays).
+  follow-up for polish/Phase c (keep the map mounted under overlays). **Merged as #76.**
+- 2026-07-02 — Phase c theme decision. Prototyped designed-dark vs light on a throwaway
+  `/theme-prototype` route; user rejected thematic surface tinting and chose **neutral, readable
+  dark + light** (dark baseline, both wanted), flair reserved for accents/branding. Folded the
+  winning tokens into `globals.css` (CSS-var token sets for `:root`/`.dark`) + `tailwind.config.ts`
+  (semantic color utilities); rewired the shared primitives (`.card`, `.btn-*`, `.input`, body,
+  nav) to consume them. Accent left open (#2); brand green is the placeholder. Prototype route
+  deleted. Component-tree sweep off `dark:gray-*` pairs still pending.
+- 2026-07-03 — Phase c `colorize` sweep (via `$impeccable colorize`). Migrated all ~384
+  hardcoded `dark:gray-*` utilities across 15 files (`src/components/*` + `src/app/*`) onto the
+  semantic tokens; meta-chip rewritten as a clean ink/canvas inversion (`bg-ink text-canvas`).
+  Tuned `--faint` in both themes to clear WCAG AA for informational meta text (dark ~4.6:1,
+  light ~4.8:1); the "Add label..." placeholder moved off decorative `ghost` onto readable
+  `faint`. Remaining raw grays are intentional map furniture only (`MapView` `BASE_COLOR` +
+  dark tooltip). Verified: tsc 0, Tailwind compiles all token utilities, impeccable detector
+  clean (`[]`), a real trip page (`/trips/:id`) renders 200 with tokens and zero leftover gray
+  in output. Browser eyeball of both themes still worth a human pass. Accent still open (#2).

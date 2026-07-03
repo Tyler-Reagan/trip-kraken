@@ -46,15 +46,15 @@ export default function ImportForm() {
   return (
     <div className="card p-6 space-y-5 h-full">
       <div className="space-y-1">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Import from Google My Maps</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <h2 className="text-lg font-semibold text-ink">Import from Google My Maps</h2>
+        <p className="text-sm text-sub">
           Already have a published map? Bring its places in with exact coordinates.
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
-          <label htmlFor="url" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label htmlFor="url" className="text-sm font-medium text-ink">
             Google My Maps link
           </label>
           <input
@@ -69,9 +69,9 @@ export default function ImportForm() {
         </div>
 
         <div className="space-y-1.5">
-          <label htmlFor="name" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label htmlFor="name" className="text-sm font-medium text-ink">
             Trip name{" "}
-            <span className="text-gray-400 dark:text-gray-500 font-normal">(optional)</span>
+            <span className="text-faint font-normal">(optional)</span>
           </label>
           <input
             id="name"
@@ -85,20 +85,20 @@ export default function ImportForm() {
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label htmlFor="import-start" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            <label htmlFor="import-start" className="text-sm font-medium text-ink">
               Start date
             </label>
             <input id="import-start" type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className="input" />
           </div>
           <div className="space-y-1.5">
-            <label htmlFor="import-end" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            <label htmlFor="import-end" className="text-sm font-medium text-ink">
               End date
             </label>
             <input id="import-end" type="date" required value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} className="input" />
           </div>
         </div>
 
-        <p className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2 leading-relaxed">
+        <p className="text-xs text-sub bg-surface-2 rounded-lg px-3 py-2 leading-relaxed">
           Create a map at{" "}
           <a
             href="https://mymaps.google.com"
@@ -109,7 +109,7 @@ export default function ImportForm() {
             mymaps.google.com
           </a>
           , add your places, then set it to{" "}
-          <strong className="text-gray-700 dark:text-gray-200">Anyone with the link can view</strong>{" "}
+          <strong className="text-ink">Anyone with the link can view</strong>{" "}
           and paste the URL here.
           Coordinates are embedded in the map — no extra processing needed.
         </p>
