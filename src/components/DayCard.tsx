@@ -78,9 +78,9 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
               style={{ backgroundColor: dayColorCss(day.dayNumber) }}
               aria-hidden
             />
-            <span className="font-semibold text-ink">Day {day.dayNumber}</span>
+            <span className="text-base font-semibold text-ink">Day {day.dayNumber}</span>
           </span>
-          <span className="text-xs text-faint shrink-0">{dateStr}</span>
+          <span className="text-meta text-faint shrink-0">{dateStr}</span>
           {editingLabel ? (
             <input
               autoFocus
@@ -104,9 +104,9 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {anyHasDuration && <span className="text-xs text-faint">{formatDuration(totalMinutes)}</span>}
+          {anyHasDuration && <span className="text-numeral text-faint">{formatDuration(totalMinutes)}</span>}
           {isLightDay && <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Light day</span>}
-          <span className="text-xs text-faint">
+          <span className="text-meta text-faint">
             {day.stops.length} stop{day.stops.length !== 1 ? "s" : ""}
           </span>
           {nearbyAnchorLoc && (
@@ -167,8 +167,8 @@ function AnchorRow({ loc, role, date }: { loc: Lodging; role: "start" | "end" | 
         {role === "checkin" ? "Check-in" : "Stay"}
       </span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-ink truncate">{loc.name}</p>
-        <p className="text-xs mt-0.5 text-amber-600/80 dark:text-amber-400/80">{subtext}</p>
+        <p className="text-body truncate text-ink">{loc.name}</p>
+        <p className="text-meta mt-0.5 text-amber-600/80 dark:text-amber-400/80">{subtext}</p>
       </div>
       <button
         onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, date); }}
@@ -256,8 +256,8 @@ function StopRow({ stop, index, dayNumber, isDragging, dayOfWeek, date, onDragSt
           <GripVertical className="w-4 h-4" />
         </span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-ink truncate">{loc.name}</p>
-          <p className="text-xs text-faint mt-0.5">{hoursText} · {durText}</p>
+          <p className="text-body truncate text-ink">{loc.name}</p>
+          <p className="text-numeral text-faint mt-0.5">{hoursText} · {durText}</p>
         </div>
         <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           <button

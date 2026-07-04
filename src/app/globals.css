@@ -91,4 +91,35 @@
     border: 1px solid var(--border-strong);
   }
   .input::placeholder { color: var(--faint); }
+
+  /* Type scale (design-roadmap.md Phase c, typography-handoff.md) — named roles, each a
+     fixed size + weight pairing, decided live in /typography-prototype against real
+     component shapes. Size/weight carry hierarchy per PRODUCT.md; color is layered on
+     separately (text-ink/text-sub/text-faint) so these compose with the semantic tokens
+     above rather than duplicating them. */
+  .text-hero {
+    @apply text-[1.9375rem] leading-tight tracking-tight font-bold;
+  }
+  .text-page-title {
+    @apply text-[1.5625rem] tracking-tight font-bold;
+  }
+  .text-section {
+    @apply text-[1.25rem] font-bold;
+  }
+  .text-body {
+    @apply text-base font-medium;
+  }
+  .text-meta {
+    @apply text-[0.8125rem] font-semibold;
+  }
+  .text-numeral {
+    @apply font-mono text-sm font-semibold tabular-nums;
+  }
+
+  /* Tap-target sizing for glyph-only buttons (the × close button), split out from
+     whichever heading size text-section settles on — the two were sharing text-lg/text-xl
+     by accident (typography-handoff.md). */
+  .tap-target {
+    @apply w-8 h-8 flex items-center justify-center rounded-md;
+  }
 }

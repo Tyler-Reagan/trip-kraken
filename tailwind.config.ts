@@ -9,6 +9,10 @@ const config: Config = {
   darkMode: "class",
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["var(--font-sans)", "sans-serif"],
+        mono: ["var(--font-mono)", "monospace"],
+      },
       colors: {
         // Accent — decided (design-roadmap.md Phase c, decision #2). One ink/teal family
         // used for CTAs, selection, focus rings, and the kraken mark. 400/500 lean brighter

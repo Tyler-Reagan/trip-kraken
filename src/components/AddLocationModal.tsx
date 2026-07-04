@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Star } from "lucide-react";
+import { Star, X } from "lucide-react";
 import type { NearbyPlace } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 
@@ -107,13 +107,13 @@ export default function AddLocationModal() {
         className="card w-full max-w-md flex flex-col max-h-[80vh] shadow-xl"
       >
         <div className="flex items-center justify-between p-6 pb-4">
-          <h2 id="add-location-modal-title" className="text-lg font-semibold text-ink">Add a place</h2>
+          <h2 id="add-location-modal-title" className="text-section text-ink">Add a place</h2>
           <button
             onClick={() => setShowAddLocation(false)}
-            className="text-faint hover:text-sub text-xl leading-none transition-colors"
+            className="tap-target text-faint hover:text-sub transition-colors"
             aria-label="Close"
           >
-            ×
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -167,14 +167,14 @@ export default function AddLocationModal() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className="text-sm font-medium text-ink truncate">{place.name}</p>
+                          <p className="text-body truncate text-ink">{place.name}</p>
                           {place.priceLevel !== null && (
-                            <span className="text-xs text-sub shrink-0">
+                            <span className="text-meta text-sub shrink-0">
                               {PRICE_LABELS[place.priceLevel]}
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-faint truncate">{place.address}</p>
+                        <p className="text-meta text-faint truncate">{place.address}</p>
                       </div>
                       <button
                         onClick={() => handleAdd(place)}
@@ -188,9 +188,9 @@ export default function AddLocationModal() {
                         {isAdding ? "…" : isAdded ? "Added" : "Add"}
                       </button>
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-sub flex-wrap">
+                    <div className="flex items-center gap-2 text-meta text-sub flex-wrap">
                       {place.rating !== null && (
-                        <span className="inline-flex items-center gap-0.5">
+                        <span className="inline-flex items-center gap-0.5 text-numeral text-sub">
                           <Star className="w-3 h-3 fill-current" />
                           {place.rating}{place.reviewCount !== null ? ` (${place.reviewCount.toLocaleString()})` : ""}
                         </span>

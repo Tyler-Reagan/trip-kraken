@@ -105,10 +105,12 @@ export default function TripClient({ trip: initial }: Props) {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-ink">{trip.name}</h1>
-          <p className="text-sm text-sub mt-0.5">
-            {trip.locations.length} location{trip.locations.length !== 1 ? "s" : ""}
-            {` · ${fmt(trip.startDate)} → ${fmt(trip.endDate)} · ${numDays} day${numDays !== 1 ? "s" : ""}`}
+          <h1 className="text-page-title text-ink">{trip.name}</h1>
+          <p className="text-body text-sub mt-0.5">
+            <span className="text-numeral">{trip.locations.length}</span> location
+            {trip.locations.length !== 1 ? "s" : ""} ·{" "}
+            {fmt(trip.startDate)} → {fmt(trip.endDate)} ·{" "}
+            <span className="text-numeral">{numDays}</span> day{numDays !== 1 ? "s" : ""}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">

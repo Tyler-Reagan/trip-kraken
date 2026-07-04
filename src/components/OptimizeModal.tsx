@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { X } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 
 export default function OptimizeModal() {
@@ -43,18 +44,18 @@ export default function OptimizeModal() {
         className="card w-full max-w-md p-6 space-y-5 shadow-xl"
       >
         <div className="flex items-center justify-between">
-          <h2 id="optimize-modal-title" className="text-lg font-semibold text-ink">Plan your itinerary</h2>
+          <h2 id="optimize-modal-title" className="text-section text-ink">Plan your itinerary</h2>
           <button
             onClick={() => setShowOptimize(false)}
             disabled={loading}
-            className="text-faint hover:text-sub text-xl leading-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="tap-target text-faint hover:text-sub transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             aria-label="Close"
           >
-            ×
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        <p className="text-sm text-sub">
+        <p className="text-body text-sub">
           Trip Kraken will cluster your{" "}
           <strong className="text-ink">{includedCount} locations</strong> into optimized days using
           geographic proximity.
