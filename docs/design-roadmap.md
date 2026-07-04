@@ -42,7 +42,7 @@ the map as a bound companion and the Manifest as a staging step.
 - Selecting a stop in the itinerary should reflect live on the map (and vice versa).
 - Entry point: `$impeccable shape` (structural/IA change — plan before building).
 
-### Phase c — Visual identity re-establishment  ·  status: in progress (theme, accent, danger, day-hue palette, icon set, and type scale decided/landed; only the kraken mark remains, handed off to its own session)
+### Phase c — Visual identity re-establishment  ·  status: complete (theme, accent, danger, day-hue palette, icon set, type scale, and the kraken mark all decided/landed)
 Escape the anonymous-dark-Tailwind look; design the language toward the Things 3 / Felt /
 Linear feel per PRODUCT.md.
 - **Theme — DECIDED.** Neutral, readable dark + light modes; dark is the baseline, both
@@ -96,10 +96,14 @@ Linear feel per PRODUCT.md.
   `DayCard`, `OptimizeModal`, `AddLocationModal`. Dropped the Manifest's
   `uppercase tracking-wide` section eyebrows onto `.text-meta` — the one other outstanding
   item this bullet used to track.
-- The kraken mark/logo itself is being prototyped in a separate session — see handoff notes
-  (kept alongside this file or in the PR description). Once it exists it slots into the
-  now-decided accent token; it isn't gating the rest of Phase c.
-- Entry points for what's left: the logo/mark session only.
+- **Kraken mark — DECIDED.** A hand-vector "quiet glyph" distillation (a single tentacle
+  curl) was tried first and rejected — it read as generic/off-brand at favicon size, not
+  recognizably the kraken. Landed instead on **one illustrated mascot asset used everywhere**
+  (header, `src/app/icon.png` favicon, `src/app/apple-icon.png`, `public/favicon.ico`),
+  recolored to the locked `brand-500` teal, just scaled per context — no separate flat glyph.
+  Supersedes the loud/quiet tiered system originally planned; PRODUCT.md → Brand Personality
+  updated to match. `docs/logo-handoff.md` and `docs/typography-handoff.md` (both now-resolved
+  handoff scaffolding) deleted.
 - **Must revisit Phases b and a** with the re-established tokens.
 
 ## Deferred backlog (tracked, not this pass)
@@ -215,3 +219,11 @@ honoring `prefers-reduced-motion`. Not this pass; no new work should foreclose i
   landed — is now met). tsc 0; verified live against a real trip
   (header/DayCard/Optimize-modal) in the browser. Only the kraken mark remains open in
   Phase c.
+- 2026-07-04 — Kraken mark decided and landed, closing out Phase c. A hand-authored SVG
+  "quiet glyph" (single tentacle curl, flat two-color) was built and previewed at favicon
+  sizes — rejected as generic, not recognizably the kraken at 16/32px. Replaced the whole
+  loud/quiet tiered plan with **one illustrated mascot PNG used everywhere**: recolored to
+  `brand-500` teal, wired into the header (`layout.tsx`, replacing the 🐙 placeholder) and
+  used to generate `src/app/icon.png`, `src/app/apple-icon.png`, and `public/favicon.ico`.
+  PRODUCT.md → Brand Personality updated to match; `docs/logo-handoff.md` and
+  `docs/typography-handoff.md` deleted as resolved handoff scaffolding. **Phase c complete.**
