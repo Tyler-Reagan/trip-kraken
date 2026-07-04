@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Star } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 import { isActivity, type Location } from "@/types";
 
@@ -42,8 +43,8 @@ function HoursDisplay({ loc }: { loc: Location }) {
       <div className="space-y-0.5">
         {groups.map(({ label, hours }) => (
           <div key={label} className="flex justify-between text-xs gap-3">
-            <span className="text-gray-500 dark:text-gray-400 shrink-0">{label}</span>
-            <span className="text-gray-600 dark:text-gray-300 text-right">{hours}</span>
+            <span className="text-sub shrink-0">{label}</span>
+            <span className="text-sub text-right">{hours}</span>
           </div>
         ))}
       </div>
@@ -89,11 +90,11 @@ function DurationEditor({ loc }: { loc: Location }) {
   }
 
   const inputCls =
-    "w-7 text-sm text-center bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-brand-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
+    "w-7 text-sm text-center bg-surface-2 border border-line border-line-strong rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-brand-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
 
   return (
     <div className="flex items-center gap-1">
-      <span className="text-xs text-gray-500 dark:text-gray-400 w-20">Visit duration</span>
+      <span className="text-xs text-sub w-20">Visit duration</span>
       <input
         type="number" min={0} max={23} value={hours}
         onChange={(e) => setHours(Math.min(23, Math.max(0, parseInt(e.target.value) || 0)))}
@@ -101,7 +102,7 @@ function DurationEditor({ loc }: { loc: Location }) {
         className={inputCls}
         aria-label="Hours"
       />
-      <span className="text-xs text-gray-400">h</span>
+      <span className="text-xs text-faint">h</span>
       <input
         type="number" min={0} max={59} value={mins}
         onChange={(e) => setMins(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
@@ -109,7 +110,7 @@ function DurationEditor({ loc }: { loc: Location }) {
         className={inputCls}
         aria-label="Minutes"
       />
-      <span className="text-xs text-gray-400">m</span>
+      <span className="text-xs text-faint">m</span>
     </div>
   );
 }
@@ -128,12 +129,12 @@ export default function LocationInspector() {
     <aside className="w-full card p-4 space-y-4 max-h-[calc(100vh-10rem)] overflow-y-auto">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
-        <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200 leading-snug">
+        <h2 className="text-sm font-semibold text-ink leading-snug">
           {loc.name}
         </h2>
         <button
           onClick={() => setInspectedLocationId(null)}
-          className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-lg leading-none shrink-0 transition-colors"
+          className="text-faint hover:text-sub text-lg leading-none shrink-0 transition-colors"
           aria-label="Close inspector"
         >
           ×
@@ -145,12 +146,12 @@ export default function LocationInspector() {
         <div className="flex items-center gap-1.5 text-sm">
           {loc.rating !== null && (
             <>
-              <span className="text-amber-500">★</span>
-              <span className="font-medium text-gray-800 dark:text-gray-200">{loc.rating.toFixed(1)}</span>
+              <Star className="w-4 h-4 text-amber-500 fill-current" />
+              <span className="font-medium text-ink">{loc.rating.toFixed(1)}</span>
             </>
           )}
           {loc.reviewCount !== null && (
-            <span className="text-gray-400 dark:text-gray-500 text-xs">
+            <span className="text-faint text-xs">
               ({loc.reviewCount.toLocaleString()} reviews)
             </span>
           )}
@@ -159,12 +160,12 @@ export default function LocationInspector() {
 
       {/* Address */}
       {loc.address && (
-        <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{loc.address}</p>
+        <p className="text-xs text-sub leading-relaxed">{loc.address}</p>
       )}
 
       {/* Hours */}
-      <div className="text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
-        <p className="font-medium text-gray-600 dark:text-gray-300 text-xs">Hours</p>
+      <div className="text-xs text-sub space-y-0.5">
+        <p className="font-medium text-sub text-xs">Hours</p>
         <HoursDisplay loc={loc} />
       </div>
 
@@ -177,7 +178,7 @@ export default function LocationInspector() {
           {loc.categories.map((cat) => (
             <span
               key={cat}
-              className="inline-block text-[10px] leading-tight px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
+              className="inline-block text-[10px] leading-tight px-1.5 py-0.5 rounded bg-surface-2 text-sub"
             >
               {cat.replace(/_/g, " ")}
             </span>
@@ -187,7 +188,7 @@ export default function LocationInspector() {
 
       {/* Enrichment status indicators */}
       {loc.enrichmentStatus === "pending" && (
-        <p className="text-xs text-gray-400 dark:text-gray-500 animate-pulse">Fetching details…</p>
+        <p className="text-xs text-faint animate-pulse">Fetching details…</p>
       )}
       {loc.enrichmentStatus === "failed" && (
         <p className="text-xs text-amber-500 dark:text-amber-400">Details unavailable</p>

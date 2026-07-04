@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { Star, X } from "lucide-react";
 import type { NearbyPlace } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 
@@ -106,13 +107,13 @@ export default function AddLocationModal() {
         className="card w-full max-w-md flex flex-col max-h-[80vh] shadow-xl"
       >
         <div className="flex items-center justify-between p-6 pb-4">
-          <h2 id="add-location-modal-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">Add a place</h2>
+          <h2 id="add-location-modal-title" className="text-section text-ink">Add a place</h2>
           <button
             onClick={() => setShowAddLocation(false)}
-            className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-xl leading-none transition-colors"
+            className="tap-target text-faint hover:text-sub transition-colors"
             aria-label="Close"
           >
-            ×
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -125,38 +126,38 @@ export default function AddLocationModal() {
             onChange={(e) => setQuery(e.target.value)}
             className="input"
           />
-          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          <p className="mt-2 text-xs text-sub">
             Added places appear in the sidebar. Re-optimize to include them in the schedule.
           </p>
         </div>
 
         {error && (
-          <p className="mx-6 mt-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
+          <p className="mx-6 mt-3 text-sm text-danger-600 dark:text-danger-400 bg-danger-50 dark:bg-danger-950 border border-danger-200 dark:border-danger-800 rounded-lg px-3 py-2">
             {error}
           </p>
         )}
 
         <div className="flex-1 overflow-y-auto mt-3">
           {loading && (
-            <div className="flex items-center justify-center h-24 text-sm text-gray-400 dark:text-gray-500">
+            <div className="flex items-center justify-center h-24 text-sm text-faint">
               Searching…
             </div>
           )}
 
           {!loading && !error && results !== null && results.length === 0 && (
-            <div className="flex items-center justify-center h-24 text-sm text-gray-400 dark:text-gray-500">
+            <div className="flex items-center justify-center h-24 text-sm text-faint">
               No matches. Try a different search.
             </div>
           )}
 
           {!loading && !error && query.trim() === "" && (
-            <div className="flex items-center justify-center h-24 text-sm text-gray-400 dark:text-gray-500 px-6 text-center">
+            <div className="flex items-center justify-center h-24 text-sm text-faint px-6 text-center">
               Type a place name, e.g. “Senso-ji Tokyo”.
             </div>
           )}
 
           {!loading && results && results.length > 0 && (
-            <ul className="divide-y divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800">
+            <ul className="divide-y divide-line border-t border-line">
               {results.map((place) => {
                 const isAdded = addedIds.has(place.placeId);
                 const isAdding = addingId === place.placeId;
@@ -166,33 +167,36 @@ export default function AddLocationModal() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{place.name}</p>
+                          <p className="text-body truncate text-ink">{place.name}</p>
                           {place.priceLevel !== null && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                            <span className="text-meta text-sub shrink-0">
                               {PRICE_LABELS[place.priceLevel]}
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{place.address}</p>
+                        <p className="text-meta text-faint truncate">{place.address}</p>
                       </div>
                       <button
                         onClick={() => handleAdd(place)}
                         disabled={isAdded || isAdding}
                         className={`text-xs px-3 py-1.5 rounded-lg font-medium shrink-0 transition-colors
                           ${isAdded
-                            ? "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-default"
+                            ? "bg-surface-2 text-faint cursor-default"
                             : "bg-brand-600 dark:bg-brand-500 text-white hover:bg-brand-700 dark:hover:bg-brand-400 disabled:opacity-50"
                           }`}
                       >
                         {isAdding ? "…" : isAdded ? "Added" : "Add"}
                       </button>
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
+                    <div className="flex items-center gap-2 text-meta text-sub flex-wrap">
                       {place.rating !== null && (
-                        <span>★ {place.rating}{place.reviewCount !== null ? ` (${place.reviewCount.toLocaleString()})` : ""}</span>
+                        <span className="inline-flex items-center gap-0.5 text-numeral text-sub">
+                          <Star className="w-3 h-3 fill-current" />
+                          {place.rating}{place.reviewCount !== null ? ` (${place.reviewCount.toLocaleString()})` : ""}
+                        </span>
                       )}
                       {displayTypes.map((t) => (
-                        <span key={t} className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-1.5 py-0.5 rounded capitalize">
+                        <span key={t} className="bg-surface-2 text-sub px-1.5 py-0.5 rounded capitalize">
                           {t}
                         </span>
                       ))}
@@ -204,7 +208,7 @@ export default function AddLocationModal() {
           )}
         </div>
 
-        <div className="p-4 border-t border-gray-100 dark:border-gray-800">
+        <div className="p-4 border-t border-line">
           <button onClick={() => setShowAddLocation(false)} className="btn-secondary w-full">
             Done
           </button>

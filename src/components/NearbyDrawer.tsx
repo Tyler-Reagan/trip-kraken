@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { Star, X } from "lucide-react";
 import { deriveDays, type NearbyPlace } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 
@@ -207,12 +208,12 @@ export default function NearbyDrawer() {
     <div
       role="complementary"
       aria-label="Nearby places"
-      className="w-full flex flex-col max-h-[calc(100vh-5rem)] rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm overflow-hidden"
+      className="w-full flex flex-col max-h-[calc(100vh-5rem)] rounded-xl border border-line bg-surface shadow-sm overflow-hidden"
     >
       {/* Header */}
-      <div className="flex items-start justify-between gap-2 p-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
+      <div className="flex items-start justify-between gap-2 p-4 border-b border-line shrink-0">
         <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Nearby places</h2>
+          <h2 className="text-sm font-semibold text-ink">Nearby places</h2>
           {dayStops.length > 1 ? (
             <select
               value={searchLocation.id}
@@ -220,32 +221,32 @@ export default function NearbyDrawer() {
                 const picked = dayStops.find((s) => s.location.id === e.target.value);
                 if (picked) setSearchLocation(picked.location, anchorDate);
               }}
-              className="w-full text-xs text-gray-500 dark:text-gray-400 bg-transparent border-none outline-none cursor-pointer truncate mt-0.5 pr-1"
+              className="w-full text-xs text-sub bg-transparent border-none outline-none cursor-pointer truncate mt-0.5 pr-1"
             >
               {dayStops.map((s) => (
-                <option key={s.location.id} value={s.location.id} className="dark:bg-gray-900">
+                <option key={s.location.id} value={s.location.id} className="bg-surface">
                   {s.location.name}
                 </option>
               ))}
             </select>
           ) : (
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{searchLocation.name}</p>
+            <p className="text-xs text-sub truncate">{searchLocation.name}</p>
           )}
         </div>
         <button
           onClick={() => setSearchLocation(null)}
-          className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors shrink-0 mt-0.5"
+          className="text-faint hover:text-sub transition-colors shrink-0 mt-0.5"
           aria-label="Close"
         >
-          ✕
+          <X className="w-4 h-4" />
         </button>
       </div>
 
       {/* Controls */}
-      <div className="p-4 border-b border-gray-100 dark:border-gray-800 space-y-3 shrink-0">
+      <div className="p-4 border-b border-line space-y-3 shrink-0">
         {/* Source toggle — only shown when more than one provider applies here */}
         {providers.length > 1 && (
-          <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden text-xs w-fit">
+          <div className="flex rounded-lg border border-line border-line-strong overflow-hidden text-xs w-fit">
             {providers.map((p) => (
               <button
                 key={p.id}
@@ -253,7 +254,7 @@ export default function NearbyDrawer() {
                 className={`px-3 py-1.5 font-medium transition-colors
                   ${source === p.id
                     ? "bg-brand-600 dark:bg-brand-500 text-white"
-                    : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    : "bg-surface-2 text-sub hover:bg-surface-2 hover:bg-surface-3"
                   }`}
               >
                 {p.label}
@@ -271,7 +272,7 @@ export default function NearbyDrawer() {
               className={`px-2.5 py-1 text-xs rounded-full border transition-colors
                 ${type === pt.value
                   ? "bg-brand-600 dark:bg-brand-500 text-white border-brand-600 dark:border-brand-500"
-                  : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  : "bg-surface-2 text-sub border-line-strong hover:bg-surface-2 hover:bg-surface-3"
                 }`}
             >
               {pt.label}
@@ -290,7 +291,7 @@ export default function NearbyDrawer() {
 
         {/* Radius */}
         <div>
-          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+          <label className="block text-xs font-medium text-sub mb-1">
             Radius: {radius >= 1000 ? `${(radius / 1000).toFixed(1)}km` : `${radius}m`}
           </label>
           <input
@@ -302,7 +303,7 @@ export default function NearbyDrawer() {
             onChange={(e) => setRadius(Number(e.target.value))}
             className="w-full accent-brand-500"
           />
-          <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+          <div className="flex justify-between text-xs text-faint mt-0.5">
             <span>500m</span>
             <span>5km</span>
           </div>
@@ -314,14 +315,14 @@ export default function NearbyDrawer() {
             type="checkbox"
             checked={openNow}
             onChange={(e) => setOpenNow(e.target.checked)}
-            className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
+            className="rounded border-line-strong text-brand-600 focus:ring-brand-500"
           />
-          <span className="text-xs text-gray-600 dark:text-gray-400">Open now</span>
+          <span className="text-xs text-sub">Open now</span>
         </label>}
 
         {/* Min rating */}
         <div>
-          <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Min rating</p>
+          <p className="text-xs font-medium text-sub mb-1">Min rating</p>
           <div className="flex gap-1">
             {RATING_OPTIONS.map((opt) => (
               <button
@@ -330,7 +331,7 @@ export default function NearbyDrawer() {
                 className={`px-2 py-0.5 text-xs rounded border transition-colors
                   ${minRating === opt.value
                     ? "bg-brand-600 dark:bg-brand-500 text-white border-brand-600 dark:border-brand-500"
-                    : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    : "bg-surface-2 text-sub border-line-strong hover:bg-surface-2 hover:bg-surface-3"
                   }`}
               >
                 {opt.label}
@@ -341,7 +342,7 @@ export default function NearbyDrawer() {
 
         {/* Price level */}
         <div>
-          <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Price</p>
+          <p className="text-xs font-medium text-sub mb-1">Price</p>
           <div className="flex gap-1">
             {PRICE_LABELS.map((label, level) => (
               <button
@@ -350,7 +351,7 @@ export default function NearbyDrawer() {
                 className={`px-2 py-0.5 text-xs rounded border transition-colors
                   ${priceLevels.has(level)
                     ? "bg-brand-600 dark:bg-brand-500 text-white border-brand-600 dark:border-brand-500"
-                    : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    : "bg-surface-2 text-sub border-line-strong hover:bg-surface-2 hover:bg-surface-3"
                   }`}
               >
                 {label}
@@ -363,25 +364,25 @@ export default function NearbyDrawer() {
       {/* Results */}
       <div className="flex-1 overflow-y-auto">
         {loading && (
-          <div className="flex items-center justify-center h-32 text-sm text-gray-400 dark:text-gray-500">
+          <div className="flex items-center justify-center h-32 text-sm text-faint">
             Loading…
           </div>
         )}
 
         {!loading && error && (
-          <div className="p-4 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 m-4 rounded-lg">
+          <div className="p-4 text-sm text-danger-600 dark:text-danger-400 bg-danger-50 dark:bg-danger-950 m-4 rounded-lg">
             {error}
           </div>
         )}
 
         {!loading && !error && results !== null && filtered.length === 0 && (
-          <div className="flex items-center justify-center h-32 text-sm text-gray-400 dark:text-gray-500">
+          <div className="flex items-center justify-center h-32 text-sm text-faint">
             No results. Try a larger radius or adjust filters.
           </div>
         )}
 
         {!loading && !error && results && filtered.length > 0 && (
-          <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+          <ul className="divide-y divide-line">
             {filtered.map((place) => {
               const isAdded = addedIds.has(place.placeId);
               const isAdding = addingId === place.placeId;
@@ -398,15 +399,15 @@ export default function NearbyDrawer() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{place.name}</p>
+                        <p className="text-sm font-medium text-ink truncate">{place.name}</p>
                         {place.priceLevel !== null && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                          <span className="text-xs text-sub shrink-0">
                             {PRICE_LABELS[place.priceLevel]}
                           </span>
                         )}
                       </div>
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{place.address}</p>
+                        <p className="text-xs text-faint truncate">{place.address}</p>
                         {distLabel && (
                           <span className="text-xs text-brand-500 dark:text-brand-400 shrink-0 font-medium">
                             {distLabel}
@@ -419,19 +420,22 @@ export default function NearbyDrawer() {
                       disabled={isAdded || isAdding}
                       className={`text-xs px-3 py-1.5 rounded-lg font-medium shrink-0 transition-colors
                         ${isAdded
-                          ? "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-default"
+                          ? "bg-surface-2 text-faint cursor-default"
                           : "bg-brand-600 dark:bg-brand-500 text-white hover:bg-brand-700 dark:hover:bg-brand-400 disabled:opacity-50"
                         }`}
                     >
                       {isAdding ? "…" : isAdded ? "Added" : "Add"}
                     </button>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
+                  <div className="flex items-center gap-2 text-xs text-sub flex-wrap">
                     {place.rating !== null && (
-                      <span>★ {place.rating}{place.reviewCount !== null ? ` (${place.reviewCount.toLocaleString()})` : ""}</span>
+                      <span className="inline-flex items-center gap-0.5">
+                        <Star className="w-3 h-3 fill-current" />
+                        {place.rating}{place.reviewCount !== null ? ` (${place.reviewCount.toLocaleString()})` : ""}
+                      </span>
                     )}
                     {displayTypes.map((t) => (
-                      <span key={t} className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-1.5 py-0.5 rounded capitalize">
+                      <span key={t} className="bg-surface-2 text-sub px-1.5 py-0.5 rounded capitalize">
                         {t}
                       </span>
                     ))}

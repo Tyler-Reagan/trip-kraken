@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DerivedDay, ScheduledStop, Lodging, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import { dayColorCss, dayTextColor } from "@/lib/dayColors";
-import { SearchIcon, TrashIcon } from "./icons";
+import { GripVertical, Search, Trash2 } from "lucide-react";
 
 interface Props {
   day: DerivedDay;
@@ -78,9 +78,9 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
               style={{ backgroundColor: dayColorCss(day.dayNumber) }}
               aria-hidden
             />
-            <span className="font-semibold text-gray-800 dark:text-gray-100">Day {day.dayNumber}</span>
+            <span className="text-base font-semibold text-ink">Day {day.dayNumber}</span>
           </span>
-          <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">{dateStr}</span>
+          <span className="text-meta text-faint shrink-0">{dateStr}</span>
           {editingLabel ? (
             <input
               autoFocus
@@ -96,17 +96,17 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
           ) : (
             <button
               onClick={() => setEditingLabel(true)}
-              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 truncate max-w-[160px] transition-colors"
+              className="text-sm text-sub hover:text-ink truncate max-w-[160px] transition-colors"
               title="Click to add a label"
             >
-              {day.label || <span className="text-gray-300 dark:text-gray-600 italic">Add label…</span>}
+              {day.label || <span className="text-faint italic">Add label…</span>}
             </button>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {anyHasDuration && <span className="text-xs text-gray-400 dark:text-gray-500">{formatDuration(totalMinutes)}</span>}
+          {anyHasDuration && <span className="text-numeral text-faint">{formatDuration(totalMinutes)}</span>}
           {isLightDay && <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Light day</span>}
-          <span className="text-xs text-gray-400 dark:text-gray-500">
+          <span className="text-meta text-faint">
             {day.stops.length} stop{day.stops.length !== 1 ? "s" : ""}
           </span>
           {nearbyAnchorLoc && (
@@ -114,7 +114,7 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
               onClick={() => setNearbySearchLocation(nearbyAnchorLoc, day.date)}
               disabled={nearbyAnchorLoc.lat === null}
               title="Find nearby stops for this day"
-              className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 disabled:text-gray-300 dark:disabled:text-gray-600 transition-colors"
+              className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 disabled:text-ghost transition-colors"
             >
               Nearby
             </button>
@@ -142,7 +142,7 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
         {day.endAnchor && <AnchorRow loc={day.endAnchor} role="end" date={day.date} />}
       </ol>
       {day.stops.length === 0 && (
-        <p className="text-sm text-gray-400 dark:text-gray-500 italic py-1 text-center">Drag stops here or re-optimize</p>
+        <p className="text-sm text-faint italic py-1 text-center">Drag stops here or re-optimize</p>
       )}
     </div>
   );
@@ -167,17 +167,17 @@ function AnchorRow({ loc, role, date }: { loc: Lodging; role: "start" | "end" | 
         {role === "checkin" ? "Check-in" : "Stay"}
       </span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{loc.name}</p>
-        <p className="text-xs mt-0.5 text-amber-600/80 dark:text-amber-400/80">{subtext}</p>
+        <p className="text-body truncate text-ink">{loc.name}</p>
+        <p className="text-meta mt-0.5 text-amber-600/80 dark:text-amber-400/80">{subtext}</p>
       </div>
       <button
         onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, date); }}
         disabled={loc.lat === null}
         title="Find nearby places"
         aria-label="Find nearby places"
-        className="shrink-0 w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-all"
+        className="shrink-0 w-7 h-7 flex items-center justify-center rounded text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-all"
       >
-        <SearchIcon />
+        <Search className="w-4 h-4" />
       </button>
     </li>
   );
@@ -233,8 +233,8 @@ function StopRow({ stop, index, dayNumber, isDragging, dayOfWeek, date, onDragSt
           ${isHighlighted
             ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/30 border-brand-200 dark:border-brand-800"
             : isInspected
-              ? "bg-gray-100 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700"
-              : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
+              ? "bg-surface-2 border-line border-line-strong"
+              : "border-transparent hover:bg-surface-2 hover:border-line-strong"
           }`}
         onClick={(e) => {
           if ((e.target as HTMLElement).closest("button")) return;
@@ -249,15 +249,15 @@ function StopRow({ stop, index, dayNumber, isDragging, dayOfWeek, date, onDragSt
           {index + 1}
         </span>
         <span
-          className="shrink-0 text-gray-300 dark:text-gray-600 cursor-grab active:cursor-grabbing mt-0.5 text-base leading-none select-none"
+          className="shrink-0 text-ghost cursor-grab active:cursor-grabbing mt-0.5 select-none"
           title="Drag to reorder"
           onMouseDown={(e) => e.stopPropagation()}
         >
-          ≡
+          <GripVertical className="w-4 h-4" />
         </span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{loc.name}</p>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{hoursText} · {durText}</p>
+          <p className="text-body truncate text-ink">{loc.name}</p>
+          <p className="text-numeral text-faint mt-0.5">{hoursText} · {durText}</p>
         </div>
         <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           <button
@@ -265,17 +265,17 @@ function StopRow({ stop, index, dayNumber, isDragging, dayOfWeek, date, onDragSt
             disabled={loc.lat === null}
             title={loc.lat === null ? "No coordinates — run Enrich first" : "Find nearby places anchored to this location"}
             aria-label="Find nearby places"
-            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
-            <SearchIcon />
+            <Search className="w-4 h-4" />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); removePlacement(stop.placement.id); }}
             title="Remove from this day (keeps the place)"
             aria-label="Remove from day"
-            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-danger-500 dark:hover:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-950/30 transition-colors"
           >
-            <TrashIcon />
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </li>

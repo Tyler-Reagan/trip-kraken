@@ -39,8 +39,8 @@ export default function HelpButton() {
           }`}
         aria-hidden={!open}
       >
-        <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">How to get your map link</h3>
-        <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600 dark:text-gray-400">
+        <h3 className="font-semibold text-ink text-sm">How to get your map link</h3>
+        <ol className="list-decimal list-inside space-y-2 text-sm text-sub">
           <li>
             Go to{" "}
             <a
@@ -56,12 +56,12 @@ export default function HelpButton() {
           </li>
           <li>Add placemarks for all the locations you want to visit.</li>
           <li>
-            Click <strong className="text-gray-700 dark:text-gray-300">Share</strong> and set
-            access to <strong className="text-gray-700 dark:text-gray-300">Anyone with the link can view</strong>.
+            Click <strong className="text-ink">Share</strong> and set
+            access to <strong className="text-ink">Anyone with the link can view</strong>.
           </li>
           <li>Copy the URL from your browser&apos;s address bar and paste it in the import field.</li>
         </ol>
-        <p className="text-xs text-gray-400 dark:text-gray-500">
+        <p className="text-xs text-faint">
           The map must be public for import to work. Coordinates are read directly from the map — no extra steps needed.
         </p>
       </div>
@@ -75,7 +75,7 @@ export default function HelpButton() {
           flex items-center justify-center text-lg font-bold shadow-lg
           hover:bg-brand-500 dark:hover:bg-brand-400
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
-          focus-visible:ring-offset-2 focus-visible:ring-offset-gray-50 dark:focus-visible:ring-offset-gray-950
+          focus-visible:ring-offset-2 focus-visible:ring-offset-canvas
           transition-colors"
       >
         ?

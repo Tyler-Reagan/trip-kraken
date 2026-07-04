@@ -96,19 +96,21 @@ export default function TripClient({ trip: initial }: Props) {
 
   const dayChip = "inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded-full border transition-colors";
   const dayChipIdle =
-    "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800";
-  const metaActive =
-    "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100";
+    "bg-surface text-sub border-line-strong hover:bg-surface-2";
+  // Ink/canvas inversion — a solid black-on-white chip in light, white-on-black in dark.
+  const metaActive = "bg-ink text-canvas border-ink";
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{trip.name}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            {trip.locations.length} location{trip.locations.length !== 1 ? "s" : ""}
-            {` · ${fmt(trip.startDate)} → ${fmt(trip.endDate)} · ${numDays} day${numDays !== 1 ? "s" : ""}`}
+          <h1 className="text-page-title text-ink">{trip.name}</h1>
+          <p className="text-body text-sub mt-0.5">
+            <span className="text-numeral">{trip.locations.length}</span> location
+            {trip.locations.length !== 1 ? "s" : ""} ·{" "}
+            {fmt(trip.startDate)} → {fmt(trip.endDate)} ·{" "}
+            <span className="text-numeral">{numDays}</span> day{numDays !== 1 ? "s" : ""}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -116,7 +118,7 @@ export default function TripClient({ trip: initial }: Props) {
             + Add location
           </button>
           {pendingCount > 0 && (
-            <span className="text-sm text-gray-400 dark:text-gray-500 animate-pulse self-center">
+            <span className="text-sm text-faint animate-pulse self-center">
               Enriching {pendingCount}…
             </span>
           )}
@@ -142,7 +144,7 @@ export default function TripClient({ trip: initial }: Props) {
 
       {/* Surface switch · day filter (itinerary) · map controls (itinerary) */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
+        <div className="flex rounded-lg border border-line border-line-strong overflow-hidden shrink-0">
           {surfaces.map((s) => (
             <button
               key={s.id}
@@ -150,7 +152,7 @@ export default function TripClient({ trip: initial }: Props) {
               className={`px-4 py-1.5 text-sm font-medium transition-colors
                 ${activeSurface === s.id
                   ? "bg-brand-600 dark:bg-brand-500 text-white"
-                  : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                  : "bg-surface text-sub hover:bg-surface-2"
                 }`}
             >
               {s.label}
@@ -181,7 +183,7 @@ export default function TripClient({ trip: initial }: Props) {
                     key={day.date}
                     onClick={() => setSelectedDayNumber(active ? null : day.dayNumber)}
                     style={active ? { backgroundColor: `color-mix(in oklab, ${color} 20%, transparent)`, borderColor: color } : undefined}
-                    className={`${dayChip} ${active ? "text-gray-900 dark:text-gray-100 font-medium" : dayChipIdle}`}
+                    className={`${dayChip} ${active ? "text-ink font-medium" : dayChipIdle}`}
                   >
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} aria-hidden />
                     Day {day.dayNumber}
@@ -247,8 +249,8 @@ function NoPlanHint() {
   const setShowOptimize = useTripStore((s) => s.setShowOptimize);
   const setActiveSurface = useTripStore((s) => s.setActiveSurface);
   return (
-    <div className="card p-8 text-center text-gray-500 dark:text-gray-400 space-y-2">
-      <p className="font-medium text-gray-700 dark:text-gray-200">No itinerary yet</p>
+    <div className="card p-8 text-center text-sub space-y-2">
+      <p className="font-medium text-ink">No itinerary yet</p>
       <p className="text-sm">
         Add places under{" "}
         <button onClick={() => setActiveSurface("places")} className="text-brand-600 dark:text-brand-400 hover:underline">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Hotel, Map, Star, TrainFront, X } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 import { isActivity, isLodging, isTransit, type Location, type Lodging } from "@/types";
 
@@ -28,9 +29,10 @@ function LodgingRow({ lodging }: { lodging: Lodging }) {
     <div className="card p-3 flex flex-wrap items-center gap-x-3 gap-y-2">
       <button
         onClick={() => setInspectedLocationId(lodging.id)}
-        className="font-medium text-sm text-gray-800 dark:text-gray-200 hover:text-brand-600 dark:hover:text-brand-400 text-left flex-1 min-w-[8rem] truncate"
+        className="font-medium text-sm text-ink hover:text-brand-600 dark:hover:text-brand-400 text-left flex-1 min-w-[8rem] flex items-center gap-1.5"
       >
-        🏨 {lodging.name}
+        <Hotel className="w-4 h-4 shrink-0" />
+        <span className="truncate">{lodging.name}</span>
       </button>
       <div className="flex items-center gap-1.5 text-sm">
         <input
@@ -38,7 +40,7 @@ function LodgingRow({ lodging }: { lodging: Lodging }) {
           onChange={(e) => { setCheckIn(e.target.value); save(e.target.value, checkOut); }}
           className="input py-1 text-xs w-[8.5rem]" aria-label="Check-in"
         />
-        <span className="text-gray-400">→</span>
+        <span className="text-faint">→</span>
         <input
           type="date" value={checkOut} min={checkIn || undefined}
           onChange={(e) => { setCheckOut(e.target.value); save(checkIn, e.target.value); }}
@@ -47,13 +49,13 @@ function LodgingRow({ lodging }: { lodging: Lodging }) {
       </div>
       <button
         onClick={() => saveLodgingDates(lodging.id, null)}
-        className="text-gray-400 hover:text-red-500 text-lg leading-none px-1"
+        className="text-faint hover:text-danger-500 p-1"
         title="Remove booking (back to an activity)"
         aria-label="Remove booking"
       >
-        ×
+        <X className="w-4 h-4" />
       </button>
-      {error && <p className="basis-full text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="basis-full text-xs text-danger-600 dark:text-danger-400">{error}</p>}
     </div>
   );
 }
@@ -72,21 +74,24 @@ function ActivityRow({ loc }: { loc: Location }) {
         type="checkbox"
         checked={!loc.excluded}
         onChange={(e) => updateLocation(loc.id, { excluded: !e.target.checked })}
-        className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 shrink-0"
+        className="rounded border-line-strong text-brand-600 focus:ring-brand-500 shrink-0"
         title={loc.excluded ? "Excluded from the plan — click to include" : "Included — click to exclude"}
       />
       <button
         onClick={() => setInspectedLocationId(loc.id)}
         className="flex-1 min-w-0 text-left hover:text-brand-600 dark:hover:text-brand-400"
       >
-        <span className="text-sm text-gray-800 dark:text-gray-200 truncate block">{loc.name}</span>
+        <span className="text-sm text-ink truncate block">{loc.name}</span>
       </button>
       {loc.rating != null && (
-        <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">★ {loc.rating.toFixed(1)}</span>
+        <span className="text-xs text-sub shrink-0 inline-flex items-center gap-0.5">
+          <Star className="w-3 h-3 fill-current" />
+          {loc.rating.toFixed(1)}
+        </span>
       )}
-      <span className="text-xs text-gray-500 dark:text-gray-400 w-12 text-right shrink-0">{duration}</span>
+      <span className="text-xs text-sub w-12 text-right shrink-0">{duration}</span>
       {loc.enrichmentStatus === "pending" && (
-        <span className="text-xs text-gray-400 animate-pulse shrink-0">…</span>
+        <span className="text-xs text-faint animate-pulse shrink-0">…</span>
       )}
     </div>
   );
@@ -125,10 +130,10 @@ function AddLodging({ activities }: { activities: Location[] }) {
       </select>
       <div className="flex items-center gap-1.5 text-sm">
         <input type="date" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} className="input py-1 text-xs w-[8.5rem]" aria-label="Check-in" />
-        <span className="text-gray-400">→</span>
+        <span className="text-faint">→</span>
         <input type="date" value={checkOut} min={checkIn || undefined} onChange={(e) => setCheckOut(e.target.value)} className="input py-1 text-xs w-[8.5rem]" aria-label="Check-out" />
       </div>
-      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger-600 dark:text-danger-400">{error}</p>}
       <div className="flex gap-2">
         <button onClick={submit} className="btn-primary text-xs py-1 px-3">Save</button>
         <button onClick={() => { setOpen(false); setError(null); }} className="btn-secondary text-xs py-1 px-3">Cancel</button>
@@ -140,7 +145,7 @@ function AddLodging({ activities }: { activities: Location[] }) {
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{title}</h3>
+      <h3 className="text-meta text-faint">{title}</h3>
       {children}
     </section>
   );
@@ -157,12 +162,12 @@ export default function Manifest() {
 
   if (trip.locations.length === 0) {
     return (
-      <div className="card p-8 text-center text-gray-500 dark:text-gray-400 space-y-3">
-        <p className="text-4xl">🗺️</p>
+      <div className="card p-8 text-center text-sub space-y-3">
+        <Map className="w-8 h-8 mx-auto" />
         <p className="font-medium">No places yet</p>
         <p className="text-sm">
-          Click <strong className="text-gray-700 dark:text-gray-200">+ Add location</strong> to search for places,
-          then <strong className="text-gray-700 dark:text-gray-200">Plan itinerary</strong> to cluster them into days.
+          Click <strong className="text-ink">+ Add location</strong> to search for places,
+          then <strong className="text-ink">Plan itinerary</strong> to cluster them into days.
         </p>
       </div>
     );
@@ -179,7 +184,7 @@ export default function Manifest() {
 
       <Group title={`Activities · ${activities.length}${excludedCount ? ` · ${excludedCount} excluded` : ""}`}>
         <div className="space-y-2">
-          {activities.length === 0 && <p className="text-sm text-gray-400">No activities yet.</p>}
+          {activities.length === 0 && <p className="text-sm text-faint">No activities yet.</p>}
           {activities.map((a) => <ActivityRow key={a.id} loc={a} />)}
         </div>
       </Group>
@@ -188,7 +193,10 @@ export default function Manifest() {
         <Group title={`Transit · ${transit.length}`}>
           <div className="space-y-2">
             {transit.map((t) => (
-              <div key={t.id} className="card p-3 text-sm text-gray-600 dark:text-gray-300">🚆 {t.name}</div>
+              <div key={t.id} className="card p-3 text-sm text-sub flex items-center gap-1.5">
+                <TrainFront className="w-4 h-4 shrink-0" />
+                {t.name}
+              </div>
             ))}
           </div>
         </Group>

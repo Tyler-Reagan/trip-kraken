@@ -1,25 +1,28 @@
 /**
  * The per-day wayfinding palette — the single source of the day colors shared by the
  * map (dots, routes, legend) and the timeline (day headers, filter chips, stop badges)
- * so the two surfaces read as one system. 14 distinct Tailwind 400-level hues; they loop
- * for trips longer than 14 days. Day color answers "which day"; the brand green is
- * reserved for actions and selection, never wayfinding.
+ * so the two surfaces read as one system. Day color answers "which day"; the brand accent
+ * (teal) is reserved for actions/selection and danger (brick-red) for destructive/error
+ * state — neither ever appears as wayfinding, so this palette is built as one 14-hue wheel
+ * at a fixed HSL(_, 62%, 58%) rather than a grab-bag of Tailwind's mismatched swatches, with
+ * two ~30°-wide gaps carved out of the wheel around the accent hue (~178°) and the danger
+ * hue (~8°) so no day color can be confused with either. Loops for trips longer than 14 days.
  */
 export const DAY_COLORS: [number, number, number][] = [
-  [251, 191, 36], // amber-400
-  [34, 211, 238], // cyan-400
-  [163, 230, 53], // lime-400
-  [251, 146, 60], // orange-400
-  [167, 139, 250], // violet-400
-  [248, 113, 113], // red-400
-  [52, 211, 153], // emerald-400
-  [250, 204, 21], // yellow-400
-  [96, 165, 250], // blue-400
-  [244, 114, 182], // pink-400
-  [45, 212, 191], // teal-400
-  [251, 113, 133], // rose-400
-  [129, 140, 248], // indigo-400
-  [56, 189, 248], // sky-400
+  [214, 148, 81], // h30  — amber
+  [214, 203, 81], // h55  — yellow-olive
+  [170, 214, 81], // h80  — lime
+  [115, 214, 81], // h105 — green
+  [81, 214, 104], // h130 — emerald
+  [81, 214, 159], // h155 — spring green
+  [81, 181, 214], // h195 — sky blue
+  [81, 132, 214], // h217 — blue
+  [81, 84, 214], // h239 — indigo
+  [128, 81, 214], // h261 — violet
+  [177, 81, 214], // h283 — purple
+  [214, 81, 203], // h305 — magenta
+  [214, 81, 155], // h327 — rose
+  [214, 81, 106], // h349 — rose-red
 ];
 
 export function dayColorRgb(dayNumber: number): [number, number, number] {

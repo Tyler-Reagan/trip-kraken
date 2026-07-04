@@ -243,7 +243,7 @@ export default function MapView({ heightClass = "h-[520px]" }: { heightClass?: s
   if (!trip) return null;
 
   return (
-    <div ref={containerRef} className={`relative w-full ${heightClass} rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800`}>
+    <div ref={containerRef} className={`relative w-full ${heightClass} rounded-xl overflow-hidden border border-line`}>
       {mapReady && (
         <Map
           ref={mapRef}
