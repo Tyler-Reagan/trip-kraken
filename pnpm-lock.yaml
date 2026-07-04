@@ -20,6 +20,9 @@ importers:
       fast-xml-parser:
         specifier: ^5.5.9
         version: 5.5.9
+      lucide-react:
+        specifier: ^1.23.0
+        version: 1.23.0(react@18.3.1)
       maplibre-gl:
         specifier: ^5.21.1
         version: 5.21.1
@@ -1576,6 +1579,11 @@ packages:
   loose-envify@1.4.0:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
     hasBin: true
+
+  lucide-react@1.23.0:
+    resolution: {integrity: sha512-38BpJcD0JhFosxHApP/BYsBetLpQFRoTRzEzstM/XCc3jsAG7wqaY1lgVwxiUe3xqYE+lNxo2PkCmYwXWrwwIw==}
+    peerDependencies:
+      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   maplibre-gl@5.21.1:
     resolution: {integrity: sha512-zto1RTnFkOpOO1bm93ElCXF1huey2N4LvXaGLMFcYAu9txh0OhGIdX1q3LZLkrMKgMxMeYduaQo+DVNzg098fg==}
@@ -3145,6 +3153,10 @@ snapshots:
   loose-envify@1.4.0:
     dependencies:
       js-tokens: 4.0.0
+
+  lucide-react@1.23.0(react@18.3.1):
+    dependencies:
+      react: 18.3.1
 
   maplibre-gl@5.21.1:
     dependencies:

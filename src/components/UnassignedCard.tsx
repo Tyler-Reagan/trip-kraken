@@ -156,7 +156,7 @@ function UnassignedRow({ loc, schedulable, onDragStart }: { loc: Location; sched
           onClick={(e) => { e.stopPropagation(); doRemoveLocation(); }}
           title="Remove location from trip"
           aria-label="Remove location"
-          className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+          className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-danger-500 dark:hover:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-950/30 transition-colors"
         >
           <TrashIcon />
         </button>

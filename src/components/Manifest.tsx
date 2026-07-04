@@ -47,13 +47,13 @@ function LodgingRow({ lodging }: { lodging: Lodging }) {
       </div>
       <button
         onClick={() => saveLodgingDates(lodging.id, null)}
-        className="text-faint hover:text-red-500 text-lg leading-none px-1"
+        className="text-faint hover:text-danger-500 text-lg leading-none px-1"
         title="Remove booking (back to an activity)"
         aria-label="Remove booking"
       >
         ×
       </button>
-      {error && <p className="basis-full text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="basis-full text-xs text-danger-600 dark:text-danger-400">{error}</p>}
     </div>
   );
 }
@@ -128,7 +128,7 @@ function AddLodging({ activities }: { activities: Location[] }) {
         <span className="text-faint">→</span>
         <input type="date" value={checkOut} min={checkIn || undefined} onChange={(e) => setCheckOut(e.target.value)} className="input py-1 text-xs w-[8.5rem]" aria-label="Check-out" />
       </div>
-      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger-600 dark:text-danger-400">{error}</p>}
       <div className="flex gap-2">
         <button onClick={submit} className="btn-primary text-xs py-1 px-3">Save</button>
         <button onClick={() => { setOpen(false); setError(null); }} className="btn-secondary text-xs py-1 px-3">Cancel</button>

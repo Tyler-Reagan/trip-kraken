@@ -369,7 +369,7 @@ export default function NearbyDrawer() {
         )}
 
         {!loading && error && (
-          <div className="p-4 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 m-4 rounded-lg">
+          <div className="p-4 text-sm text-danger-600 dark:text-danger-400 bg-danger-50 dark:bg-danger-950 m-4 rounded-lg">
             {error}
           </div>
         )}

@@ -50,7 +50,7 @@ export default function TripList({ trips }: { trips: TripSummary[] }) {
             onClick={(e) => handleDelete(e, trip.id)}
             disabled={deletingId === trip.id}
             className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity
-              text-ghost hover:text-red-400 dark:hover:text-red-400
+              text-ghost hover:text-danger-400 dark:hover:text-danger-400
               disabled:opacity-30 text-lg leading-none"
             aria-label={`Delete ${trip.name}`}
             title="Delete trip"

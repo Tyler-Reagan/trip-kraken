@@ -131,7 +131,7 @@ export default function AddLocationModal() {
         </div>
 
         {error && (
-          <p className="mx-6 mt-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
+          <p className="mx-6 mt-3 text-sm text-danger-600 dark:text-danger-400 bg-danger-50 dark:bg-danger-950 border border-danger-200 dark:border-danger-800 rounded-lg px-3 py-2">
             {error}
           </p>
         )}

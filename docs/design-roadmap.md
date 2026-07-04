@@ -42,7 +42,7 @@ the map as a bound companion and the Manifest as a staging step.
 - Selecting a stop in the itinerary should reflect live on the map (and vice versa).
 - Entry point: `$impeccable shape` (structural/IA change — plan before building).
 
-### Phase c — Visual identity re-establishment  ·  status: in progress (theme decided; token foundation landed)
+### Phase c — Visual identity re-establishment  ·  status: in progress (theme, accent, danger, day-hue palette decided; icon direction chosen; type scale + mark remain)
 Escape the anonymous-dark-Tailwind look; design the language toward the Things 3 / Felt /
 Linear feel per PRODUCT.md.
 - **Theme — DECIDED.** Neutral, readable dark + light modes; dark is the baseline, both
@@ -56,12 +56,35 @@ Linear feel per PRODUCT.md.
     white was ~2.6:1). Only intentional map furniture keeps raw grays (`MapView` marker
     `BASE_COLOR` + the dark map tooltip) — deferred to a later map-layer theming pass. Retired
     the roadmap minor "Add label... placeholder near-invisible" (moved off `ghost`).
-- **Accent — STILL OPEN (decision #2).** Placeholder remains the existing `brand` green.
-- Real type scale + weight strategy so size/space carry hierarchy (not gray value alone).
-- One coherent icon set replacing the emoji/SVG mix (🐙🏨🚆🗺️ + SearchIcon/TrashIcon).
-- Retune the day-hue palette as a system.
-- Drop the `uppercase tracking-wide` section eyebrows in the Manifest.
-- Entry points: `$impeccable shape` (language direction) → `$impeccable typeset` → `$impeccable colorize`.
+- **Accent — DECIDED (decision #2).** One teal/ink family (`brand-*` in
+  `tailwind.config.ts`), mode-tuned rather than a flat hex: brighter/more saturated on dark
+  surfaces (400/500), deeper on light (600/700). Same hue does CTAs, selection, focus rings,
+  and (eventually) the kraken mark — no second accent color. Chosen live against real
+  component chrome (`/theme-prototype`) over two flat-color candidates that were rejected
+  (a single flat ink read as too quiet in dark mode; ink+coral read as too loud).
+- **Danger — DECIDED alongside the accent.** Muted brick-red (`danger-*`), same 11-step
+  scale shape as `brand-*`, replacing 9 files' worth of hardcoded stock-Tailwind `red-*`
+  utilities. Deliberately desaturated relative to Tailwind's default red so it stays quiet
+  next to the teal accent instead of competing with it.
+- **Day-hue palette — RETUNED.** `src/lib/dayColors.ts` rebuilt as one 14-hue wheel at a
+  fixed HSL saturation/lightness (a designed system, not a grab-bag of mismatched Tailwind
+  swatches), with ~30°-wide gaps carved out around the new accent (~178°) and danger (~8°)
+  hues. The old palette's `teal-400` (day 11) and `red-400` (day 6) sat close enough to
+  those to be confusable with selection/error state — this set can't reproduce that.
+- **Icon set — direction decided, not yet executed.** Lucide (`lucide-react`, installed).
+  shadcn was considered but it's a component-copy system, not an icon library — it just
+  defaults to Lucide internally, so installing Lucide directly gets the same icons without
+  adopting shadcn's other primitives. Rejected Phosphor (decorative weights work against
+  restraint) and Tabler (breadth with no benefit for a single-user tool). Still need to
+  actually replace the emoji/SVG mix (🐙🏨🚆🗺️ + `SearchIcon`/`TrashIcon`) with it.
+- Real type scale + weight strategy so size/space carry hierarchy (not gray value alone) —
+  untouched.
+- Drop the `uppercase tracking-wide` section eyebrows in the Manifest — untouched.
+- The kraken mark/logo itself is being prototyped in a separate session — see handoff notes
+  (kept alongside this file or in the PR description). Once it exists it slots into the
+  now-decided accent token; it isn't gating the rest of Phase c.
+- Entry points for what's left: `$impeccable typeset` (type scale) → an icon-replacement
+  pass → the logo/mark session.
 - **Must revisit Phases b and a** with the re-established tokens.
 
 ## Deferred backlog (tracked, not this pass)
@@ -82,7 +105,7 @@ icon, one shared panel shell. → `$impeccable polish`
 - Inspector + Nearby can both open at once, squeezing the main column to a sliver.
 - Nearby drawer stacks ~7 control groups in 320px — progressive-disclosure candidate.
 - Map click-select, tooltip, and legend are all pointer-only.
-- Detector: 4 `gray-on-color` warnings — `text-gray-400/500` on `bg-red-50`
+- Detector: 4 `gray-on-color` warnings — `text-gray-400/500` on `bg-danger-50`
   (`DayCard.tsx:263`, `UnassignedCard.tsx:159`).
 
 ### Deferred accessibility (PRODUCT.md — noted, not immediate)
@@ -118,6 +141,18 @@ honoring `prefers-reduced-motion`. Not this pass; no new work should foreclose i
   (semantic color utilities); rewired the shared primitives (`.card`, `.btn-*`, `.input`, body,
   nav) to consume them. Accent left open (#2); brand green is the placeholder. Prototype route
   deleted. Component-tree sweep off `dark:gray-*` pairs still pending.
+- 2026-07-03 — Phase c accent/danger/day-hue decided. Compared flat-ink vs ink+coral candidates
+  live on `/theme-prototype`; both rejected (flat ink too quiet in dark, ink+coral too loud), then
+  landed on a mode-tuned single teal/ink family. Baked into `tailwind.config.ts` (`brand-*`
+  brighter/more saturated on dark, deeper on light) and verified against real trip chrome
+  (`Re-optimize`, active tab, `Nearby` links, delete-hover). Added a matching `danger-*` scale
+  (muted brick-red, same 11-step shape) and replaced hardcoded `red-*` across 9 component files.
+  Rebuilt the 14-hue day palette (`src/lib/dayColors.ts`) as one designed hue wheel with gaps
+  carved out around the new accent/danger hues, fixing a real collision (old `teal-400`/`red-400`
+  day hues read as selection/error state). Chose **Lucide** (`lucide-react`, installed) as the
+  icon direction over shadcn's default bundling, Phosphor, and Tabler — not yet wired into
+  components. `/theme-prototype` kept (not deleted) as a living status board for Phase c's
+  remaining open items; delete once type scale + icon swap land. tsc 0 throughout.
 - 2026-07-03 — Phase c `colorize` sweep (via `$impeccable colorize`). Migrated all ~384
   hardcoded `dark:gray-*` utilities across 15 files (`src/components/*` + `src/app/*`) onto the
   semantic tokens; meta-chip rewritten as a clean ink/canvas inversion (`bg-ink text-canvas`).

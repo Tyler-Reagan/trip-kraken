@@ -273,7 +273,7 @@ function StopRow({ stop, index, dayNumber, isDragging, dayOfWeek, date, onDragSt
             onClick={(e) => { e.stopPropagation(); removePlacement(stop.placement.id); }}
             title="Remove from this day (keeps the place)"
             aria-label="Remove from day"
-            className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-danger-500 dark:hover:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-950/30 transition-colors"
           >
             <TrashIcon />
           </button>
