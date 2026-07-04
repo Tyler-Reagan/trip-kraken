@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Star } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 import { isActivity, type Location } from "@/types";
 
@@ -145,7 +146,7 @@ export default function LocationInspector() {
         <div className="flex items-center gap-1.5 text-sm">
           {loc.rating !== null && (
             <>
-              <span className="text-amber-500">★</span>
+              <Star className="w-4 h-4 text-amber-500 fill-current" />
               <span className="font-medium text-ink">{loc.rating.toFixed(1)}</span>
             </>
           )}

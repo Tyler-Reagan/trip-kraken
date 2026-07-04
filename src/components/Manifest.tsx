@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Hotel, Map, Star, TrainFront, X } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 import { isActivity, isLodging, isTransit, type Location, type Lodging } from "@/types";
 
@@ -28,9 +29,10 @@ function LodgingRow({ lodging }: { lodging: Lodging }) {
     <div className="card p-3 flex flex-wrap items-center gap-x-3 gap-y-2">
       <button
         onClick={() => setInspectedLocationId(lodging.id)}
-        className="font-medium text-sm text-ink hover:text-brand-600 dark:hover:text-brand-400 text-left flex-1 min-w-[8rem] truncate"
+        className="font-medium text-sm text-ink hover:text-brand-600 dark:hover:text-brand-400 text-left flex-1 min-w-[8rem] flex items-center gap-1.5"
       >
-        🏨 {lodging.name}
+        <Hotel className="w-4 h-4 shrink-0" />
+        <span className="truncate">{lodging.name}</span>
       </button>
       <div className="flex items-center gap-1.5 text-sm">
         <input
@@ -47,11 +49,11 @@ function LodgingRow({ lodging }: { lodging: Lodging }) {
       </div>
       <button
         onClick={() => saveLodgingDates(lodging.id, null)}
-        className="text-faint hover:text-danger-500 text-lg leading-none px-1"
+        className="text-faint hover:text-danger-500 p-1"
         title="Remove booking (back to an activity)"
         aria-label="Remove booking"
       >
-        ×
+        <X className="w-4 h-4" />
       </button>
       {error && <p className="basis-full text-xs text-danger-600 dark:text-danger-400">{error}</p>}
     </div>
@@ -82,7 +84,10 @@ function ActivityRow({ loc }: { loc: Location }) {
         <span className="text-sm text-ink truncate block">{loc.name}</span>
       </button>
       {loc.rating != null && (
-        <span className="text-xs text-sub shrink-0">★ {loc.rating.toFixed(1)}</span>
+        <span className="text-xs text-sub shrink-0 inline-flex items-center gap-0.5">
+          <Star className="w-3 h-3 fill-current" />
+          {loc.rating.toFixed(1)}
+        </span>
       )}
       <span className="text-xs text-sub w-12 text-right shrink-0">{duration}</span>
       {loc.enrichmentStatus === "pending" && (
@@ -158,7 +163,7 @@ export default function Manifest() {
   if (trip.locations.length === 0) {
     return (
       <div className="card p-8 text-center text-sub space-y-3">
-        <p className="text-4xl">🗺️</p>
+        <Map className="w-8 h-8 mx-auto" />
         <p className="font-medium">No places yet</p>
         <p className="text-sm">
           Click <strong className="text-ink">+ Add location</strong> to search for places,
@@ -188,7 +193,10 @@ export default function Manifest() {
         <Group title={`Transit · ${transit.length}`}>
           <div className="space-y-2">
             {transit.map((t) => (
-              <div key={t.id} className="card p-3 text-sm text-sub">🚆 {t.name}</div>
+              <div key={t.id} className="card p-3 text-sm text-sub flex items-center gap-1.5">
+                <TrainFront className="w-4 h-4 shrink-0" />
+                {t.name}
+              </div>
             ))}
           </div>
         </Group>

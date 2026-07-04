@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ScheduledStop, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
-import { SearchIcon, TrashIcon } from "./icons";
+import { GripVertical, Search, Trash2 } from "lucide-react";
 
 interface Props {
   locations: Location[];
@@ -118,10 +118,10 @@ function UnassignedRow({ loc, schedulable, onDragStart }: { loc: Location; sched
       {/* Drag handle — only meaningful once there are days to drag onto */}
       {schedulable && (
         <span
-          className="shrink-0 text-ghost cursor-grab active:cursor-grabbing mt-0.5 text-base leading-none select-none"
+          className="shrink-0 text-ghost cursor-grab active:cursor-grabbing mt-0.5 select-none"
           title="Drag to a day to schedule"
         >
-          ≡
+          <GripVertical className="w-4 h-4" />
         </span>
       )}
 
@@ -150,7 +150,7 @@ function UnassignedRow({ loc, schedulable, onDragStart }: { loc: Location; sched
           aria-label="Find nearby places"
           className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         >
-          <SearchIcon />
+          <Search className="w-4 h-4" />
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); doRemoveLocation(); }}
@@ -158,7 +158,7 @@ function UnassignedRow({ loc, schedulable, onDragStart }: { loc: Location; sched
           aria-label="Remove location"
           className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-danger-500 dark:hover:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-950/30 transition-colors"
         >
-          <TrashIcon />
+          <Trash2 className="w-4 h-4" />
         </button>
       </div>
     </li>

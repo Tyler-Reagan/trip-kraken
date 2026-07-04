@@ -4,10 +4,11 @@
  * Palette status board for design-roadmap.md Phase c. Renders real component chrome with
  * the actual `bg-brand-*` / `bg-danger-*` Tailwind classes (not inline hex) so what's shown
  * here is exactly what's baked into tailwind.config.ts — no separate source of truth.
- * Delete once Phase c's remaining open items (day-hue retune, icon set, type scale) land.
+ * Delete once Phase c's remaining open items (type scale, kraken mark) land.
  */
 
 import { useEffect, useState } from "react";
+import { Hotel, Map, Search, Star, Trash2, X } from "lucide-react";
 import { DAY_COLORS, dayColorCss, dayTextColor } from "@/lib/dayColors";
 
 export default function ThemePrototype() {
@@ -146,6 +147,27 @@ export default function ThemePrototype() {
             </p>
           </section>
 
+          {/* Confirmed: icon set */}
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold text-sub uppercase tracking-wide">
+              Confirmed — icon set (lucide-react)
+            </h2>
+            <div className="card p-4 flex items-center gap-4 text-sub">
+              <Search className="w-4 h-4" />
+              <Trash2 className="w-4 h-4" />
+              <Hotel className="w-4 h-4" />
+              <Map className="w-4 h-4" />
+              <X className="w-4 h-4" />
+              <Star className="w-4 h-4 fill-current" />
+            </div>
+            <p className="text-xs text-faint">
+              Replaces the emoji/unicode-glyph mix (🏨🚆🗺️★×≡) and the hand-rolled
+              SearchIcon/TrashIcon across all components. shadcn was considered but it's a
+              full component framework, not just an icon source — installing Lucide directly
+              avoids adopting a second design-token system.
+            </p>
+          </section>
+
           {/* Still open */}
           <section className="space-y-3">
             <h2 className="text-sm font-semibold text-sub uppercase tracking-wide">
@@ -153,13 +175,13 @@ export default function ThemePrototype() {
             </h2>
             <ul className="text-sm space-y-2 text-sub list-disc pl-5">
               <li>
-                <span className="text-ink">Icon set</span> — emoji (🐙🏨🚆🗺️) mixed with a
-                couple of hand-rolled SVGs; not a color decision but the icon stroke color
-                will inherit from these tokens once unified.
-              </li>
-              <li>
                 <span className="text-ink">Type scale + weight strategy</span> — untouched
                 by this pass.
+              </li>
+              <li>
+                <span className="text-ink">Kraken mark / logo</span> — separate session, see{" "}
+                <code className="text-xs">docs/logo-handoff.md</code>. Not gating the rest of
+                Phase c.
               </li>
             </ul>
           </section>

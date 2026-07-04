@@ -42,7 +42,7 @@ the map as a bound companion and the Manifest as a staging step.
 - Selecting a stop in the itinerary should reflect live on the map (and vice versa).
 - Entry point: `$impeccable shape` (structural/IA change — plan before building).
 
-### Phase c — Visual identity re-establishment  ·  status: in progress (theme, accent, danger, day-hue palette decided; icon direction chosen; type scale + mark remain)
+### Phase c — Visual identity re-establishment  ·  status: in progress (theme, accent, danger, day-hue palette, icon set decided/landed; type scale + mark remain)
 Escape the anonymous-dark-Tailwind look; design the language toward the Things 3 / Felt /
 Linear feel per PRODUCT.md.
 - **Theme — DECIDED.** Neutral, readable dark + light modes; dark is the baseline, both
@@ -71,12 +71,16 @@ Linear feel per PRODUCT.md.
   swatches), with ~30°-wide gaps carved out around the new accent (~178°) and danger (~8°)
   hues. The old palette's `teal-400` (day 11) and `red-400` (day 6) sat close enough to
   those to be confusable with selection/error state — this set can't reproduce that.
-- **Icon set — direction decided, not yet executed.** Lucide (`lucide-react`, installed).
-  shadcn was considered but it's a component-copy system, not an icon library — it just
-  defaults to Lucide internally, so installing Lucide directly gets the same icons without
-  adopting shadcn's other primitives. Rejected Phosphor (decorative weights work against
-  restraint) and Tabler (breadth with no benefit for a single-user tool). Still need to
-  actually replace the emoji/SVG mix (🐙🏨🚆🗺️ + `SearchIcon`/`TrashIcon`) with it.
+- **Icon set — DONE.** Lucide (`lucide-react`). shadcn was considered but it's a
+  component-copy system, not an icon library — it just defaults to Lucide internally, so
+  installing Lucide directly gets the same icons without adopting shadcn's other primitives
+  (which would mean running two design-token systems side by side). Rejected Phosphor
+  (decorative weights work against restraint) and Tabler (breadth with no benefit for a
+  single-user tool). Replaced across all components: the emoji mix (🏨→`Hotel`, 🚆→
+  `TrainFront`, 🗺️→`Map`, plus the unicode `×`/`✕`/`★`/`≡` glyphs → `X`/`Star`/
+  `GripVertical`) and the hand-rolled `SearchIcon`/`TrashIcon` (`src/components/icons.tsx`,
+  now deleted) → `Search`/`Trash2`. The 🐙 in `layout.tsx` is deliberately untouched — it's
+  the kraken brand mark placeholder, not a generic UI icon; see `docs/logo-handoff.md`.
 - Real type scale + weight strategy so size/space carry hierarchy (not gray value alone) —
   untouched.
 - Drop the `uppercase tracking-wide` section eyebrows in the Manifest — untouched.
@@ -162,3 +166,15 @@ honoring `prefers-reduced-motion`. Not this pass; no new work should foreclose i
   dark tooltip). Verified: tsc 0, Tailwind compiles all token utilities, impeccable detector
   clean (`[]`), a real trip page (`/trips/:id`) renders 200 with tokens and zero leftover gray
   in output. Browser eyeball of both themes still worth a human pass. Accent still open (#2).
+- 2026-07-03 — Icon set wired in. Considered `/shadcn` for this (it defaults to Lucide
+  internally) but it's a full component framework with its own semantic tokens and
+  primitives — adopting it just for icons would mean running two design-token systems side
+  by side, so installed `lucide-react` directly instead. Deleted the hand-rolled
+  `src/components/icons.tsx` (`SearchIcon`/`TrashIcon` → `Search`/`Trash2`) and replaced
+  every remaining emoji/unicode-glyph icon across `Manifest`, `LocationInspector`,
+  `AddLocationModal`, `NearbyDrawer`, `DayCard`, `UnassignedCard`: 🏨→`Hotel`, 🚆→
+  `TrainFront`, 🗺️→`Map`, `★`→`Star`, `×`/`✕`→`X`, `≡`→`GripVertical`. Left the 🐙 in
+  `layout.tsx` untouched — it's the kraken brand mark placeholder (see
+  `docs/logo-handoff.md`), not a generic icon; swapping it for a Lucide icon would just be
+  trading one placeholder for another. Verified live in the browser (Itinerary + Places
+  tabs, hover states) and `npm test` + `tsc` both clean.

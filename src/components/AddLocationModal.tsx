@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { Star } from "lucide-react";
 import type { NearbyPlace } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 
@@ -189,7 +190,10 @@ export default function AddLocationModal() {
                     </div>
                     <div className="flex items-center gap-2 text-xs text-sub flex-wrap">
                       {place.rating !== null && (
-                        <span>★ {place.rating}{place.reviewCount !== null ? ` (${place.reviewCount.toLocaleString()})` : ""}</span>
+                        <span className="inline-flex items-center gap-0.5">
+                          <Star className="w-3 h-3 fill-current" />
+                          {place.rating}{place.reviewCount !== null ? ` (${place.reviewCount.toLocaleString()})` : ""}
+                        </span>
                       )}
                       {displayTypes.map((t) => (
                         <span key={t} className="bg-surface-2 text-sub px-1.5 py-0.5 rounded capitalize">

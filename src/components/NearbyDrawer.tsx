@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { Star, X } from "lucide-react";
 import { deriveDays, type NearbyPlace } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 
@@ -237,7 +238,7 @@ export default function NearbyDrawer() {
           className="text-faint hover:text-sub transition-colors shrink-0 mt-0.5"
           aria-label="Close"
         >
-          ✕
+          <X className="w-4 h-4" />
         </button>
       </div>
 
@@ -428,7 +429,10 @@ export default function NearbyDrawer() {
                   </div>
                   <div className="flex items-center gap-2 text-xs text-sub flex-wrap">
                     {place.rating !== null && (
-                      <span>★ {place.rating}{place.reviewCount !== null ? ` (${place.reviewCount.toLocaleString()})` : ""}</span>
+                      <span className="inline-flex items-center gap-0.5">
+                        <Star className="w-3 h-3 fill-current" />
+                        {place.rating}{place.reviewCount !== null ? ` (${place.reviewCount.toLocaleString()})` : ""}
+                      </span>
                     )}
                     {displayTypes.map((t) => (
                       <span key={t} className="bg-surface-2 text-sub px-1.5 py-0.5 rounded capitalize">

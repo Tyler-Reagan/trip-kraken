@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DerivedDay, ScheduledStop, Lodging, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import { dayColorCss, dayTextColor } from "@/lib/dayColors";
-import { SearchIcon, TrashIcon } from "./icons";
+import { GripVertical, Search, Trash2 } from "lucide-react";
 
 interface Props {
   day: DerivedDay;
@@ -177,7 +177,7 @@ function AnchorRow({ loc, role, date }: { loc: Lodging; role: "start" | "end" | 
         aria-label="Find nearby places"
         className="shrink-0 w-7 h-7 flex items-center justify-center rounded text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-all"
       >
-        <SearchIcon />
+        <Search className="w-4 h-4" />
       </button>
     </li>
   );
@@ -249,11 +249,11 @@ function StopRow({ stop, index, dayNumber, isDragging, dayOfWeek, date, onDragSt
           {index + 1}
         </span>
         <span
-          className="shrink-0 text-ghost cursor-grab active:cursor-grabbing mt-0.5 text-base leading-none select-none"
+          className="shrink-0 text-ghost cursor-grab active:cursor-grabbing mt-0.5 select-none"
           title="Drag to reorder"
           onMouseDown={(e) => e.stopPropagation()}
         >
-          ≡
+          <GripVertical className="w-4 h-4" />
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-ink truncate">{loc.name}</p>
@@ -267,7 +267,7 @@ function StopRow({ stop, index, dayNumber, isDragging, dayOfWeek, date, onDragSt
             aria-label="Find nearby places"
             className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
-            <SearchIcon />
+            <Search className="w-4 h-4" />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); removePlacement(stop.placement.id); }}
@@ -275,7 +275,7 @@ function StopRow({ stop, index, dayNumber, isDragging, dayOfWeek, date, onDragSt
             aria-label="Remove from day"
             className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-danger-500 dark:hover:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-950/30 transition-colors"
           >
-            <TrashIcon />
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </li>
