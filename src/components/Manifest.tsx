@@ -145,7 +145,7 @@ function AddLodging({ activities }: { activities: Location[] }) {
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-faint">{title}</h3>
+      <h3 className="text-meta text-faint">{title}</h3>
       {children}
     </section>
   );

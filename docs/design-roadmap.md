@@ -42,7 +42,7 @@ the map as a bound companion and the Manifest as a staging step.
 - Selecting a stop in the itinerary should reflect live on the map (and vice versa).
 - Entry point: `$impeccable shape` (structural/IA change — plan before building).
 
-### Phase c — Visual identity re-establishment  ·  status: in progress (theme, accent, danger, day-hue palette, icon set decided/landed; type scale + mark remain)
+### Phase c — Visual identity re-establishment  ·  status: in progress (theme, accent, danger, day-hue palette, icon set, and type scale decided/landed; only the kraken mark remains, handed off to its own session)
 Escape the anonymous-dark-Tailwind look; design the language toward the Things 3 / Felt /
 Linear feel per PRODUCT.md.
 - **Theme — DECIDED.** Neutral, readable dark + light modes; dark is the baseline, both
@@ -81,14 +81,25 @@ Linear feel per PRODUCT.md.
   `GripVertical`) and the hand-rolled `SearchIcon`/`TrashIcon` (`src/components/icons.tsx`,
   now deleted) → `Search`/`Trash2`. The 🐙 in `layout.tsx` is deliberately untouched — it's
   the kraken brand mark placeholder, not a generic UI icon; see `docs/logo-handoff.md`.
-- Real type scale + weight strategy so size/space carry hierarchy (not gray value alone) —
-  untouched.
-- Drop the `uppercase tracking-wide` section eyebrows in the Manifest — untouched.
+- **Type scale + weight strategy — DECIDED.** Audited in `docs/typography-handoff.md`
+  (current sizes/weights and their real usage counts, the Inter-is-generic problem, a
+  `text-lg`/`text-xl` class doing double duty for both section headings and unrelated
+  close-button tap targets), then decided live against real component shapes on a throwaway
+  `/typography-prototype` route (deleted once folded in). IBM Plex Sans replaces Inter
+  (`layout.tsx`, `tailwind.config.ts` font families); IBM Plex Mono is reserved for a new
+  Numeral role (times, durations, counts, ratings) via `font-mono`. Named role utilities
+  (`.text-hero`, `.text-page-title`, `.text-section`, `.text-body`, `.text-meta`,
+  `.text-numeral`) landed in `globals.css`: a tight 1.25 ratio with a full weight bump
+  (Body medium, headings bold) — chosen over a wider 1.333 ratio and a Fraunces-serif-Hero
+  variant, both live-rejected. `.tap-target` splits the close-button hit-target sizing from
+  heading size, fixing the `text-lg`/`text-xl` double duty. Applied to `TripClient`,
+  `DayCard`, `OptimizeModal`, `AddLocationModal`. Dropped the Manifest's
+  `uppercase tracking-wide` section eyebrows onto `.text-meta` — the one other outstanding
+  item this bullet used to track.
 - The kraken mark/logo itself is being prototyped in a separate session — see handoff notes
   (kept alongside this file or in the PR description). Once it exists it slots into the
   now-decided accent token; it isn't gating the rest of Phase c.
-- Entry points for what's left: `$impeccable typeset` (type scale) → an icon-replacement
-  pass → the logo/mark session.
+- Entry points for what's left: the logo/mark session only.
 - **Must revisit Phases b and a** with the re-established tokens.
 
 ## Deferred backlog (tracked, not this pass)
@@ -178,3 +189,29 @@ honoring `prefers-reduced-motion`. Not this pass; no new work should foreclose i
   `docs/logo-handoff.md`), not a generic icon; swapping it for a Lucide icon would just be
   trading one placeholder for another. Verified live in the browser (Itinerary + Places
   tabs, hover states) and `npm test` + `tsc` both clean.
+- 2026-07-04 — Type scale + weight strategy audited, not decided. Counted actual usage
+  (`text-xs` 78, `text-sm` 74, `text-lg` 12, `text-xl`/`text-2xl` 2 each, `text-4xl` 1;
+  `font-medium` 30, `font-semibold` 27, `font-bold` 6) and found `text-lg`/`text-xl` doing
+  two unrelated jobs — genuine section headings in some places, tap-target sizing for
+  unrelated `×` close-glyphs in others. Confirmed zero `font-mono` usage anywhere despite
+  heavy numeric/time content. Wrote up the full audit plus open questions (ratio, whether to
+  replace Inter — flagged elsewhere as a generic/overused choice — with something like IBM
+  Plex Sans/Mono) as `docs/typography-handoff.md`, split into its own session the same way
+  the kraken mark was. No code changed.
+- 2026-07-04 — Type scale + weight strategy decided and landed. Compared three directions
+  live on a throwaway `/typography-prototype` route against real component shapes (trip
+  header, DayCard, modal): kept Inter as a control, IBM Plex Sans + Plex Mono numerals at a
+  1.25 ratio, and a Fraunces-hero variant at a looser ratio — Plex won, Fraunces was
+  rejected as an unneeded flourish. Iterated twice more on size vs. weight (a wider 1.333
+  ratio and a heavier-weight-same-footprint variant, tested separately, then combined) before
+  converging on the 1.25 ratio with the full weight bump and Plex Mono's larger numeral size.
+  Folded in: `layout.tsx`/`tailwind.config.ts` swap Inter → Plex Sans (+ Plex Mono via
+  `font-mono`); `globals.css` gained named role utilities (`.text-hero`, `.text-page-title`,
+  `.text-section`, `.text-body`, `.text-meta`, `.text-numeral`) and `.tap-target` (splits the
+  close-button hit target from heading size, fixing the `text-lg`/`text-xl` double duty).
+  Applied across `TripClient`, `DayCard`, `OptimizeModal`, `AddLocationModal`. Also dropped
+  the Manifest's `uppercase tracking-wide` section eyebrows onto `.text-meta` and deleted
+  `/theme-prototype` (its own stated deletion condition — type scale + icon swap both
+  landed — is now met). tsc 0; verified live against a real trip
+  (header/DayCard/Optimize-modal) in the browser. Only the kraken mark remains open in
+  Phase c.
