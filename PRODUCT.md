@@ -36,6 +36,17 @@ quiet touches — the kraken mark used once and well, a confident accent color, 
 empty states, microcopy with a voice — none of which ever cost the user a click.
 Three words: **effortless, precise, calm.**
 
+The one deliberate exception to that restraint is the kraken mark itself. It is a bold,
+detailed *illustrated* mascot — a Toon-styled mythic leviathan, characterful and a little
+menacing — that carries the personality the rest of the UI withholds. It earns that
+license by being **used sparingly**: the same single illustrated asset everywhere it
+appears (header, favicon, app icon), scaled down as needed rather than distilled into a
+separate flat glyph — a hand-vector distillation read as generic/off-brand at small
+sizes, so the full mascot itself is the mark at every size. Restraint is still the rule;
+the mark is the sanctioned place for flourish. It steers clear of both the flat-minimal
+crypto-exchange kraken and the athletic single-eye tentacle-monogram of the NHL club —
+detail and character are how it stays out of those lanes.
+
 ## Anti-references
 
 - **Consumer travel-app bubble** — TripAdvisor / Expedia gradients, stock hero photos,

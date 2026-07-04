@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import Image from "next/image";
 import "./globals.css";
 
 // IBM Plex Sans/Mono replace Inter (design-roadmap.md Phase c type scale pass) — Inter reads
@@ -32,7 +33,7 @@ export default function RootLayout({
         <nav className="border-b border-line bg-canvas">
           <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
             <a href="/" className="flex items-center gap-2 font-bold text-lg text-brand-600 dark:text-brand-400">
-              <span className="text-2xl">🐙</span>
+              <Image src="/kraken-mascot.png" alt="" width={28} height={28} priority />
               Trip Kraken
             </a>
           </div>
