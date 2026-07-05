@@ -114,18 +114,21 @@ hides affordances and breaks the "bank iOS portability for free" principle. Make
 always-visible or focus/tap-revealed; give the map a tap-driven info path. → `$impeccable adapt`
 
 ### P2 — Inconsistent selection language + panel construction
-Three active-state treatments (tabs = green fill, day filters = black/white inversion, nearby
-filters = green outline); two close glyphs (× / ✕); two side panels built differently
-(Inspector uses `.card`, NearbyDrawer hand-rolled). Unify: one selected-state token, one close
-icon, one shared panel shell. → `$impeccable polish`
+Two active-state treatments remain (surface-switch tabs and nearby filters both now use
+`bg-brand-600`/`text-white` fill — the same treatment; day-number filter chips use a distinct
+per-day-tint / `bg-ink text-canvas` inversion instead); two side panels built differently
+(Inspector uses `.card`, NearbyDrawer hand-rolled `border-b border-line` sections). Unify: one
+selected-state token, one shared panel shell. → `$impeccable polish`
+(Close glyphs are already unified — Lucide `<X/>` everywhere, a side effect of the icon-set pass.)
 
 ### Minor observations
-- `text-gray-300` italic "Add label…" placeholder is near-invisible.
 - Inspector + Nearby can both open at once, squeezing the main column to a sliver.
 - Nearby drawer stacks ~7 control groups in 320px — progressive-disclosure candidate.
 - Map click-select, tooltip, and legend are all pointer-only.
-- Detector: 4 `gray-on-color` warnings — `text-gray-400/500` on `bg-danger-50`
-  (`DayCard.tsx:263`, `UnassignedCard.tsx:159`).
+
+(Resolved by the `colorize` sweep, pruned here: the "Add label…" placeholder near-invisibility
+and the 4 `gray-on-color` warnings at `DayCard.tsx:263`/`UnassignedCard.tsx:159` — both lines
+are on semantic tokens now, zero raw `gray-300/400/500` left in `src`.)
 
 ### Deferred accessibility (PRODUCT.md — noted, not immediate)
 WCAG AA contrast, full keyboard operability, a keyboard alternative to drag-and-drop, and
@@ -227,3 +230,12 @@ honoring `prefers-reduced-motion`. Not this pass; no new work should foreclose i
   used to generate `src/app/icon.png`, `src/app/apple-icon.png`, and `public/favicon.ico`.
   PRODUCT.md → Brand Personality updated to match; `docs/logo-handoff.md` and
   `docs/typography-handoff.md` deleted as resolved handoff scaffolding. **Phase c complete.**
+- 2026-07-05 — Audited this roadmap against current code (no code changes). Everything marked
+  DONE/merged (Phases a, b, and all of Phase c) verified accurate — no regressions. Pruned two
+  stale Deferred-backlog minors that colorize had already fixed without the roadmap being
+  updated (the "Add label…" placeholder contrast, the 4 gray-on-color warnings at
+  `DayCard.tsx:263`/`UnassignedCard.tsx:159`), and corrected the P2 selection-language item:
+  close glyphs are already unified (Lucide `<X/>`), and nearby filters now share the same
+  `bg-brand-600` fill as the surface-switch tabs rather than a distinct "green outline" —
+  leaving two active-state treatments (that shared fill vs. the day-chip tint/inversion), not
+  three.
