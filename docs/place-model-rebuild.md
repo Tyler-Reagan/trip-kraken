@@ -116,4 +116,9 @@ end-to-end. **Parked by ADR-0015** (deliberately not built; must not be preclude
 - **Same-place multiplicity** — one continuous binding per constraint; revisit only if it earns it.
 
 Follow-on UI polish noticed during verification: lodging-date *set* and placement drag still reload
-(only exclude/unschedule are optimistic so far).
+(only exclude/unschedule are optimistic so far). **Re-verified 2026-07-05, still true** —
+`tripStore.ts`'s `saveLodgingDates` and `movePlacement` still `await fetch(...)` then
+`get().reload()` with no optimistic local write first, unlike `updateLocation` (exclude/duration)
+and `removePlacement` (unschedule), which patch `trip` in local state immediately. This is the
+only concretely unimplemented item left under this doc — everything else here (D1–D5, the three
+ADR-0015 parked items) is either shipped or deliberately parked, not owed work.
