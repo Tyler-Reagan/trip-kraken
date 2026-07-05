@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Trash2 } from "lucide-react";
 
 interface TripSummary {
   id: string;
@@ -49,13 +50,13 @@ export default function TripList({ trips }: { trips: TripSummary[] }) {
           <button
             onClick={(e) => handleDelete(e, trip.id)}
             disabled={deletingId === trip.id}
-            className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity
+            className="absolute top-3 right-3 hover-reveal transition-opacity
               text-ghost hover:text-danger-400 dark:hover:text-danger-400
-              disabled:opacity-30 text-lg leading-none"
+              disabled:opacity-30"
             aria-label={`Delete ${trip.name}`}
             title="Delete trip"
           >
-            ×
+            <Trash2 className="w-4 h-4" />
           </button>
         </li>
       ))}

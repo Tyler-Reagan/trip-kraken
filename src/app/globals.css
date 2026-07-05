@@ -92,6 +92,16 @@
   }
   .input::placeholder { color: var(--faint); }
 
+  /* Row-action affordances: visible by default (so touch has a path to them at all), faded
+     until hover/focus only on devices that actually have a hovering pointer — a bare `sm:`
+     breakpoint would wrongly hide them on touch tablets wide enough to hit that breakpoint. */
+  .hover-reveal { opacity: 1; }
+  @media (hover: hover) {
+    .hover-reveal { opacity: 0; transition: opacity 150ms; }
+    .group:hover .hover-reveal,
+    .hover-reveal:focus-within { opacity: 1; }
+  }
+
   /* Type scale (design-roadmap.md Phase c, typography-handoff.md) — named roles, each a
      fixed size + weight pairing, decided live in /typography-prototype against real
      component shapes. Size/weight carry hierarchy per PRODUCT.md; color is layered on

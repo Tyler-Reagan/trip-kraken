@@ -175,7 +175,7 @@ function AnchorRow({ loc, role, date }: { loc: Lodging; role: "start" | "end" | 
         disabled={loc.lat === null}
         title="Find nearby places"
         aria-label="Find nearby places"
-        className="shrink-0 w-7 h-7 flex items-center justify-center rounded text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-all"
+        className="shrink-0 w-7 h-7 flex items-center justify-center rounded text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed hover-reveal transition-all"
       >
         <Search className="w-4 h-4" />
       </button>
@@ -259,7 +259,7 @@ function StopRow({ stop, index, dayNumber, isDragging, dayOfWeek, date, onDragSt
           <p className="text-body truncate text-ink">{loc.name}</p>
           <p className="text-numeral text-faint mt-0.5">{hoursText} · {durText}</p>
         </div>
-        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        <div className="shrink-0 flex items-center gap-0.5 hover-reveal transition-opacity">
           <button
             onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, date); }}
             disabled={loc.lat === null}

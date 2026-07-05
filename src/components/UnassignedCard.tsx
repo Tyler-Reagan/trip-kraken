@@ -142,7 +142,7 @@ function UnassignedRow({ loc, schedulable, onDragStart }: { loc: Location; sched
       </div>
 
       {/* Action buttons */}
-      <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+      <div className="shrink-0 flex items-center gap-0.5 hover-reveal transition-opacity">
         <button
           onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, null); }}
           disabled={loc.lat === null}

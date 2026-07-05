@@ -210,33 +210,37 @@ export default function MapView({ heightClass = "h-[520px]" }: { heightClass?: s
     },
   };
 
+  // Shared by click (tap) and hover so touch devices — which never fire mousemove — get the
+  // same info surface a mouse hover gets, just triggered by tapping the stop instead.
+  const buildTooltip = useCallback((e: MapMouseEvent): TooltipState => {
+    const features = mapRef.current?.queryRenderedFeatures(e.point, { layers: ["stops"] });
+    const f = features?.[0];
+    if (!f?.properties) return null;
+    const isBase = f.properties.isBase === 1;
+    return {
+      x: e.point.x,
+      y: e.point.y,
+      name: f.properties.name as string,
+      isBase,
+      ...(isBase
+        ? { dayNumbers: JSON.parse(f.properties.dayNumbers as string) as number[] }
+        : { dayNumber: f.properties.dayNumber as number, order: f.properties.order as number }
+      ),
+    };
+  }, []);
+
   const handleClick = useCallback((e: MapMouseEvent) => {
     const features = mapRef.current?.queryRenderedFeatures(e.point, { layers: ["stops"] });
     const f = features?.[0];
     if (f?.properties?.locationId) {
       handleMapLocationClick(f.properties.locationId as string);
     }
-  }, [handleMapLocationClick]);
+    setTooltip(buildTooltip(e));
+  }, [handleMapLocationClick, buildTooltip]);
 
   const handleMouseMove = useCallback((e: MapMouseEvent) => {
-    const features = mapRef.current?.queryRenderedFeatures(e.point, { layers: ["stops"] });
-    const f = features?.[0];
-    if (f?.properties) {
-      const isBase = f.properties.isBase === 1;
-      setTooltip({
-        x: e.point.x,
-        y: e.point.y,
-        name: f.properties.name as string,
-        isBase,
-        ...(isBase
-          ? { dayNumbers: JSON.parse(f.properties.dayNumbers as string) as number[] }
-          : { dayNumber: f.properties.dayNumber as number, order: f.properties.order as number }
-        ),
-      });
-    } else {
-      setTooltip(null);
-    }
-  }, []);
+    setTooltip(buildTooltip(e));
+  }, [buildTooltip]);
 
   const handleMouseLeave = useCallback(() => setTooltip(null), []);
 
