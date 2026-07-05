@@ -108,27 +108,42 @@ Linear feel per PRODUCT.md.
 
 ## Deferred backlog (tracked, not this pass)
 
-### P2 — Hover-only controls have no touch path
-Row action buttons (`opacity-0 group-hover:opacity-100`) and map tooltips are hover-gated —
-hides affordances and breaks the "bank iOS portability for free" principle. Make actions
-always-visible or focus/tap-revealed; give the map a tap-driven info path. → `$impeccable adapt`
+### P2 — Hover-only controls have no touch path · status: resolved
+Row action buttons (`DayCard`, `UnassignedCard`, `TripList`) were `opacity-0
+group-hover:opacity-100` with no touch equivalent; map tooltips only fired on `mousemove`.
+Fixed via a `.hover-reveal` utility (`globals.css`) that keeps actions visible by default and
+only fades to hover-revealed under `@media (hover: hover)` — so touch devices always see them,
+regardless of viewport width. Map taps now call the same `buildTooltip` a hover would.
 
-### P2 — Inconsistent selection language + panel construction
-Two active-state treatments remain (surface-switch tabs and nearby filters both now use
-`bg-brand-600`/`text-white` fill — the same treatment; day-number filter chips use a distinct
-per-day-tint / `bg-ink text-canvas` inversion instead); two side panels built differently
-(Inspector uses `.card`, NearbyDrawer hand-rolled `border-b border-line` sections). Unify: one
-selected-state token, one shared panel shell. → `$impeccable polish`
-(Close glyphs are already unified — Lucide `<X/>` everywhere, a side effect of the icon-set pass.)
+### P2 — Inconsistent selection language + panel construction · status: partially resolved
+Panel shell unified: `NearbyDrawer` now uses `.card` instead of hand-rolling the same
+rounded/border/shadow combo, matching `LocationInspector`. Also caught and fixed a leftover
+raw "×" close glyph in `LocationInspector` (Lucide `<X/>` now, matching `NearbyDrawer`/
+`Manifest`/the modals) — the icon-set pass had missed it.
+
+The "two active-state treatments" half is judged **not a defect**: surface-switch tabs and
+nearby filters share `bg-brand-600`/`text-white` (the action/selection fill); day-number
+filter chips use a distinct per-day-tint / `bg-ink text-canvas` inversion. That split is
+Phase b's deliberate decision — "brand green stays reserved for actions/selection; day color
+is wayfinding only" — so collapsing it into one token would undo that call, not fix a bug.
+Leaving as designed.
 
 ### Minor observations
-- Inspector + Nearby can both open at once, squeezing the main column to a sliver.
 - Nearby drawer stacks ~7 control groups in 320px — progressive-disclosure candidate.
-- Map click-select, tooltip, and legend are all pointer-only.
+- Map click-select and tooltip are now tap-driven too (see `hover-reveal` fix below); the
+  legend remains a static, always-visible overlay — never was pointer-only, no fix needed.
 
-(Resolved by the `colorize` sweep, pruned here: the "Add label…" placeholder near-invisibility
-and the 4 `gray-on-color` warnings at `DayCard.tsx:263`/`UnassignedCard.tsx:159` — both lines
-are on semantic tokens now, zero raw `gray-300/400/500` left in `src`.)
+(Resolved, pruned here:
+- "Add label…" placeholder near-invisibility and the 4 `gray-on-color` warnings at
+  `DayCard.tsx:263`/`UnassignedCard.tsx:159` — fixed by the `colorize` sweep, both lines on
+  semantic tokens now, zero raw `gray-300/400/500` left in `src`.
+- "Inspector + Nearby can both open at once, squeezing the main column" — re-checked against
+  current code, not just Phase a's changelog claim of partial fix: `TripClient.tsx`'s
+  `companion` variable already picks exactly one of nearby/inspector/map by priority in the
+  Itinerary surface, and the Places surface never renders `NearbyDrawer` at all. The two
+  cannot coexist anywhere in the current tree — this was already fully resolved, not partial.
+- Map click-select/tooltip pointer-only — tapping a stop now shows the same tooltip a hover
+  would (`MapView.tsx` `buildTooltip` shared between click and mousemove).)
 
 ### Deferred accessibility (PRODUCT.md — noted, not immediate)
 WCAG AA contrast, full keyboard operability, a keyboard alternative to drag-and-drop, and
@@ -239,3 +254,21 @@ honoring `prefers-reduced-motion`. Not this pass; no new work should foreclose i
   `bg-brand-600` fill as the surface-switch tabs rather than a distinct "green outline" —
   leaving two active-state treatments (that shared fill vs. the day-chip tint/inversion), not
   three.
+- 2026-07-05 — Deferred-backlog cleanup pass on the two remaining P2s and three minors.
+  **Hover-only controls (resolved):** row actions in `DayCard`/`UnassignedCard`/`TripList` and
+  map tooltips were hover/mousemove-only with no touch path. Added a `.hover-reveal` utility
+  (visible by default, fades to hover-revealed only under `@media (hover: hover)`, not a
+  screen-size breakpoint) and gave the map tap the same tooltip a hover produces
+  (`buildTooltip` shared between `handleClick`/`handleMouseMove`). Also swapped `TripList`'s
+  raw "×" delete glyph for `Trash2` (missed by the earlier icon-set pass).
+  **Selection language + panel construction (partially resolved):** unified `NearbyDrawer`'s
+  hand-rolled panel chrome onto `.card` (matches `LocationInspector`) and fixed a leftover raw
+  "×" close glyph in `LocationInspector` → Lucide `<X/>`. Left the two active-state treatments
+  (brand-fill for actions/tabs/filters vs. day-tint/ink-inversion for day chips) as designed —
+  that split is Phase b's deliberate "day color is wayfinding only" decision, not a defect.
+  **Minors:** re-verified "Inspector + Nearby both open" against current code rather than
+  trusting Phase a's changelog claim of a partial fix — `TripClient`'s `companion` priority
+  logic and the Places surface never rendering `NearbyDrawer` mean this was already fully
+  resolved, not partial; pruned. "Map pointer-only" resolved by the same tap-tooltip fix above
+  (the legend was never actually pointer-gated — it's a static overlay). NearbyDrawer's control
+  density (~7 groups in 320px) remains open, tracked separately below. tsc 0 throughout.

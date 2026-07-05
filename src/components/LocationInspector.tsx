@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Star } from "lucide-react";
+import { Star, X } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 import { isActivity, type Location } from "@/types";
 
@@ -134,10 +134,10 @@ export default function LocationInspector() {
         </h2>
         <button
           onClick={() => setInspectedLocationId(null)}
-          className="text-faint hover:text-sub text-lg leading-none shrink-0 transition-colors"
+          className="text-faint hover:text-sub shrink-0 transition-colors"
           aria-label="Close inspector"
         >
-          ×
+          <X className="w-4 h-4" />
         </button>
       </div>
 

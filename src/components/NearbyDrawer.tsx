@@ -208,7 +208,7 @@ export default function NearbyDrawer() {
     <div
       role="complementary"
       aria-label="Nearby places"
-      className="w-full flex flex-col max-h-[calc(100vh-5rem)] rounded-xl border border-line bg-surface shadow-sm overflow-hidden"
+      className="card w-full flex flex-col max-h-[calc(100vh-5rem)] overflow-hidden"
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-2 p-4 border-b border-line shrink-0">
