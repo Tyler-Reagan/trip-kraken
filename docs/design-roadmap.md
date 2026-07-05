@@ -128,10 +128,13 @@ Phase b's deliberate decision — "brand green stays reserved for actions/select
 is wayfinding only" — so collapsing it into one token would undo that call, not fix a bug.
 Leaving as designed.
 
-### Minor observations
-- Nearby drawer stacks ~7 control groups in 320px — progressive-disclosure candidate.
-- Map click-select and tooltip are now tap-driven too (see `hover-reveal` fix below); the
-  legend remains a static, always-visible overlay — never was pointer-only, no fix needed.
+### Minor observations · status: resolved
+Nearby drawer's 7 stacked control groups collapsed to 4: source, type, keyword, and radius
+stay visible; open-now/min-rating/price move behind a "More filters" disclosure toggle that
+surfaces a count (e.g. "More filters (2)") when any are active but hidden, so an applied
+filter is never silently invisible. Map click-select and tooltip are tap-driven too (see
+`hover-reveal` fix below); the legend remains a static, always-visible overlay — never was
+pointer-only, no fix needed.
 
 (Resolved, pruned here:
 - "Add label…" placeholder near-invisibility and the 4 `gray-on-color` warnings at
@@ -270,5 +273,10 @@ honoring `prefers-reduced-motion`. Not this pass; no new work should foreclose i
   trusting Phase a's changelog claim of a partial fix — `TripClient`'s `companion` priority
   logic and the Places surface never rendering `NearbyDrawer` mean this was already fully
   resolved, not partial; pruned. "Map pointer-only" resolved by the same tap-tooltip fix above
-  (the legend was never actually pointer-gated — it's a static overlay). NearbyDrawer's control
-  density (~7 groups in 320px) remains open, tracked separately below. tsc 0 throughout.
+  (the legend was never actually pointer-gated — it's a static overlay). tsc 0 throughout.
+- 2026-07-05 — Closed the last open backlog item, NearbyDrawer's control density. Collapsed
+  open-now/min-rating/price behind a "More filters" disclosure toggle (source/type/keyword/
+  radius stay always-visible as the primary controls); the toggle shows an active count when
+  collapsed so a hidden-but-applied filter is never invisible. tsc 0. Deferred backlog is now
+  empty except deferred accessibility (WCAG AA, keyboard, drag-and-drop alt,
+  `prefers-reduced-motion`), which was always explicitly out of scope for this pass.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Star, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Star, X } from "lucide-react";
 import { deriveDays, type NearbyPlace } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 
@@ -62,6 +62,7 @@ export default function NearbyDrawer() {
   const [priceLevels, setPriceLevels] = useState<Set<number>>(new Set());
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set(existingPlaceIds));
   const [addingId, setAddingId] = useState<string | null>(null);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep addedIds in sync with trip.locations so that removing a location
@@ -196,6 +197,9 @@ export default function NearbyDrawer() {
     return true;
   });
 
+  const activeMoreFiltersCount =
+    (openNow ? 1 : 0) + (minRating !== null ? 1 : 0) + (priceLevels.size > 0 ? 1 : 0);
+
   function togglePriceLevel(level: number) {
     setPriceLevels((prev) => {
       const next = new Set(prev);
@@ -309,56 +313,72 @@ export default function NearbyDrawer() {
           </div>
         </div>
 
-        {/* Open now — Google only (Tabelog listings don't expose current open status) */}
-        {source === "google" && <label className="flex items-center gap-2 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={openNow}
-            onChange={(e) => setOpenNow(e.target.checked)}
-            className="rounded border-line-strong text-brand-600 focus:ring-brand-500"
-          />
-          <span className="text-xs text-sub">Open now</span>
-        </label>}
+        {/* Secondary filters — collapsed by default so the 320px drawer doesn't stack every
+            control group at once; the toggle label surfaces a count when any are active so
+            they're never silently hiding an applied filter. */}
+        <button
+          onClick={() => setShowMoreFilters((v) => !v)}
+          className="flex items-center gap-1 text-xs font-medium text-sub hover:text-ink transition-colors"
+        >
+          {showMoreFilters ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          More filters
+          {!showMoreFilters && activeMoreFiltersCount > 0 ? ` (${activeMoreFiltersCount})` : ""}
+        </button>
 
-        {/* Min rating */}
-        <div>
-          <p className="text-xs font-medium text-sub mb-1">Min rating</p>
-          <div className="flex gap-1">
-            {RATING_OPTIONS.map((opt) => (
-              <button
-                key={String(opt.value)}
-                onClick={() => setMinRating(opt.value)}
-                className={`px-2 py-0.5 text-xs rounded border transition-colors
-                  ${minRating === opt.value
-                    ? "bg-brand-600 dark:bg-brand-500 text-white border-brand-600 dark:border-brand-500"
-                    : "bg-surface-2 text-sub border-line-strong hover:bg-surface-2 hover:bg-surface-3"
-                  }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        {showMoreFilters && (
+          <div className="space-y-3">
+            {/* Open now — Google only (Tabelog listings don't expose current open status) */}
+            {source === "google" && <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={openNow}
+                onChange={(e) => setOpenNow(e.target.checked)}
+                className="rounded border-line-strong text-brand-600 focus:ring-brand-500"
+              />
+              <span className="text-xs text-sub">Open now</span>
+            </label>}
 
-        {/* Price level */}
-        <div>
-          <p className="text-xs font-medium text-sub mb-1">Price</p>
-          <div className="flex gap-1">
-            {PRICE_LABELS.map((label, level) => (
-              <button
-                key={level}
-                onClick={() => togglePriceLevel(level)}
-                className={`px-2 py-0.5 text-xs rounded border transition-colors
-                  ${priceLevels.has(level)
-                    ? "bg-brand-600 dark:bg-brand-500 text-white border-brand-600 dark:border-brand-500"
-                    : "bg-surface-2 text-sub border-line-strong hover:bg-surface-2 hover:bg-surface-3"
-                  }`}
-              >
-                {label}
-              </button>
-            ))}
+            {/* Min rating */}
+            <div>
+              <p className="text-xs font-medium text-sub mb-1">Min rating</p>
+              <div className="flex gap-1">
+                {RATING_OPTIONS.map((opt) => (
+                  <button
+                    key={String(opt.value)}
+                    onClick={() => setMinRating(opt.value)}
+                    className={`px-2 py-0.5 text-xs rounded border transition-colors
+                      ${minRating === opt.value
+                        ? "bg-brand-600 dark:bg-brand-500 text-white border-brand-600 dark:border-brand-500"
+                        : "bg-surface-2 text-sub border-line-strong hover:bg-surface-2 hover:bg-surface-3"
+                      }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Price level */}
+            <div>
+              <p className="text-xs font-medium text-sub mb-1">Price</p>
+              <div className="flex gap-1">
+                {PRICE_LABELS.map((label, level) => (
+                  <button
+                    key={level}
+                    onClick={() => togglePriceLevel(level)}
+                    className={`px-2 py-0.5 text-xs rounded border transition-colors
+                      ${priceLevels.has(level)
+                        ? "bg-brand-600 dark:bg-brand-500 text-white border-brand-600 dark:border-brand-500"
+                        : "bg-surface-2 text-sub border-line-strong hover:bg-surface-2 hover:bg-surface-3"
+                      }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Results */}
