@@ -28,7 +28,6 @@ import {
   windowPenaltyKm,
   routeWindowPenalty,
   dayBudgetPenaltyKm,
-  categoryBalancePenaltyKm,
   DEFAULT_VISIT_MINS,
 } from "@/lib/objective";
 
@@ -39,7 +38,6 @@ export interface LocationInput {
   visitDuration?: number;   // minutes; used for day duration balancing
   openTime?: string;        // "HH:MM" 24-hour; soft time-window constraint
   closeTime?: string;       // "HH:MM" 24-hour; soft time-window constraint
-  categories?: string[];    // Google Places categories; used for cross-day balance
 }
 
 /** A lodging occupied over a contiguous night-range (ADR-0015 — derived from its booking dates). */
@@ -206,15 +204,6 @@ function kMeans(
   const centroids = seedCentroids(locations, k, anchors);
   let assignments = new Array<number>(locations.length).fill(0);
 
-  // Pre-compute ideal category distribution across days (cross-day balance).
-  const allCategories = locations.flatMap((l) => l.categories ?? []);
-  const uniqueCategories = [...new Set(allCategories)];
-  const idealCategoryCounts: Record<string, number> = {};
-  for (const cat of uniqueCategories) {
-    const total = locations.filter((l) => l.categories?.includes(cat)).length;
-    idealCategoryCounts[cat] = total / k;
-  }
-
   for (let iter = 0; iter < 100; iter++) {
     // Day durations from the previous assignment, so the cost can penalise over-budget days.
     const dayDurations = dayBudgetMinutes
@@ -223,17 +212,8 @@ function kMeans(
         )
       : undefined;
 
-    const dayCategoryCounts: Record<string, number>[] = Array.from({ length: k }, () => ({}));
-    if (uniqueCategories.length > 0) {
-      locations.forEach((loc, i) => {
-        for (const cat of loc.categories ?? []) {
-          dayCategoryCounts[assignments[i]][cat] = (dayCategoryCounts[assignments[i]][cat] ?? 0) + 1;
-        }
-      });
-    }
-
     const newAssignments = locations.map((loc) =>
-      nearestCentroidIndex(loc, centroids, dayDurations, dayBudgetMinutes, dayCategoryCounts, idealCategoryCounts)
+      nearestCentroidIndex(loc, centroids, dayDurations, dayBudgetMinutes)
     );
 
     const changed = newAssignments.some((a, i) => a !== assignments[i]);
@@ -300,26 +280,17 @@ function nearestCentroidIndex(
   loc: LocationInput,
   centroids: Centroid[],
   dayDurations?: number[],
-  dayBudgetMinutes?: number,
-  dayCategoryCounts?: Record<string, number>[],
-  idealCategoryCounts?: Record<string, number>
+  dayBudgetMinutes?: number
 ): number {
   let best = 0;
   let bestCost = Infinity;
   centroids.forEach((c, i) => {
     let cost = haversine(loc, c);
 
-    // Balance penalties (ADR-0001 #4) — geographic proximity stays dominant; these nudge stops
-    // away from already-full days and away from over-concentrating one category on one day.
+    // Feasibility penalty (ADR-0001 #1) — geographic proximity stays dominant; this nudges stops
+    // away from already-full days.
     if (dayDurations && dayBudgetMinutes) {
       cost += dayBudgetPenaltyKm(dayDurations[i] + (loc.visitDuration ?? 0), dayBudgetMinutes);
-    }
-    if (dayCategoryCounts && idealCategoryCounts) {
-      for (const cat of loc.categories ?? []) {
-        const current = dayCategoryCounts[i][cat] ?? 0;
-        const ideal = idealCategoryCounts[cat] ?? 0;
-        cost += categoryBalancePenaltyKm(current + 1, ideal);
-      }
     }
 
     if (cost < bestCost) {

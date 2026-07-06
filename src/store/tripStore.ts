@@ -36,7 +36,7 @@ interface TripStore {
 
   // Async mutations — use get().tripId internally
   reload: () => Promise<void>;
-  optimize: (opts?: { dayBudgetHours?: number; balanceCategories?: boolean }) => Promise<void>;
+  optimize: (opts?: { dayBudgetHours?: number }) => Promise<void>;
   updateLocation: (
     locationId: string,
     fields: { excluded?: boolean; note?: string | null; name?: string; visitDuration?: number | null }

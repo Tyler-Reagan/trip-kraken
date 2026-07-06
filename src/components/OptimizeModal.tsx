@@ -9,11 +9,8 @@ export default function OptimizeModal() {
   const setShowOptimize = useTripStore((s) => s.setShowOptimize);
   const optimize = useTripStore((s) => s.optimize);
   const [dayBudgetHours, setDayBudgetHours] = useState<number>(8);
-  const [balanceCategories, setBalanceCategories] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const hasCategoryData = trip?.locations.some((l) => l.categories && l.categories.length > 0) ?? false;
 
   if (!trip) return null;
 
@@ -24,7 +21,7 @@ export default function OptimizeModal() {
     try {
       // The day count and dates come from the trip's required range (ADR-0015); only the soft
       // knobs are chosen here. Re-optimize replaces the plan wholesale.
-      await optimize({ dayBudgetHours, balanceCategories });
+      await optimize({ dayBudgetHours });
       setShowOptimize(false);
     } catch {
       setError("Network error. Please try again.");
@@ -82,25 +79,6 @@ export default function OptimizeModal() {
               Balances days so no single day exceeds this visit time. Only applies when locations have durations set.
             </p>
           </div>
-
-          {hasCategoryData && (
-            <label className="flex items-start gap-3 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={balanceCategories}
-                onChange={(e) => setBalanceCategories(e.target.checked)}
-                className="mt-0.5 rounded border-line-strong text-brand-600 focus:ring-brand-500 shrink-0"
-              />
-              <div>
-                <span className="text-sm font-medium text-ink">
-                  Balance categories across days
-                </span>
-                <p className="text-xs text-faint mt-0.5">
-                  Spreads location types (restaurants, museums, etc.) evenly so no single day concentrates one category.
-                </p>
-              </div>
-            </label>
-          )}
 
           {error && (
             <p className="text-sm text-danger-600 dark:text-danger-400 bg-danger-50 dark:bg-danger-950 border border-danger-200 dark:border-danger-800 rounded-lg px-3 py-2">

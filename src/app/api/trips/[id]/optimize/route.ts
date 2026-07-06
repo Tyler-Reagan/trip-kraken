@@ -15,11 +15,10 @@ export async function POST(
   if (!tripExists(tripId)) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
   const body = await req.json().catch(() => ({}));
-  const { dayBudgetHours, balanceCategories } = body ?? {};
+  const { dayBudgetHours } = body ?? {};
 
   const trip = optimizeTrip(tripId, {
     ...(typeof dayBudgetHours === "number" && dayBudgetHours > 0 ? { dayBudgetHours } : {}),
-    ...(balanceCategories ? { balanceCategories: true } : {}),
   });
   return NextResponse.json(trip);
 }

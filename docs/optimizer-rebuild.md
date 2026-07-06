@@ -11,18 +11,23 @@
 **ADR-0003 and ADR-0004 are Accepted but only partially built.** The domain model (ADR-0015)
 and trip topology (ADR-0005) are real; the optimizer itself is still the pre-ADR-0003 monolith
 they were meant to replace — one function, no interface, no swappable travel cost. This doc
-tracks closing that gap, not re-deciding the objective (ADR-0001 is settled) or the topology
-(ADR-0005 is settled).
+tracks closing that gap. The objective itself was amended mid-stream by **ADR-0016**: category
+balance is out of the authoritative objective (deferred to a later advisory feature), and
+feasibility is a hard lexicographic gate, not a weighted term in one summed cost.
 
 ---
 
 ## Where we are
 
-### What's decided (ADR-0001, 0003, 0004, 0005 — all Accepted)
+### What's decided (ADR-0001, 0003, 0004, 0005, 0016 — all Accepted)
 
-- **The objective (ADR-0001):** feasibility ≫ travel ≫ intent ≫ balance, expressed as one
-  comparable cost. Intent (locking) was later dropped by ADR-0015 — re-optimize is wholesale —
-  so the live ranking is feasibility ≫ travel ≫ balance.
+- **The objective (ADR-0001, amended by ADR-0016):** originally feasibility ≫ travel ≫ intent ≫
+  balance, expressed as one comparable cost. Intent (locking) was dropped by ADR-0015. ADR-0016
+  then narrowed this further: the **authoritative** objective is feasibility ≫ travel only,
+  compared as two lexicographic tiers (a feasibility violation always loses to a feasible
+  candidate, regardless of travel cost) — not summed into one flattened number. Category/variety
+  balance is removed from the authoritative objective entirely and deferred to a later, advisory
+  suggestions feature (not scored, not part of what "optimized" means).
 - **The solver interface (ADR-0003):** `solve(problem: OptimizationProblem): Itinerary`, with
   the objective as a **named, shared module** solvers call to score candidates, and the default
   solver being today's heuristic reframed (not replaced) behind that seam. A stronger solver
@@ -37,7 +42,7 @@ tracks closing that gap, not re-deciding the objective (ADR-0001 is settled) or 
 | Concern | Code today | Lives in | ADR target |
 |---|---|---|---|
 | Entry point | `optimizeItinerary(locations, numDays, stays, ...)` — a plain function with 6 positional/optional params | `optimizer.ts` | `solve(problem: OptimizationProblem): Itinerary` — one typed input, one algorithm-agnostic output |
-| Objective | Feasibility/travel/balance penalties (window penalty, category-balance, day-budget) hand-inlined across `nearestCentroidIndex`, `windowPenaltyKm`, `routeWindowPenalty` | `optimizer.ts` | A **named, shared objective module** implementing ADR-0001's ranked criteria; solvers call it, don't re-encode it |
+| Objective | Feasibility penalties (window, day-budget) live in `objective.ts`, called by `optimizer.ts`. They're still summed into one flattened cost with travel distance — not yet the lexicographic gate ADR-0016 requires. | `objective.ts` + `optimizer.ts` | A composed whole-itinerary comparator (O3) that checks feasibility **before** ever comparing travel — two tiers, not one sum |
 | Travel cost | `haversine()` + a hardcoded `AVG_SPEED_KM_PER_MIN` constant, called directly throughout | `optimizer.ts` | A **travel-cost provider** (`cost`/`costMatrix`, mode-aware), default = haversine, swappable for a routing API later |
 | Algorithm choice | One hard-coded two-phase heuristic (k-means → nearest-neighbor + 2-opt), no seam to swap it | `optimizer.ts` | The heuristic becomes the **default implementation** of the solver interface; alternates (VRPTW) plug in beside it, chosen by config |
 | Testability of objective | Only testable indirectly, by running the whole heuristic and inspecting output | `optimizer.test.ts` | Feed the objective two itineraries directly, assert the better one scores lower — no solver required |
@@ -92,7 +97,7 @@ the first cut can be. A reasonable default shape, subject to revision once actua
 |---|---|---|
 | **O1** ✅ | **Objective module** | Extract ADR-0001's penalties (window, category-balance, day-budget) out of `nearestCentroidIndex`/`windowPenaltyKm`/`routeWindowPenalty` into one named, directly-testable module. No behavior change — same weights, same output — this is a pure extraction. **Done** — see status log. |
 | **O2** | **Travel-cost provider** | Wrap `haversine` + `AVG_SPEED_KM_PER_MIN` behind an **async** `cost`/`costMatrix(mode)` (ADR-0004's whole point is a future real routing API, which is inherently async — building the interface sync now would force a breaking rework later, exactly when it matters most). Default provider preserves current behavior/numbers exactly — no realism upgrade (e.g. no per-mode speeds) bundled into this slice. **Scope boundaries:** (1) the clustering step's centroid-distance math (`nearestCentroidIndex`/`seedCentroids`) is explicitly *not* part of this — a centroid is a synthetic averaged point, not a real place, so it stays on plain `haversine`, untouched, forever; only real Location-to-Location queries (sequencing + the window-penalty arrival simulation) go through the provider. (2) The sequencing algorithms (`sequenceDay`, `nearestNeighborOrder`, `twoOpt`) must fetch each day's full pairwise distances via one upfront `costMatrix()` batch call, not `cost()` one pair at a time inside their loops — the ad hoc-per-pair shape is exactly the N² live-network-call problem ADR-0004's matrix form exists to prevent, and it's cheaper to build correctly now than to fix once a real provider exists. (3) Async propagates: this slice must also update `objective.ts`'s `routeWindowPenalty` (its `travelMins` callback becomes `Promise`-returning), `optimizer.ts`'s sequencing functions, `optimize.ts`'s `optimizeTrip`, the `/api/trips/[id]/optimize` route, and `optimizer.test.ts` — **all in the same pass**, since a partial ripple wouldn't compile/run. |
-| **O3** | **Solver interface** | Define `OptimizationProblem`/`Itinerary` types; wrap the existing two-phase heuristic as the default `solve()` implementation (now async, inherited from O2). **Thin only:** no solver-registry or config-selection mechanism — there is exactly one implementation, so building a way to choose between solvers is speculative until a second one actually exists. `optimize.ts` assembles the problem from `TripWithDetails` and calls `solve()` instead of `optimizeItinerary()` directly. |
+| **O3** | **Solver interface** | Define `OptimizationProblem`/`Itinerary` types; wrap the existing two-phase heuristic as the default `solve()` implementation (now async, inherited from O2). **Thin only:** no solver-registry or config-selection mechanism — there is exactly one implementation, so building a way to choose between solvers is speculative until a second one actually exists. `optimize.ts` assembles the problem from `TripWithDetails` and calls `solve()` instead of `optimizeItinerary()` directly. **Per ADR-0016:** the whole-itinerary comparator this slice introduces must compare feasibility violations *before* ever comparing travel cost — two lexicographic tiers, not one flattened weighted sum (the greedy per-stop/per-swap costs already inside `kMeans`/`twoOpt` stay approximate signals guiding construction; only the final comparator needs the real guarantee). |
 
 This is a guess at slicing, not a locked plan — revisit if building O2 surfaces something new.
 
@@ -128,4 +133,23 @@ This is a guess at slicing, not a locked plan — revisit if building O2 surface
   optimize.ts, the API route, tests) in one pass; O3 stays thin — no solver-selection mechanism
   until a second solver actually exists. Also locked: future optimizer-quality ideas split into
   category A (improve the existing heuristic — ordinary code review) vs. category B (an
-  alternative solver — requires build-and-compare, not verifiable a priori). Next: build O2.
+  alternative solver — requires build-and-compare, not verifiable a priori).
+- 2026-07-05 — **Scrutinized the four O1 primitives against ADR-0001 directly**, at the user's
+  request, before continuing to O2. Found: (1) `windowPenaltyKm`/`routeWindowPenalty` are one
+  rule + its reducer, not two independent criteria; (2) `categoryBalancePenaltyKm` only
+  approximates variety (penalizes exceeding an "ideal" per-day share, doesn't guarantee spread);
+  (3) the real issue — feasibility was being treated as "a big weight in one sum," conflating
+  feasibility (a gate defining the candidate set) with optimization (a search over that set) —
+  which can't structurally guarantee ADR-0001's "never trade a closed-hours violation for a
+  shorter route" rule. Resolved by **ADR-0016**: authoritative objective narrows to
+  feasibility-then-travel as two lexicographic tiers; category/variety balance removed from the
+  objective entirely, deferred to a later advisory suggestions feature.
+- 2026-07-05 — **Category balance removed end-to-end**, per ADR-0016. Deleted
+  `categoryBalancePenaltyKm`/`CATEGORY_BALANCE_KM` (`objective.ts`); removed the `categories`
+  field from `LocationInput` and the `dayCategoryCounts`/`idealCategoryCounts` machinery from
+  `kMeans`/`nearestCentroidIndex` (`optimizer.ts`); removed the `balanceCategories` option
+  end-to-end (`optimize.ts`, the `/api/trips/[id]/optimize` route, `tripStore.ts`'s `optimize()`
+  signature, and the `OptimizeModal` UI checkbox) rather than leave a now-dead toggle in the UI.
+  `dayBudgetPenaltyKm` stays — reconfirmed as feasibility-tier (ADR-0001 already placed "day
+  overstuffed" under criterion #1) — still needs restructuring into a true gate in O3, not done
+  here. Verified: `tsc` clean, `npm test` all green, `knip` clean. Next: build O2.

@@ -1,9 +1,12 @@
 /**
- * The optimization objective (ADR-0001), extracted behind the named module ADR-0003 calls for:
- * feasibility (time-window compliance) and balance (day-budget, category spread) expressed as
- * km-equivalent soft penalties, so a solver *scores* candidates through these functions instead of
- * re-encoding the ranking itself. Feasibility dominates: LATE is weighted far above EARLY, and both
- * dwarf the balance penalties below, keeping geographic travel cost the tie-breaker it should be.
+ * The optimization objective (ADR-0001), extracted behind the named module ADR-0003 calls for.
+ * Feasibility (time-window compliance, day-budget) is checked here as km-equivalent penalties a
+ * solver scores candidates through, rather than re-encoding the rule itself.
+ *
+ * Category/variety balance is deliberately NOT here: it's an unverifiable preference (there's no
+ * ground truth for "the right" category mix), unlike feasibility and travel which are objectively
+ * checkable. It's deferred to a later, advisory suggestions feature — not part of the authoritative
+ * objective (ADR-0001 amendment pending).
  *
  * Travel time is an *input* here, not something this module computes (ADR-0004 owns that) — hence
  * `routeWindowPenalty` takes a `travelMins` callback rather than a distance provider.
@@ -23,12 +26,8 @@ export const WINDOW_LATE_KM_PER_MIN = 5;
 // Assumed visit time when visitDuration is not set (used only for arrival simulation).
 export const DEFAULT_VISIT_MINS = 60;
 
-// Balance penalty scale (ADR-0001 #4): km-equivalent per hour a day runs over its soft budget.
+// Feasibility penalty scale (ADR-0001 #1): km-equivalent per hour a day runs over its budget.
 export const DAY_BUDGET_KM_PER_HOUR = 2;
-
-// Balance penalty scale (ADR-0001 #4): km-equivalent per unit excess over the ideal per-day
-// category count. Kept small relative to travel/window penalties so geography still leads.
-export const CATEGORY_BALANCE_KM = 1.0;
 
 function timeToMins(hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number);
@@ -74,13 +73,8 @@ export function routeWindowPenalty<L extends WindowedLocation>(
   return p;
 }
 
-/** Balance penalty (ADR-0001 #4): km-equivalent cost for a day whose projected duration exceeds budget. */
+/** Feasibility penalty (ADR-0001 #1): km-equivalent cost for a day whose projected duration exceeds budget. */
 export function dayBudgetPenaltyKm(projectedMinutes: number, budgetMinutes: number): number {
   const excess = Math.max(0, projectedMinutes - budgetMinutes);
   return (excess / 60) * DAY_BUDGET_KM_PER_HOUR;
-}
-
-/** Balance penalty (ADR-0001 #4): km-equivalent cost for concentrating one category onto one day. */
-export function categoryBalancePenaltyKm(projectedCount: number, idealCount: number): number {
-  return Math.max(0, projectedCount - idealCount) * CATEGORY_BALANCE_KM;
 }

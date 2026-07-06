@@ -13,11 +13,9 @@ import { isActivity, isLodging, dayNumberOf, addDaysIso, numDaysOf, type Locatio
 export type OptimizeOptions = {
   /** Soft per-day time budget in hours; over-budget days are gently penalized during clustering. */
   dayBudgetHours?: number;
-  /** Spread Places categories across days (cross-day balance) rather than clustering on geography alone. */
-  balanceCategories?: boolean;
 };
 
-function toInput(l: Location, balanceCategories: boolean): LocationInput {
+function toInput(l: Location): LocationInput {
   return {
     id: l.id,
     lat: l.lat ?? 0,
@@ -25,7 +23,6 @@ function toInput(l: Location, balanceCategories: boolean): LocationInput {
     ...(l.visitDuration != null ? { visitDuration: l.visitDuration } : {}),
     ...(l.openTime != null ? { openTime: l.openTime } : {}),
     ...(l.closeTime != null ? { closeTime: l.closeTime } : {}),
-    ...(balanceCategories && l.categories != null ? { categories: l.categories } : {}),
   };
 }
 
@@ -48,7 +45,7 @@ export function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): TripWi
 
   // The solver needs lodging coordinates (for clustering tethers) alongside the placeable activities;
   // it holds the lodgings out of the pool itself. Edges derive from transit, which is parked — none fed.
-  const inputLocations = [...activities, ...lodgings].map((l) => toInput(l, !!opts.balanceCategories));
+  const inputLocations = [...activities, ...lodgings].map((l) => toInput(l));
   const dayBudgetMinutes =
     typeof opts.dayBudgetHours === "number" && opts.dayBudgetHours > 0 ? opts.dayBudgetHours * 60 : undefined;
 
