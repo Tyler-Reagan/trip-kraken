@@ -115,10 +115,15 @@ end-to-end. **Parked by ADR-0015** (deliberately not built; must not be preclude
 - **Partial re-optimization** — re-optimize is wholesale; per-region/partial is a later feature.
 - **Same-place multiplicity** — one continuous binding per constraint; revisit only if it earns it.
 
-Follow-on UI polish noticed during verification: lodging-date *set* and placement drag still reload
-(only exclude/unschedule are optimistic so far). **Re-verified 2026-07-05, still true** —
-`tripStore.ts`'s `saveLodgingDates` and `movePlacement` still `await fetch(...)` then
-`get().reload()` with no optimistic local write first, unlike `updateLocation` (exclude/duration)
-and `removePlacement` (unschedule), which patch `trip` in local state immediately. This is the
-only concretely unimplemented item left under this doc — everything else here (D1–D5, the three
-ADR-0015 parked items) is either shipped or deliberately parked, not owed work.
+Follow-on UI polish noticed during verification (lodging-date *set* and placement drag still
+reloading instead of patching local state first) is **resolved as of 2026-07-06**. `movePlacement`,
+`addPlacement`, and `saveLodgingDates` in `tripStore.ts` are now optimistic, matching
+`updateLocation`/`removePlacement`. The reorder/re-densify algorithm (ADR-0015 §2) that
+`movePlacement`/`addPlacement` depend on is extracted into `src/lib/placementOrdering.ts`, a pure
+module shared by both the client (optimistic patch) and the server (`src/lib/db/index.ts`, which
+was refactored to call it too) so the two can't drift — covered by
+`src/lib/placementOrdering.test.ts`. `saveLodgingDates` rolls back via `reload()` on a failed save.
+Drag-and-drop (`movePlacement`) was verified by code/tests + a manual state check (post-drag reload
+showed no drift) rather than a live drag, since native HTML5 drag-and-drop can't be reliably
+automated in a browser tool — worth a human pass in the browser to be fully sure. This closes out
+the last open item under this doc; D1–D5 plus this follow-on are all shipped.
