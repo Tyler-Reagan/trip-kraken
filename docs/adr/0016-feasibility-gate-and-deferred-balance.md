@@ -4,6 +4,8 @@
 - **Date:** 2026-07-05
 - **Supersedes:** —
 - **Superseded by:** —
+- **Amended by:** ADR-0017 (the solver's result must surface feasibility violations, not just
+  the arrangement — the measurement this ADR establishes can't dead-end inside `solve()`)
 - **Amends:** ADR-0001 (narrows criterion #4 "balance," and clarifies criterion #1 "feasible" is
   a gate, not a weighted term in one summed cost)
 - **Constrains:** ADR-0003 (the solver interface's itinerary comparator must implement this),
