@@ -4,6 +4,9 @@
 - **Date:** 2026-06-23
 - **Supersedes:** —
 - **Superseded by:** —
+- **Amended by:** ADR-0016 (criterion #4 "balance" narrowed — category/variety deferred to an
+  advisory suggestions feature, out of the authoritative objective; criterion #1 "feasible"
+  clarified as a hard lexicographic gate, not a weighted term in one summed cost)
 
 ## Context
 
