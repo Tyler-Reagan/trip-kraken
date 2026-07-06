@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { ScheduledStop, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import { GripVertical, Search, Trash2 } from "lucide-react";
+import { UNASSIGNED_DROP_ID } from "./ScheduleView";
 
 interface Props {
   locations: Location[];
   draggingStop: ScheduledStop | null;
-  onDragStartLocation: (loc: Location) => void;
-  onDropStop: () => void;
+  dragId: (locationId: string) => string;
   /** False before the first optimize: there are no days to drag a location onto yet. */
   schedulable?: boolean;
 }
@@ -28,33 +28,15 @@ function formatDuration(mins: number): string {
   return `${h}h ${m}m`;
 }
 
-export default function UnassignedCard({ locations, draggingStop, onDragStartLocation, onDropStop, schedulable = true }: Props) {
-  const [dragOver, setDragOver] = useState(false);
-
-  function handleDragOver(e: React.DragEvent) {
-    e.preventDefault();
-    setDragOver(true);
-  }
-
-  function handleDragLeave() {
-    setDragOver(false);
-  }
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    setDragOver(false);
-    if (draggingStop) onDropStop();
-  }
-
-  const isDragTarget = dragOver && draggingStop !== null;
+export default function UnassignedCard({ locations, draggingStop, dragId, schedulable = true }: Props) {
+  const { setNodeRef, isOver } = useDroppable({ id: UNASSIGNED_DROP_ID });
+  const isDragTarget = isOver && draggingStop !== null;
 
   return (
     <div
+      ref={setNodeRef}
       className={`card p-4 space-y-3 border-dashed transition-all
         ${isDragTarget ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/20" : ""}`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
     >
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wider text-faint">
@@ -72,12 +54,7 @@ export default function UnassignedCard({ locations, draggingStop, onDragStartLoc
       ) : (
         <ul className="space-y-2">
           {locations.map((loc) => (
-            <UnassignedRow
-              key={loc.id}
-              loc={loc}
-              schedulable={schedulable}
-              onDragStart={() => onDragStartLocation(loc)}
-            />
+            <UnassignedRow key={loc.id} id={dragId(loc.id)} loc={loc} schedulable={schedulable} />
           ))}
         </ul>
       )}
@@ -85,12 +62,18 @@ export default function UnassignedCard({ locations, draggingStop, onDragStartLoc
   );
 }
 
-function UnassignedRow({ loc, schedulable, onDragStart }: { loc: Location; schedulable: boolean; onDragStart: () => void }) {
+function UnassignedRow({ id, loc, schedulable }: { id: string; loc: Location; schedulable: boolean }) {
   const tripId = useTripStore((s) => s.tripId);
   const reload = useTripStore((s) => s.reload);
   const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
+
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id,
+    data: { kind: "location", location: loc },
+    disabled: !schedulable,
+  });
 
   const isInspected = inspectedLocationId === loc.id;
   const hoursText = formatHoursSubtext(loc);
@@ -103,9 +86,11 @@ function UnassignedRow({ loc, schedulable, onDragStart }: { loc: Location; sched
 
   return (
     <li
-      draggable={schedulable}
-      onDragStart={schedulable ? onDragStart : undefined}
+      ref={setNodeRef}
+      {...(schedulable ? { ...attributes, ...listeners } : {})}
       className={`group flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none
+        ${schedulable ? "touch-none" : ""}
+        ${isDragging ? "opacity-40" : ""}
         ${isInspected
           ? "bg-surface-2 border-line border-line-strong"
           : "border-transparent hover:bg-surface-2 hover:border-line-strong"
