@@ -19,7 +19,7 @@ feasibility is a hard lexicographic gate, not a weighted term in one summed cost
 
 ## Where we are
 
-### What's decided (ADR-0001, 0003, 0004, 0005, 0016 — all Accepted)
+### What's decided (ADR-0001, 0003, 0004, 0005, 0016, 0017 — all Accepted)
 
 - **The objective (ADR-0001, amended by ADR-0016):** originally feasibility ≫ travel ≫ intent ≫
   balance, expressed as one comparable cost. Intent (locking) was dropped by ADR-0015. ADR-0016
@@ -27,7 +27,9 @@ feasibility is a hard lexicographic gate, not a weighted term in one summed cost
   compared as two lexicographic tiers (a feasibility violation always loses to a feasible
   candidate, regardless of travel cost) — not summed into one flattened number. Category/variety
   balance is removed from the authoritative objective entirely and deferred to a later, advisory
-  suggestions feature (not scored, not part of what "optimized" means).
+  suggestions feature (not scored, not part of what "optimized" means). **ADR-0017** extends this:
+  the result (`Itinerary`) must surface which feasibility rules were violated, not just return a
+  clean-looking arrangement with that information discarded.
 - **The solver interface (ADR-0003):** `solve(problem: OptimizationProblem): Itinerary`, with
   the objective as a **named, shared module** solvers call to score candidates, and the default
   solver being today's heuristic reframed (not replaced) behind that seam. A stronger solver
@@ -108,7 +110,7 @@ the first cut can be. A reasonable default shape, subject to revision once actua
 |---|---|---|
 | **O1** ✅ | **Objective module** | Extract ADR-0001's penalties (window, category-balance, day-budget) out of `nearestCentroidIndex`/`windowPenaltyKm`/`routeWindowPenalty` into one named, directly-testable module. No behavior change — same weights, same output — this is a pure extraction. **Done** — see status log. |
 | **O2** | **Travel-cost provider** | Wrap `haversine` + `AVG_SPEED_KM_PER_MIN` behind an **async** `cost`/`costMatrix(mode)` (ADR-0004's whole point is a future real routing API, which is inherently async — building the interface sync now would force a breaking rework later, exactly when it matters most). Default provider preserves current behavior/numbers exactly — no realism upgrade (e.g. no per-mode speeds) bundled into this slice. **Scope boundaries:** (1) the clustering step's centroid-distance math (`nearestCentroidIndex`/`seedCentroids`) is explicitly *not* part of this — a centroid is a synthetic averaged point, not a real place, so it stays on plain `haversine`, untouched, forever; only real Location-to-Location queries (sequencing + the window-penalty arrival simulation) go through the provider. (2) The sequencing algorithms (`sequenceDay`, `nearestNeighborOrder`, `twoOpt`) must fetch each day's full pairwise distances via one upfront `costMatrix()` batch call, not `cost()` one pair at a time inside their loops — the ad hoc-per-pair shape is exactly the N² live-network-call problem ADR-0004's matrix form exists to prevent, and it's cheaper to build correctly now than to fix once a real provider exists. (3) Async propagates: this slice must also update `objective.ts`'s `routeWindowPenalty` (its `travelMins` callback becomes `Promise`-returning), `optimizer.ts`'s sequencing functions, `optimize.ts`'s `optimizeTrip`, the `/api/trips/[id]/optimize` route, and `optimizer.test.ts` — **all in the same pass**, since a partial ripple wouldn't compile/run. |
-| **O3** | **Solver interface** | Define `OptimizationProblem`/`Itinerary` types; wrap the existing two-phase heuristic as the default `solve()` implementation (now async, inherited from O2). **Thin only:** no solver-registry or config-selection mechanism — there is exactly one implementation, so building a way to choose between solvers is speculative until a second one actually exists. `optimize.ts` assembles the problem from `TripWithDetails` and calls `solve()` instead of `optimizeItinerary()` directly. **Per ADR-0016:** the whole-itinerary comparator this slice introduces must compare feasibility violations *before* ever comparing travel cost — two lexicographic tiers, not one flattened weighted sum (the greedy per-stop/per-swap costs already inside `kMeans`/`twoOpt` stay approximate signals guiding construction; only the final comparator needs the real guarantee). |
+| **O3** | **Solver interface** | Define `OptimizationProblem`/`Itinerary` types; wrap the existing two-phase heuristic as the default `solve()` implementation (now async, inherited from O2). **Thin only:** no solver-registry or config-selection mechanism — there is exactly one implementation, so building a way to choose between solvers is speculative until a second one actually exists. `optimize.ts` assembles the problem from `TripWithDetails` and calls `solve()` instead of `optimizeItinerary()` directly. **Per ADR-0016:** the whole-itinerary comparator this slice introduces must compare feasibility violations *before* ever comparing travel cost — two lexicographic tiers, not one flattened weighted sum (the greedy per-stop/per-swap costs already inside `kMeans`/`twoOpt` stay approximate signals guiding construction; only the final comparator needs the real guarantee). **Per ADR-0017:** `Itinerary` must carry its feasibility outcome (which stops/days violated which rule, how badly) alongside the arrangement — not just a clean-looking list of stops with the violation data thrown away once the decision is made. No UI for this; plumbing only. Travel cost itself gets no named function in `objective.ts` (decided in the grill) — summing provider calls is arithmetic, not a rule, unlike the three feasibility functions. |
 
 This is a guess at slicing, not a locked plan — revisit if building O2 surfaces something new.
 
@@ -163,4 +165,16 @@ This is a guess at slicing, not a locked plan — revisit if building O2 surface
   signature, and the `OptimizeModal` UI checkbox) rather than leave a now-dead toggle in the UI.
   `dayBudgetPenaltyKm` stays — reconfirmed as feasibility-tier (ADR-0001 already placed "day
   overstuffed" under criterion #1) — still needs restructuring into a true gate in O3, not done
-  here. Verified: `tsc` clean, `npm test` all green, `knip` clean. Next: build O2.
+  here. Verified: `tsc` clean, `npm test` all green, `knip` clean.
+- 2026-07-06 — **Grill continued**, three more findings. (1) "Every day reachable from lodging"
+  (ADR-0001's third feasibility clause) is *not* actually guaranteed — lodging dates are nullable
+  and gaps in Stay coverage are possible; resolved as a data-completeness problem to fix upstream
+  (trip creation/lodging-editing validation), not an optimizer concern — tracked above, out of
+  scope. (2) Within the feasibility tier, `windowPenaltyKm`'s late weight and
+  `dayBudgetPenaltyKm`'s weight differ ~150x — confirmed **intentional**: overstuffing a day a
+  little is genuinely less severe than missing a hard close time; not a miscalibration to fix.
+  (3) Travel cost gets **no named function** in `objective.ts` — summing provider distances is
+  arithmetic, not a judgment call, unlike the three feasibility rules; O3's comparator just sums
+  `costMatrix` results inline for its travel tier. Also landed **ADR-0017**: `solve()`'s result
+  must surface feasibility violations (which stop/day, which rule, how badly), not just a clean
+  arrangement with that information thrown away — plumbing only, no UI scoped. Next: build O2.
