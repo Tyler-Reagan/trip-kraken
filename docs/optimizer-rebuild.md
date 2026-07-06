@@ -57,6 +57,30 @@ not be redesigned.
 - **A second, stronger solver (VRPTW/OR-Tools)** — ADR-0003 explicitly defers this past building
   the interface. Out of scope until the interface exists and earns a reason to add one.
 
+### Future "improve the optimizer" work is two distinct kinds (surfaced in the O1–O3 grill, 2026-07-05)
+
+Every idea for making trip plans better that came up while scoping O1–O3 falls into one of two
+categories, kept separate because they carry different evidentiary weight:
+
+- **A — Improve the existing heuristic.** A change to the current clustering/sequencing algorithm
+  that keeps the same overall approach: e.g. the O2 travel-cost provider gaining real per-mode
+  speeds (walking vs. driving vs. transit) instead of one fixed constant, or the clustering step
+  someday using real travel time instead of straight-line distance. These are incremental —
+  reasoned about and reviewed like any other code change, using the same objective functions
+  (`objective.ts`) already in place to judge whether an output actually got better.
+- **B — Build and compare an alternative solver.** A structurally different algorithm (e.g. a
+  VRPTW/OR-Tools solver) implemented as a second `solve()` (O3) besides the default. Unlike A,
+  whether a category-B solver is actually *better* is **not verifiable a priori** — ADR-0001's
+  ranked, soft objective doesn't reduce to a single formula you can reason about abstractly. It has
+  to be built, run against real trips, and compared against the default solver's actual output
+  before being trusted or adopted as the new default. A category-B proposal is a *research task*,
+  not a normal code review.
+
+Neither category is scheduled or in scope for O1–O3. This split is recorded so a future "should we
+improve the optimizer" conversation starts here instead of re-litigating it: a category-A change
+can be proposed and reviewed as an ordinary quality improvement; a category-B change requires an
+experiment/comparison step first, not just a diff.
+
 ---
 
 ## Where we're going
@@ -66,23 +90,22 @@ the first cut can be. A reasonable default shape, subject to revision once actua
 
 | # | Slice | Scope |
 |---|---|---|
-| **O1** | **Objective module** | Extract ADR-0001's penalties (window, category-balance, day-budget) out of `nearestCentroidIndex`/`windowPenaltyKm`/`routeWindowPenalty` into one named, directly-testable module. No behavior change — same weights, same output — this is a pure extraction. |
-| **O2** | **Travel-cost provider** | Wrap `haversine` + `AVG_SPEED_KM_PER_MIN` behind `cost`/`costMatrix(mode)`; default provider preserves current behavior exactly. Callers (`kMeans`, `sequenceDay`, `nearestNeighborOrder`, `twoOpt`) consume the provider instead of calling `haversine` directly. |
-| **O3** | **Solver interface** | Define `OptimizationProblem`/`Itinerary` types; wrap the existing two-phase heuristic as the default `solve()` implementation; `optimize.ts` assembles the problem from `TripWithDetails` and calls `solve()` instead of `optimizeItinerary()` directly. |
+| **O1** ✅ | **Objective module** | Extract ADR-0001's penalties (window, category-balance, day-budget) out of `nearestCentroidIndex`/`windowPenaltyKm`/`routeWindowPenalty` into one named, directly-testable module. No behavior change — same weights, same output — this is a pure extraction. **Done** — see status log. |
+| **O2** | **Travel-cost provider** | Wrap `haversine` + `AVG_SPEED_KM_PER_MIN` behind an **async** `cost`/`costMatrix(mode)` (ADR-0004's whole point is a future real routing API, which is inherently async — building the interface sync now would force a breaking rework later, exactly when it matters most). Default provider preserves current behavior/numbers exactly — no realism upgrade (e.g. no per-mode speeds) bundled into this slice. **Scope boundaries:** (1) the clustering step's centroid-distance math (`nearestCentroidIndex`/`seedCentroids`) is explicitly *not* part of this — a centroid is a synthetic averaged point, not a real place, so it stays on plain `haversine`, untouched, forever; only real Location-to-Location queries (sequencing + the window-penalty arrival simulation) go through the provider. (2) The sequencing algorithms (`sequenceDay`, `nearestNeighborOrder`, `twoOpt`) must fetch each day's full pairwise distances via one upfront `costMatrix()` batch call, not `cost()` one pair at a time inside their loops — the ad hoc-per-pair shape is exactly the N² live-network-call problem ADR-0004's matrix form exists to prevent, and it's cheaper to build correctly now than to fix once a real provider exists. (3) Async propagates: this slice must also update `objective.ts`'s `routeWindowPenalty` (its `travelMins` callback becomes `Promise`-returning), `optimizer.ts`'s sequencing functions, `optimize.ts`'s `optimizeTrip`, the `/api/trips/[id]/optimize` route, and `optimizer.test.ts` — **all in the same pass**, since a partial ripple wouldn't compile/run. |
+| **O3** | **Solver interface** | Define `OptimizationProblem`/`Itinerary` types; wrap the existing two-phase heuristic as the default `solve()` implementation (now async, inherited from O2). **Thin only:** no solver-registry or config-selection mechanism — there is exactly one implementation, so building a way to choose between solvers is speculative until a second one actually exists. `optimize.ts` assembles the problem from `TripWithDetails` and calls `solve()` instead of `optimizeItinerary()` directly. |
 
-This is a guess at slicing, not a locked plan — revisit once someone sits down to actually build
-O1.
+This is a guess at slicing, not a locked plan — revisit if building O2 surfaces something new.
 
 ## Decisions needed
 
 - **Sequencing:** stacked PRs (O1→O3) vs. one PR. The ADR-0015 rebuild used stacked layers
-  because the model didn't fully run mid-stack; this refactor is different — each slice can
-  preserve full behavior at every step (all are pure extractions until O3 flips the caller), so
-  a single PR may be viable. Needs a call before starting.
-- **Scope of "default solver."** ADR-0003 says the default solver is "the current heuristic,
-  reframed" — confirm no algorithmic change is in scope for this pass (a pure interface
-  extraction), with quality improvements (VRPTW, etc.) deliberately deferred to a later ADR-scoped
-  effort.
+  because the model didn't fully run mid-stack; O1 stayed a pure extraction with zero ripple, but
+  O2 is no longer that shape (see above — it changes public signatures end-to-end). Worth a fresh
+  call on whether O2 alone warrants being its own PR before O3.
+- **Scope of "default solver" (O3).** ADR-0003 says the default solver is "the current heuristic,
+  reframed" — confirmed: no algorithmic change is in scope for O1–O3 (a pure interface extraction
+  plus the async rewiring O2 requires), with quality improvements deliberately deferred — see the
+  category A/B split above.
 
 ## Status log
 
@@ -95,4 +118,14 @@ O1.
   callback rather than computing it inline, so the objective module stays uncoupled from ADR-0004
   (the travel-cost provider O2 will introduce); `optimizer.ts` supplies today's haversine-based
   callback. Verified: `tsc` clean, `npm test` all green (unchanged assertions), `knip` clean.
-  Next: O2 (travel-cost provider).
+- 2026-07-05 — **O1–O3 grilled** (`/grill-with-docs`) against ADR-0001/0003/0004/0005/0015 before
+  starting O2. No changes needed to O1's already-committed code — its primitives
+  (`windowPenaltyKm`, `routeWindowPenalty`, `dayBudgetPenaltyKm`, `categoryBalancePenaltyKm`) are
+  confirmed durable atoms that O3's future composed itinerary-scorer will call, not replace.
+  Decisions locked for O2/O3: async provider interface; clustering's centroid distance stays out
+  of the provider entirely; sequencing batches distances via `costMatrix` upfront rather than
+  ad hoc `cost()` calls in loops; O2 absorbs its full async ripple (objective.ts, optimizer.ts,
+  optimize.ts, the API route, tests) in one pass; O3 stays thin — no solver-selection mechanism
+  until a second solver actually exists. Also locked: future optimizer-quality ideas split into
+  category A (improve the existing heuristic — ordinary code review) vs. category B (an
+  alternative solver — requires build-and-compare, not verifiable a priori). Next: build O2.
