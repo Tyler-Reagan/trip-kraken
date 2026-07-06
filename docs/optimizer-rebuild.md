@@ -59,6 +59,17 @@ not be redesigned.
 - **Transit constraint fields** — `kind: transit` carries no fields yet; trip-edge (arrival/
   departure) routing stays dormant until a shape lands (ADR-0011). `EdgeAnchors` in
   `optimizer.ts` is kept ready but unfed.
+- **Lodging-gap coverage (found 2026-07-05, deliberately out of scope here).** ADR-0001's
+  "every day reachable from lodging" clause is *not* actually guaranteed today — lodging
+  `checkInDate`/`checkOutDate` are nullable (`schema.ts`) and nothing enforces gapless Stay
+  coverage across a trip's nights. A gap (e.g. checked out of Hotel A day 3, doesn't check into
+  Hotel B until day 5) leaves `lodgingOnNight()` returning `null` for the uncovered nights, so
+  `optimizer.ts` silently falls back to an unanchored heuristic ordering for that day — no
+  reachability check, no surfaced warning. **Decision: this is a data-completeness problem, not
+  an optimizer/objective problem** — optimization can only ever operate on top of knowing where a
+  day actually starts/ends, so the fix belongs upstream (trip creation / lodging-editing flow
+  validation), not inside `solve()`'s objective. Tracked here so it isn't lost; not designed or
+  scheduled.
 - **A second, stronger solver (VRPTW/OR-Tools)** — ADR-0003 explicitly defers this past building
   the interface. Out of scope until the interface exists and earns a reason to add one.
 
