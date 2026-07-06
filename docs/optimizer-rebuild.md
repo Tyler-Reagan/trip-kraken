@@ -88,3 +88,11 @@ O1.
 
 - 2026-07-05 — Doc created. Gap audited against ADR-0001/0003/0004/0005 and current
   `optimizer.ts`/`optimize.ts`. No code changed.
+- 2026-07-05 — **O1 done.** Extracted `src/lib/objective.ts`: `windowPenaltyKm`,
+  `routeWindowPenalty`, `dayBudgetPenaltyKm`, `categoryBalancePenaltyKm` plus their constants,
+  pulled out of `nearestCentroidIndex`/`twoOpt`/`nearestNeighborOrder`. Pure extraction, zero
+  behavior change — `routeWindowPenalty` now takes travel time as an injected `travelMins`
+  callback rather than computing it inline, so the objective module stays uncoupled from ADR-0004
+  (the travel-cost provider O2 will introduce); `optimizer.ts` supplies today's haversine-based
+  callback. Verified: `tsc` clean, `npm test` all green (unchanged assertions), `knip` clean.
+  Next: O2 (travel-cost provider).

@@ -18,7 +18,19 @@
  *   Time-window awareness: if locations carry openTime/closeTime fields, both phases add a
  *   km-equivalent soft penalty for arriving outside those windows. The penalty discourages
  *   out-of-hours visits but never hard-blocks them.
+ *
+ * The ADR-0001 objective (time-window, day-budget, category-balance penalties) lives in
+ * `objective.ts` (ADR-0003's "named, shared module"); this file owns the algorithm — clustering
+ * and sequencing — and calls that module to score candidates rather than encoding penalties itself.
  */
+
+import {
+  windowPenaltyKm,
+  routeWindowPenalty,
+  dayBudgetPenaltyKm,
+  categoryBalancePenaltyKm,
+  DEFAULT_VISIT_MINS,
+} from "@/lib/objective";
 
 export interface LocationInput {
   id: string;
@@ -284,10 +296,6 @@ function seedCentroids(locations: LocationInput[], k: number, anchors: (Location
   return centroids;
 }
 
-// Category balance penalty scale: ~1 km per unit excess over ideal count.
-// Keeps geographic proximity dominant while gently spreading categories across days.
-const CATEGORY_BALANCE_KM = 1.0;
-
 function nearestCentroidIndex(
   loc: LocationInput,
   centroids: Centroid[],
@@ -301,26 +309,16 @@ function nearestCentroidIndex(
   centroids.forEach((c, i) => {
     let cost = haversine(loc, c);
 
-    // Soft duration penalty: add 2 km per hour that this assignment would put
-    // the day over budget. Keeps geographic proximity dominant while nudging
-    // stops away from already-full days.
+    // Balance penalties (ADR-0001 #4) — geographic proximity stays dominant; these nudge stops
+    // away from already-full days and away from over-concentrating one category on one day.
     if (dayDurations && dayBudgetMinutes) {
-      const excess = Math.max(
-        0,
-        dayDurations[i] + (loc.visitDuration ?? 0) - dayBudgetMinutes
-      );
-      cost += (excess / 60) * 2;
+      cost += dayBudgetPenaltyKm(dayDurations[i] + (loc.visitDuration ?? 0), dayBudgetMinutes);
     }
-
-    // Soft category balance penalty: penalize concentrating the same category
-    // on one day. For each category of this location, add penalty proportional
-    // to how much the day would exceed the ideal per-day count.
     if (dayCategoryCounts && idealCategoryCounts) {
       for (const cat of loc.categories ?? []) {
         const current = dayCategoryCounts[i][cat] ?? 0;
         const ideal = idealCategoryCounts[cat] ?? 0;
-        const excess = Math.max(0, current + 1 - ideal);
-        cost += excess * CATEGORY_BALANCE_KM;
+        cost += categoryBalancePenaltyKm(current + 1, ideal);
       }
     }
 
@@ -365,8 +363,7 @@ function nearestNeighborOrder(
     let nearestIdx = 0;
     let nearestCost = Infinity;
     unvisited.forEach((loc, i) => {
-      const travelTime = haversine(last, loc) / AVG_SPEED_KM_PER_MIN;
-      const cost = haversine(last, loc) + windowPenaltyKm(timeMins + travelTime, loc);
+      const cost = haversine(last, loc) + windowPenaltyKm(timeMins + travelMins(last, loc), loc);
       if (cost < nearestCost) {
         nearestCost = cost;
         nearestIdx = i;
@@ -374,7 +371,7 @@ function nearestNeighborOrder(
     });
     const next = unvisited.splice(nearestIdx, 1)[0];
     ordered.push(next);
-    timeMins += haversine(last, next) / AVG_SPEED_KM_PER_MIN + (next.visitDuration ?? DEFAULT_VISIT_MINS);
+    timeMins += travelMins(last, next) + (next.visitDuration ?? DEFAULT_VISIT_MINS);
   }
 
   // Remove the sentinel lodging entry used only as a starting position
@@ -405,7 +402,7 @@ function twoOpt(locations: LocationInput[], dayStartMins = 9 * 60): LocationInpu
   let route = [...locations];
   const n = route.length;
   const hasTimeWindows = route.some((l) => l.openTime || l.closeTime);
-  let currentWindowPenalty = hasTimeWindows ? routeWindowPenalty(route, dayStartMins) : 0;
+  let currentWindowPenalty = hasTimeWindows ? routeWindowPenalty(route, dayStartMins, travelMins) : 0;
   let improved = true;
 
   while (improved) {
@@ -428,7 +425,7 @@ function twoOpt(locations: LocationInput[], dayStartMins = 9 * 60): LocationInpu
 
           // Reject swaps that worsen time-window compliance
           if (hasTimeWindows) {
-            const newWindowPenalty = routeWindowPenalty(candidate, dayStartMins);
+            const newWindowPenalty = routeWindowPenalty(candidate, dayStartMins, travelMins);
             if (newWindowPenalty > currentWindowPenalty + 1e-10) continue;
             currentWindowPenalty = newWindowPenalty;
           }
@@ -444,63 +441,15 @@ function twoOpt(locations: LocationInput[], dayStartMins = 9 * 60): LocationInpu
 }
 
 // ---------------------------------------------------------------------------
-// Time-window helpers
+// Travel time (ADR-0004 territory — haversine + a fixed speed constant for now; O2 wraps this in
+// a swappable provider. Kept local since routeWindowPenalty takes travel time as an injected
+// callback rather than computing it itself.)
 // ---------------------------------------------------------------------------
-
-// Assumed visit time when visitDuration is not set (used only for arrival simulation)
-const DEFAULT_VISIT_MINS = 60;
 
 // Average city travel speed for estimating arrival times (20 km/h)
 const AVG_SPEED_KM_PER_MIN = 20 / 60;
 
-// Penalty scale factors (km-equivalent per minute of violation).
-// LATE is 10× EARLY: arriving after close is far worse than arriving before open.
-const WINDOW_EARLY_KM_PER_MIN = 0.5;
-const WINDOW_LATE_KM_PER_MIN  = 5;
-
-/** Parses a "HH:MM" string to minutes from midnight. */
-function timeToMins(hhmm: string): number {
-  const [h, m] = hhmm.split(":").map(Number);
-  return h * 60 + m;
-}
-
-/**
- * Returns a km-equivalent soft penalty for visiting `loc` when the simulated
- * clock reads `arrivalMins` minutes from midnight.
- *
- * Three cases penalised:
- *   1. Arriving before open  → waiting cost (mild)
- *   2. Arriving after close  → missed window (severe)
- *   3. Visit runs past close → partial overrun (severe)
- */
-function windowPenaltyKm(arrivalMins: number, loc: LocationInput): number {
-  const vd    = loc.visitDuration ?? DEFAULT_VISIT_MINS;
-  const open  = loc.openTime  ? timeToMins(loc.openTime)  : null;
-  const close = loc.closeTime ? timeToMins(loc.closeTime) : null;
-  let penalty = 0;
-  if (open  !== null && arrivalMins < open)
-    penalty += (open - arrivalMins) * WINDOW_EARLY_KM_PER_MIN;
-  if (close !== null && arrivalMins > close)
-    penalty += (arrivalMins - close) * WINDOW_LATE_KM_PER_MIN;
-  if (close !== null && arrivalMins + vd > close)
-    penalty += (arrivalMins + vd - close) * WINDOW_LATE_KM_PER_MIN;
-  return penalty;
-}
-
-/**
- * Simulates travel through a route and sums all time-window penalties.
- * Used by twoOpt to guard against swaps that worsen temporal ordering.
- */
-function routeWindowPenalty(route: LocationInput[], dayStartMins: number): number {
-  let t = dayStartMins;
-  let p = 0;
-  for (let i = 0; i < route.length; i++) {
-    if (i > 0) t += haversine(route[i - 1], route[i]) / AVG_SPEED_KM_PER_MIN;
-    p += windowPenaltyKm(t, route[i]);
-    t += route[i].visitDuration ?? DEFAULT_VISIT_MINS;
-  }
-  return p;
-}
+const travelMins = (a: LocationInput, b: LocationInput) => haversine(a, b) / AVG_SPEED_KM_PER_MIN;
 
 // ---------------------------------------------------------------------------
 // Haversine distance (returns kilometres)
