@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import type { TripWithDetails, Location } from "@/types";
+import type { TripWithDetails, Location, Lodging } from "@/types";
+import { reorderPlacements, insertPlacement } from "@/lib/placementOrdering";
 
 type ActiveSurface = "itinerary" | "places";
 export type ScheduleFilter = number | "unassigned" | null;
@@ -138,6 +139,13 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   addPlacement: async (locationId, date, order) => {
     const tripId = get().tripId;
     if (!tripId) return;
+    // Optimistic: insert the placement locally (mirroring the server's shift-siblings logic via
+    // the shared placementOrdering helper) so the stop appears on the day with no round-trip lag.
+    const t = get().trip;
+    if (t) {
+      const id = crypto.randomUUID();
+      set({ trip: { ...t, placements: insertPlacement(t.placements, tripId, { id, locationId, date, order }) } });
+    }
     await fetch(`/api/trips/${tripId}/placements`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -149,6 +157,10 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   movePlacement: async (placementId, date, order) => {
     const tripId = get().tripId;
     if (!tripId) return;
+    // Optimistic: reproduce the server's move/shift/re-densify logic locally via the shared
+    // placementOrdering helper, so a dragged stop moves instantly instead of waiting on reload().
+    const t = get().trip;
+    if (t) set({ trip: { ...t, placements: reorderPlacements(t.placements, placementId, date, order) } });
     await fetch(`/api/trips/${tripId}/placements`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -171,6 +183,20 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     const tripId = get().tripId;
     if (!tripId) return "No trip loaded";
     // dates === null clears the booking (relegates to activity); otherwise sets check-in/out.
+    // Either direction flips the Location's `kind` discriminant, so the optimistic patch has to
+    // build a properly-shaped Activity/Lodging object rather than just nulling a field.
+    const t = get().trip;
+    if (t) {
+      const patched: Location[] = t.locations.map((l) => {
+        if (l.id !== locationId) return l;
+        if (dates === null) {
+          const { checkInDate: _checkInDate, checkOutDate: _checkOutDate, ...rest } = l as Lodging;
+          return { ...rest, kind: "activity" };
+        }
+        return { ...l, kind: "lodging", checkInDate: dates.checkInDate, checkOutDate: dates.checkOutDate };
+      });
+      set({ trip: { ...t, locations: patched } });
+    }
     const body = dates === null ? { checkInDate: null } : dates;
     const res = await fetch(`/api/trips/${tripId}/locations/${locationId}`, {
       method: "PATCH",
@@ -178,6 +204,8 @@ export const useTripStore = create<TripStore>()((set, get) => ({
       body: JSON.stringify(body),
     });
     if (!res.ok) {
+      // Roll back the optimistic patch by asking the server what's actually true.
+      await get().reload();
       const data = await res.json().catch(() => ({}));
       return (data as { error?: string }).error ?? "Failed to save lodging dates";
     }

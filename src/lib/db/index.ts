@@ -1,10 +1,11 @@
 import { randomUUID } from "crypto";
 import { eq, and, asc, desc, ne, gt, gte, max, sql, count, inArray, getTableColumns } from "drizzle-orm";
-import { getDrizzle } from "./client";
+import { getDrizzle, type Drizzle } from "./client";
 import { trip, location, placement } from "./schema";
 import type { TripWithDetails, Location, Placement, IsoDate } from "@/types";
 import type { LocationEnrichment } from "@/lib/places";
 import type { ParsedBooking } from "@/lib/bookingImport";
+import { reorderPlacements, insertPlacement } from "@/lib/placementOrdering";
 
 /**
  * Repository layer (ADR-0008, reshaped by ADR-0015). The schema lives in ./schema.ts and is applied
@@ -251,10 +252,23 @@ export function setPlacements(
   return requireTrip(tripId);
 }
 
+type Tx = Parameters<Parameters<Drizzle["transaction"]>[0]>[0];
+
+/** Replace a trip's placements wholesale within a transaction (small per-trip row counts, so this
+ *  is simpler and no slower than diffing which rows actually changed). */
+function replacePlacements(tx: Tx, tripId: string, placements: Placement[]) {
+  tx.delete(placement).where(eq(placement.tripId, tripId)).run();
+  for (const p of placements) {
+    tx.insert(placement).values({ id: p.id, tripId: p.tripId, locationId: p.locationId, date: p.date, order: p.order }).run();
+  }
+}
+
 /**
  * Manually place an activity on a date (ADR-0015) — a hand edit that persists until the next
  * optimize. Appends to the end of the date unless `order` is given, in which case siblings at or
- * after it shift down to make room.
+ * after it shift down to make room. Reordering itself is the shared, pure `insertPlacement`
+ * algorithm (src/lib/placementOrdering.ts) so the server and the store's optimistic client patch
+ * can never drift apart.
  */
 export function addPlacement(
   tripId: string,
@@ -270,21 +284,9 @@ export function addPlacement(
       .get();
     if (!loc) throw new Error("Location not found in trip");
 
-    let ord = order;
-    if (ord === undefined) {
-      const m = tx
-        .select({ maxOrder: max(placement.order) })
-        .from(placement)
-        .where(and(eq(placement.tripId, tripId), eq(placement.date, date)))
-        .get();
-      ord = (m?.maxOrder ?? -1) + 1;
-    } else {
-      tx.update(placement)
-        .set({ order: sql`${placement.order} + 1` })
-        .where(and(eq(placement.tripId, tripId), eq(placement.date, date), gte(placement.order, ord)))
-        .run();
-    }
-    tx.insert(placement).values({ id: newId(), tripId, locationId, date, order: ord }).run();
+    const existing = tx.select().from(placement).where(eq(placement.tripId, tripId)).all();
+    const next = insertPlacement(existing, tripId, { id: newId(), locationId, date, order });
+    replacePlacements(tx, tripId, next);
   });
   return requireTrip(tripId);
 }
@@ -292,6 +294,9 @@ export function addPlacement(
 /**
  * Move a placement to a date and order (ADR-0015). Siblings at/after the target order shift down;
  * if the placement left another date, that date's remaining placements are re-densified to 0..n.
+ * Reordering itself is the shared, pure `reorderPlacements` algorithm
+ * (src/lib/placementOrdering.ts) so the server and the store's optimistic client patch can never
+ * drift apart.
  */
 export function movePlacement(
   tripId: string,
@@ -300,29 +305,10 @@ export function movePlacement(
   order: number
 ): TripWithDetails {
   getDrizzle().transaction((tx) => {
-    const row = tx
-      .select({ id: placement.id, date: placement.date })
-      .from(placement)
-      .where(and(eq(placement.id, placementId), eq(placement.tripId, tripId)))
-      .get();
-    if (!row) throw new Error("Placement not found");
-    const sourceDate = row.date;
-
-    tx.update(placement)
-      .set({ order: sql`${placement.order} + 1` })
-      .where(and(eq(placement.tripId, tripId), eq(placement.date, date), gte(placement.order, order)))
-      .run();
-    tx.update(placement).set({ date, order }).where(eq(placement.id, placementId)).run();
-
-    if (sourceDate !== date) {
-      const remaining = tx
-        .select({ id: placement.id })
-        .from(placement)
-        .where(and(eq(placement.tripId, tripId), eq(placement.date, sourceDate)))
-        .orderBy(asc(placement.order))
-        .all();
-      remaining.forEach((p, i) => tx.update(placement).set({ order: i }).where(eq(placement.id, p.id)).run());
-    }
+    const existing = tx.select().from(placement).where(eq(placement.tripId, tripId)).all();
+    if (!existing.some((p) => p.id === placementId)) throw new Error("Placement not found");
+    const next = reorderPlacements(existing, placementId, date, order);
+    replacePlacements(tx, tripId, next);
   });
   return requireTrip(tripId);
 }

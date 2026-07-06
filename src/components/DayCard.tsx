@@ -1,17 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useDroppable } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { DerivedDay, ScheduledStop, Lodging, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import { dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { GripVertical, Search, Trash2 } from "lucide-react";
+import { dayDropId } from "./ScheduleView";
 
 interface Props {
   day: DerivedDay;
   draggingStop: ScheduledStop | null;
   draggingLocation: Location | null;
-  onDragStart: (stop: ScheduledStop) => void;
-  onDrop: (day: DerivedDay, order: number) => void;
+  stopDragId: (placementId: string) => string;
 }
 
 const LIGHT_DAY_THRESHOLD = 240;
@@ -36,12 +39,19 @@ function formatHoursSubtext(loc: Location, dayOfWeek: number): string {
   return `${loc.openTime ?? "?"}–${loc.closeTime ?? "?"}`;
 }
 
-export default function DayCard({ day, draggingStop, draggingLocation, onDragStart, onDrop }: Props) {
+export default function DayCard({ day, draggingStop, draggingLocation, stopDragId }: Props) {
   const setDayLabel = useTripStore((s) => s.setDayLabel);
   const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
-  const [dragOver, setDragOver] = useState(false);
   const [editingLabel, setEditingLabel] = useState(false);
   const [label, setLabel] = useState(day.label ?? "");
+
+  // The day itself is a drop target for "append to the end" (or an empty day) — sized to fill
+  // whatever space isn't already claimed by a specific stop, so it never competes with them for
+  // the pointer, and always has a real (non-sliver) hit area regardless of how full the day is.
+  const { setNodeRef: setEndDropRef, isOver: isOverEnd } = useDroppable({
+    id: dayDropId(day.date),
+    data: { date: day.date, order: day.stops.length },
+  });
 
   const dayOfWeek = new Date(day.date + "T00:00:00").getDay();
   const totalMinutes = day.stops.reduce((sum, s) => sum + (s.location.visitDuration ?? 0), 0);
@@ -60,15 +70,10 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
     setDayLabel(day.date, label.trim() || null);
   }
 
-  const isDragTarget = dragOver && (draggingStop !== null || draggingLocation !== null);
+  const isDragTarget = (draggingStop !== null || draggingLocation !== null) && isOverEnd;
 
   return (
-    <div
-      className={`card p-4 space-y-3 transition-all ${isDragTarget ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/20" : ""}`}
-      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => { e.preventDefault(); setDragOver(false); onDrop(day, day.stops.length); }}
-    >
+    <div className={`card p-4 space-y-3 transition-all ${isDragTarget ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/20" : ""}`}>
       {/* Day header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -123,27 +128,34 @@ export default function DayCard({ day, draggingStop, draggingLocation, onDragSta
       </div>
 
       {/* Stops list, between the day's projected lodging bookends */}
-      <ol className="space-y-2">
+      <ol className="space-y-1">
         {day.startAnchor && <AnchorRow loc={day.startAnchor} role="start" date={day.date} />}
         {day.checkInWaypoint && <AnchorRow loc={day.checkInWaypoint} role="checkin" date={day.date} />}
-        {day.stops.map((stop, idx) => (
-          <StopRow
-            key={stop.placement.id}
-            stop={stop}
-            index={idx}
-            dayNumber={day.dayNumber}
-            isDragging={draggingStop?.placement.id === stop.placement.id}
-            dayOfWeek={dayOfWeek}
-            date={day.date}
-            onDragStart={onDragStart}
-            onDropBefore={() => onDrop(day, idx)}
-          />
-        ))}
+        <SortableContext items={day.stops.map((s) => stopDragId(s.placement.id))} strategy={verticalListSortingStrategy}>
+          {day.stops.map((stop, idx) => (
+            <StopRow
+              key={stop.placement.id}
+              id={stopDragId(stop.placement.id)}
+              stop={stop}
+              index={idx}
+              dayNumber={day.dayNumber}
+              date={day.date}
+              dayOfWeek={dayOfWeek}
+            />
+          ))}
+        </SortableContext>
         {day.endAnchor && <AnchorRow loc={day.endAnchor} role="end" date={day.date} />}
       </ol>
-      {day.stops.length === 0 && (
-        <p className="text-sm text-faint italic py-1 text-center">Drag stops here or re-optimize</p>
-      )}
+      <div
+        ref={setEndDropRef}
+        className={`rounded-lg transition-all ${
+          day.stops.length === 0
+            ? "min-h-12 flex items-center justify-center"
+            : `min-h-6 ${isOverEnd ? "min-h-10" : ""}`
+        } ${isOverEnd ? "bg-brand-50 dark:bg-brand-950/30 ring-1 ring-brand-300 dark:ring-brand-700" : ""}`}
+      >
+        {day.stops.length === 0 && <p className="text-sm text-faint italic text-center">Drag stops here or re-optimize</p>}
+      </div>
     </div>
   );
 }
@@ -184,17 +196,15 @@ function AnchorRow({ loc, role, date }: { loc: Lodging; role: "start" | "end" | 
 }
 
 interface StopRowProps {
+  id: string;
   stop: ScheduledStop;
   index: number;
   dayNumber: number;
-  isDragging: boolean;
   dayOfWeek: number;
   date: string;
-  onDragStart: (stop: ScheduledStop) => void;
-  onDropBefore: () => void;
 }
 
-function StopRow({ stop, index, dayNumber, isDragging, dayOfWeek, date, onDragStart, onDropBefore }: StopRowProps) {
+function StopRow({ id, stop, index, dayNumber, dayOfWeek, date }: StopRowProps) {
   const removePlacement = useTripStore((s) => s.removePlacement);
   const highlightedLocationId = useTripStore((s) => s.highlightedLocationId);
   const setHighlightedLocationId = useTripStore((s) => s.setHighlightedLocationId);
@@ -205,80 +215,75 @@ function StopRow({ stop, index, dayNumber, isDragging, dayOfWeek, date, onDragSt
   const loc = stop.location;
   const isHighlighted = highlightedLocationId === loc.id;
   const isInspected = inspectedLocationId === loc.id;
-  const [dropTarget, setDropTarget] = useState(false);
-  const rowRef = useRef<HTMLLIElement>(null);
+  const highlightRef = useRef<HTMLLIElement | null>(null);
+
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    data: { kind: "stop", stop, date, order: index },
+  });
 
   const hoursText = formatHoursSubtext(loc, dayOfWeek);
   const durText = loc.visitDuration !== null ? formatDuration(loc.visitDuration) : "—";
 
   useEffect(() => {
-    if (isHighlighted && rowRef.current) rowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (isHighlighted && highlightRef.current) highlightRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [isHighlighted]);
 
   return (
-    <>
-      <div
-        className={`h-1 rounded-full transition-all ${dropTarget ? "bg-brand-400 h-2" : "bg-transparent"}`}
-        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropTarget(true); }}
-        onDragLeave={() => setDropTarget(false)}
-        onDrop={(e) => { e.stopPropagation(); setDropTarget(false); onDropBefore(); }}
-      />
-
-      <li
-        ref={rowRef}
-        draggable
-        onDragStart={() => onDragStart(stop)}
-        className={`group flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none
-          ${isDragging ? "opacity-40" : ""}
-          ${isHighlighted
-            ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/30 border-brand-200 dark:border-brand-800"
-            : isInspected
-              ? "bg-surface-2 border-line border-line-strong"
-              : "border-transparent hover:bg-surface-2 hover:border-line-strong"
-          }`}
-        onClick={(e) => {
-          if ((e.target as HTMLElement).closest("button")) return;
-          if (isHighlighted) { setHighlightedLocationId(null); return; }
-          setInspectedLocationId(isInspected ? null : loc.id);
-        }}
+    <li
+      ref={(el) => { setNodeRef(el); highlightRef.current = el; }}
+      style={{ transform: CSS.Transform.toString(transform), transition: transition ?? undefined }}
+      {...attributes}
+      {...listeners}
+      className={`group flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none touch-none
+        ${isDragging ? "opacity-40" : ""}
+        ${isHighlighted
+          ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/30 border-brand-200 dark:border-brand-800"
+          : isInspected
+            ? "bg-surface-2 border-line border-line-strong"
+            : "border-transparent hover:bg-surface-2 hover:border-line-strong"
+        }`}
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("button")) return;
+        if (isHighlighted) { setHighlightedLocationId(null); return; }
+        setInspectedLocationId(isInspected ? null : loc.id);
+      }}
+    >
+      <span
+        className="shrink-0 w-5 h-5 rounded-full text-xs flex items-center justify-center font-semibold mt-0.5"
+        style={{ backgroundColor: dayColorCss(dayNumber), color: dayTextColor(dayNumber) }}
       >
-        <span
-          className="shrink-0 w-5 h-5 rounded-full text-xs flex items-center justify-center font-semibold mt-0.5"
-          style={{ backgroundColor: dayColorCss(dayNumber), color: dayTextColor(dayNumber) }}
+        {index + 1}
+      </span>
+      <span
+        className="shrink-0 text-ghost cursor-grab active:cursor-grabbing mt-0.5 select-none"
+        title="Drag to reorder"
+      >
+        <GripVertical className="w-4 h-4" />
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-body truncate text-ink">{loc.name}</p>
+        <p className="text-numeral text-faint mt-0.5">{hoursText} · {durText}</p>
+      </div>
+      <div className="shrink-0 flex items-center gap-0.5 hover-reveal transition-opacity">
+        <button
+          onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, date); }}
+          disabled={loc.lat === null}
+          title={loc.lat === null ? "No coordinates — run Enrich first" : "Find nearby places anchored to this location"}
+          aria-label="Find nearby places"
+          className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         >
-          {index + 1}
-        </span>
-        <span
-          className="shrink-0 text-ghost cursor-grab active:cursor-grabbing mt-0.5 select-none"
-          title="Drag to reorder"
-          onMouseDown={(e) => e.stopPropagation()}
+          <Search className="w-4 h-4" />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); removePlacement(stop.placement.id); }}
+          title="Remove from this day (keeps the place)"
+          aria-label="Remove from day"
+          className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-danger-500 dark:hover:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-950/30 transition-colors"
         >
-          <GripVertical className="w-4 h-4" />
-        </span>
-        <div className="flex-1 min-w-0">
-          <p className="text-body truncate text-ink">{loc.name}</p>
-          <p className="text-numeral text-faint mt-0.5">{hoursText} · {durText}</p>
-        </div>
-        <div className="shrink-0 flex items-center gap-0.5 hover-reveal transition-opacity">
-          <button
-            onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, date); }}
-            disabled={loc.lat === null}
-            title={loc.lat === null ? "No coordinates — run Enrich first" : "Find nearby places anchored to this location"}
-            aria-label="Find nearby places"
-            className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          >
-            <Search className="w-4 h-4" />
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); removePlacement(stop.placement.id); }}
-            title="Remove from this day (keeps the place)"
-            aria-label="Remove from day"
-            className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-danger-500 dark:hover:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-950/30 transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
-      </li>
-    </>
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </li>
   );
 }

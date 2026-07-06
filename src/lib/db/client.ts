@@ -20,7 +20,7 @@ import * as schema from "./schema";
 const DB_PATH = path.join(process.cwd(), "db", "dev.db");
 const MIGRATIONS_DIR = path.join(process.cwd(), "db", "migrations");
 
-type Drizzle = BetterSQLite3Database<typeof schema>;
+export type Drizzle = BetterSQLite3Database<typeof schema>;
 
 const g = globalThis as unknown as { _drizzle?: Drizzle };
 
