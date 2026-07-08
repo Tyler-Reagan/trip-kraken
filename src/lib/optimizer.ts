@@ -44,6 +44,7 @@ import {
   hasValidCoords,
   type DistanceLookup,
   type TravelMode,
+  type TravelCostProvider,
 } from "@/lib/travelCost";
 
 // No per-location travel-mode data exists yet; every sequencing query uses one mode until that
@@ -93,7 +94,8 @@ export async function optimizeItinerary(
   stays: StayPlan[] = [],
   dayBudgetMinutes?: number,
   dayStartMins = 9 * 60,   // assumed start-of-day for time-window simulation (default 09:00)
-  edges: EdgeAnchors = {}
+  edges: EdgeAnchors = {},
+  provider: TravelCostProvider = haversineProvider
 ): Promise<DayPlan[]> {
   if (locations.length === 0) return [];
 
@@ -153,7 +155,7 @@ export async function optimizeItinerary(
   // One upfront batch fetch (ADR-0004/O2) covering every point sequencing could ever need this run
   // (stops + all lodging/edge anchors) — every haversine/travel query below reads it synchronously.
   const validForDist = locations.filter(hasValidCoords);
-  const dist = await buildDistanceLookup(haversineProvider, validForDist, DEFAULT_MODE);
+  const dist = await buildDistanceLookup(provider, validForDist, DEFAULT_MODE);
 
   // Fewer locations than days: one per day, anchored at that day's lodging.
   if (valid.length <= days) {
@@ -189,6 +191,11 @@ export async function optimizeItinerary(
  * edge) builds by cheapest insertion toward that end: each stop is slotted into the gap that adds
  * the least travel, with `anchor` as the virtual pre-start and `endAnchor` as the virtual tail, so
  * the route is pulled to run anchor → … → endAnchor without either being emitted as a stop.
+ *
+ * Time-window awareness: insertion cost also adds `windowPenaltyKm` for the simulated arrival time
+ * at the candidate position (matching nearestNeighborOrder's round-trip blend of dist.km +
+ * windowPenaltyKm), so travel/edge days get the same feasibility-steered construction round-trip
+ * days already get — not just a plain shortest-path insertion.
  */
 function sequenceDay(
   stops: LocationInput[],
@@ -211,14 +218,38 @@ function sequenceDay(
         (prev ? dist.km(prev.id, u.id) : 0) +
         (next ? dist.km(u.id, next.id) : 0) -
         (prev && next ? dist.km(prev.id, next.id) : 0);
-      if (added < bestCost) {
-        bestCost = added;
+      const arrival = simulateArrivalAt(route.slice(0, pos), anchor, u, dayStartMins, dist);
+      const cost = added + windowPenaltyKm(arrival, u);
+      if (cost < bestCost) {
+        bestCost = cost;
         bestPos = pos;
       }
     }
     route.splice(bestPos, 0, u);
   }
   return route;
+}
+
+/** Simulated arrival time at `target` if it followed `precedingRoute` (already-placed stops
+ * before the candidate insertion point), starting from `anchor`'s departure — same clock model as
+ * nearestNeighborOrder/evaluateDayFeasibility (anchor's own visit time, then travel + visit time
+ * per stop). */
+function simulateArrivalAt(
+  precedingRoute: LocationInput[],
+  anchor: LocationInput | undefined,
+  target: LocationInput,
+  dayStartMins: number,
+  dist: DistanceLookup
+): number {
+  let t = dayStartMins + (anchor ? anchor.visitDuration ?? DEFAULT_VISIT_MINS : 0);
+  let prevId = anchor?.id;
+  for (const loc of precedingRoute) {
+    if (prevId) t += dist.mins(prevId, loc.id);
+    t += loc.visitDuration ?? DEFAULT_VISIT_MINS;
+    prevId = loc.id;
+  }
+  if (prevId) t += dist.mins(prevId, target.id);
+  return t;
 }
 
 // ---------------------------------------------------------------------------

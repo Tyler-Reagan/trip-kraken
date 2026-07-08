@@ -246,3 +246,14 @@ This is a guess at slicing, not a locked plan — revisit if building O2 surface
   `stations.ts`'s separate haversine implementation was intentionally left untouched (different
   call signature, unrelated module, no benefit to this refactor from touching it) — tracked here as
   a possible future dedupe, not urgent.
+  **New gap surfaced while fixing #6 (cheapest-insertion's construction wasn't window-aware):**
+  `twoOpt` itself (used to refine the round-trip branch) never receives the day's anchor —
+  its window-penalty guard (`routeWindowPenalty`) simulates arrival starting at `dayStartMins`
+  with no travel-time-from-anchor term, same class of bug as the now-fixed
+  `evaluateDayFeasibility`, and its distance-based swap scoring never considers the anchor edge
+  either, so a 2-opt swap could make the anchor→first-stop hop worse while still "improving" by
+  its own (anchor-blind) metric. Pre-existing, not introduced by this branch. Deliberately not
+  fixed here — reusing `twoOpt` as-is on cheapest-insertion's output was considered and rejected
+  for exactly this reason (see the O3 follow-up commit log); fixing it properly means threading
+  `anchor`/`endAnchor` through `twoOpt`'s cost and window-penalty calculations, which is a real
+  algorithmic change to an already-tested path, not a mechanical one. Tracked for a future pass.

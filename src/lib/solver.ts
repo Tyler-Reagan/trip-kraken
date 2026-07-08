@@ -26,7 +26,12 @@ import {
   type DayPlan,
 } from "@/lib/optimizer";
 import { windowPenaltyKm, dayBudgetPenaltyKm, DEFAULT_VISIT_MINS } from "@/lib/objective";
-import { haversineProvider, buildDistanceLookup, hasValidCoords } from "@/lib/travelCost";
+import {
+  haversineProvider,
+  buildDistanceLookup,
+  hasValidCoords,
+  type TravelCostProvider,
+} from "@/lib/travelCost";
 
 export interface OptimizationProblem {
   locations: LocationInput[];
@@ -35,6 +40,10 @@ export interface OptimizationProblem {
   dayBudgetMinutes?: number;
   dayStartMins?: number;
   edges?: EdgeAnchors;
+  /** Defaults to the straight-line haversine provider (ADR-0004). Explicit here — rather than
+   * each of solve() and optimizeItinerary independently hardcoding the same import — so both
+   * halves of one optimize run are guaranteed to score against the same cost model. */
+  provider?: TravelCostProvider;
 }
 
 /** A feasibility rule violated by the solved itinerary (ADR-0016's gate tier). `locationId` is
@@ -60,13 +69,14 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
     dayBudgetMinutes,
     dayStartMins = 9 * 60,
     edges = {},
+    provider = haversineProvider,
   } = problem;
 
-  const days = await optimizeItinerary(locations, numDays, stays, dayBudgetMinutes, dayStartMins, edges);
+  const days = await optimizeItinerary(locations, numDays, stays, dayBudgetMinutes, dayStartMins, edges, provider);
 
   const byId = new Map(locations.map((l) => [l.id, l]));
   const validForDist = locations.filter(hasValidCoords);
-  const dist = await buildDistanceLookup(haversineProvider, validForDist, DEFAULT_MODE);
+  const dist = await buildDistanceLookup(provider, validForDist, DEFAULT_MODE);
 
   const feasibilityViolations = days.flatMap((d) =>
     evaluateDayFeasibility(d, byId, dist.mins, dayStartMins, dayBudgetMinutes)
