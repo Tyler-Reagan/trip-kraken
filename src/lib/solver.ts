@@ -87,14 +87,20 @@ function evaluateDayFeasibility(
 
   let t = dayStartMins;
   let totalDuration = 0;
-  stops.forEach((stop, i) => {
-    if (i > 0) t += travelMins(stops[i - 1].id, stop.id);
+  // Locations without real coordinates (not yet geocoded) were never routed through the distance
+  // lookup — optimizer.ts places them without sequencing or distance-considering them at all — so
+  // they're excluded here the same way: no travel-time cost, and they never anchor the next real
+  // stop's travel time either (travelMins has no entry for their id, per solve()'s validForDist).
+  let lastWithCoords: LocationInput | null = null;
+  stops.forEach((stop) => {
+    if (hasValidCoords(stop) && lastWithCoords) t += travelMins(lastWithCoords.id, stop.id);
     const penalty = windowPenaltyKm(t, stop);
     if (penalty > 0) {
       violations.push({ locationId: stop.id, dayNumber: day.dayNumber, rule: "closed-hours", magnitude: penalty });
     }
     t += stop.visitDuration ?? 0;
     totalDuration += stop.visitDuration ?? 0;
+    if (hasValidCoords(stop)) lastWithCoords = stop;
   });
 
   if (dayBudgetMinutes != null) {

@@ -111,10 +111,17 @@ export async function optimizeItinerary(
   if (edges.arrivalId) anchorIds.add(edges.arrivalId);
   if (edges.departureId) anchorIds.add(edges.departureId);
 
-  // The lodging you sleep at on night d — the day's clustering tether (k-means), unchanged.
+  // The lodging you sleep at on night d — the day's clustering tether (k-means) and its
+  // sequencing anchor. Resolved only when present with valid coordinates, same guard as
+  // resolveAnchor above: an ungeocoded lodging must never become a dist.km/mins lookup key (it
+  // was never included in validForDist below), and tethering a cluster toward (0,0) would be
+  // nonsensical anyway. Falls back to no anchor — clustering seeds greedily, sequencing uses the
+  // northernmost-start heuristic (both already handle a null anchor).
   const lodgingOnNight = (night: number): LocationInput | null => {
     const s = stays.find((s) => night >= s.startNight && night <= s.endNight);
-    return s ? byId.get(s.lodgingId) ?? null : null;
+    if (!s) return null;
+    const l = byId.get(s.lodgingId);
+    return l && hasValidCoords(l) ? l : null;
   };
   const dayAnchor: (LocationInput | null)[] = [];
   for (let d = 1; d <= days; d++) dayAnchor.push(lodgingOnNight(d));

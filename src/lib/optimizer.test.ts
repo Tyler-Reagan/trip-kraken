@@ -112,6 +112,41 @@ const clean = await solve({
 });
 assert.deepEqual(clean.feasibilityViolations, [], "a feasible day reports no violations");
 
+// Regression (crash-bug fix, review finding): a not-yet-geocoded lodging (lat/lng default to
+// (0,0)) must never be handed to sequencing as an anchor — it's excluded from the distance
+// lookup, so using it as a dist.km/mins key would throw. Falls back to no anchor instead.
+const ungeocodedLodgingPlan = await optimizeItinerary(
+  [
+    { id: "lo", lat: 0, lng: 0 }, // lodging, not yet geocoded
+    { id: "s1", lat: 35.0, lng: 139.0 },
+    { id: "s2", lat: 35.01, lng: 139.01 },
+  ],
+  1,
+  [{ lodgingId: "lo", startNight: 1, endNight: 1 }]
+);
+assert.deepEqual(
+  ungeocodedLodgingPlan[0].locationIds.slice().sort(),
+  ["s1", "s2"],
+  "both stops placed despite an ungeocoded lodging anchor"
+);
+
+// Regression (crash-bug fix, review finding): a not-yet-geocoded activity sharing a day with
+// geocoded stops must not crash solve()'s feasibility pass — it's excluded from travel-time
+// scoring the same way optimizer.ts excludes it from sequencing (no distance to/from it exists).
+const withUngeocodedActivity = await solve({
+  locations: [
+    { id: "g1", lat: 35.0, lng: 139.0, visitDuration: 60 },
+    { id: "g2", lat: 35.01, lng: 139.01, visitDuration: 60 },
+    { id: "noloc", lat: 0, lng: 0, visitDuration: 30 },
+  ],
+  numDays: 1,
+});
+assert.equal(
+  withUngeocodedActivity.days[0].locationIds.length,
+  3,
+  "all three stops are placed, including the ungeocoded one"
+);
+
 // ── optimizeTrip orchestrator (over a temp DB) ────────────────────────────────
 
 const dir = fs.mkdtempSync(path.join(tmpdir(), "tk-opt-"));
