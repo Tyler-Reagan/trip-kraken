@@ -20,13 +20,23 @@ import { optimizeTrip } from "@/lib/optimize";
 import { createTripWithLocations, createLocation, setLodgingDates, updateLocation, getTripWithDetails } from "@/lib/db";
 import { isActivity } from "@/types";
 
+// optimizeItinerary/optimizeTrip are async (O2, ADR-0004); tsx compiles this file to CJS (no
+// "type": "module" in package.json), which doesn't support top-level await, hence the wrapper —
+// and the explicit exit-1 on failure, since an uncaught rejection here would otherwise be silent.
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+
+async function main() {
+
 // ── Pure solver ──────────────────────────────────────────────────────────────
 
 // Empty input → empty plan.
-assert.deepEqual(optimizeItinerary([], 3), [], "no locations → no plan");
+assert.deepEqual(await optimizeItinerary([], 3), [], "no locations → no plan");
 
 // Trip-edge routing: Day 1 runs arrival → … → departure; anchors (lodging + edges) are never stops.
-const edgePlan = optimizeItinerary(
+const edgePlan = await optimizeItinerary(
   [
     { id: "ap", lat: 35.0, lng: 139.0 }, // arrival (one end)
     { id: "dp", lat: 35.9, lng: 139.9 }, // departure (other end)
@@ -46,7 +56,7 @@ assert.deepEqual(day1, ["s1", "s2"], "stops ordered arrival → … → departur
 
 // Travel-day routing (ADR-0005): a hotel-change day routes from where you woke (A) toward where you
 // sleep (B). Lodging A night 1, lodging B night 2 (far apart); two stops on the leg between them.
-const travelPlan = optimizeItinerary(
+const travelPlan = await optimizeItinerary(
   [
     { id: "la", lat: 35.0, lng: 139.0 }, // lodging A (night 1)
     { id: "lb", lat: 35.0, lng: 140.0 }, // lodging B (night 2)
@@ -65,7 +75,7 @@ assert.ok(!["la", "lb"].some((id) => travelDay.includes(id)), "lodgings are not 
 assert.deepEqual(travelDay, ["m1", "m2"], "travel day routes woke A → … → sleep B");
 
 // Clustering: two tight clusters far apart over 2 days land on different days.
-const clusterPlan = optimizeItinerary(
+const clusterPlan = await optimizeItinerary(
   [
     { id: "w1", lat: 35.0, lng: 139.0 },
     { id: "w2", lat: 35.01, lng: 139.01 },
@@ -107,7 +117,7 @@ setLodgingDates(trip.id, id("H"), { checkInDate: "2026-06-24", checkOutDate: "20
 const W = createLocation(trip.id, { name: "W (excluded)", lat: 35.2, lng: 139.2 }).id;
 updateLocation(trip.id, W, { excluded: true });
 
-const after = optimizeTrip(trip.id);
+const after = await optimizeTrip(trip.id);
 const placed = new Set(after.placements.map((p) => p.locationId));
 assert.ok(!placed.has(id("H")), "the lodging is an anchor, never placed");
 assert.ok(!placed.has(W), "the excluded activity is not placed");
@@ -121,9 +131,11 @@ for (const p of after.placements) {
 }
 
 // Re-optimize is wholesale: the count stays put, not appended.
-const again = optimizeTrip(trip.id);
+const again = await optimizeTrip(trip.id);
 assert.equal(again.placements.length, after.placements.length, "re-optimize replaces, never appends");
 assert.equal(getTripWithDetails(trip.id)!.placements.length, 3, "exactly the three activities remain placed");
 
 fs.rmSync(dir, { recursive: true, force: true });
 console.log("✓ optimizer.test.ts passed");
+
+}

@@ -45,7 +45,7 @@ feasibility is a hard lexicographic gate, not a weighted term in one summed cost
 |---|---|---|---|
 | Entry point | `optimizeItinerary(locations, numDays, stays, ...)` — a plain function with 6 positional/optional params | `optimizer.ts` | `solve(problem: OptimizationProblem): Itinerary` — one typed input, one algorithm-agnostic output |
 | Objective | Feasibility penalties (window, day-budget) live in `objective.ts`, called by `optimizer.ts`. They're still summed into one flattened cost with travel distance — not yet the lexicographic gate ADR-0016 requires. | `objective.ts` + `optimizer.ts` | A composed whole-itinerary comparator (O3) that checks feasibility **before** ever comparing travel — two tiers, not one sum |
-| Travel cost | `haversine()` + a hardcoded `AVG_SPEED_KM_PER_MIN` constant, called directly throughout | `optimizer.ts` | A **travel-cost provider** (`cost`/`costMatrix`, mode-aware), default = haversine, swappable for a routing API later |
+| Travel cost | ✅ Done (O2) — sequencing reads a `DistanceLookup` built from one upfront `TravelCostProvider.costMatrix` call (`travelCost.ts`); clustering still uses local `haversine`, by design | `travelCost.ts` + `optimizer.ts` | ~~A travel-cost provider (`cost`/`costMatrix`, mode-aware), default = haversine, swappable for a routing API later~~ |
 | Algorithm choice | One hard-coded two-phase heuristic (k-means → nearest-neighbor + 2-opt), no seam to swap it | `optimizer.ts` | The heuristic becomes the **default implementation** of the solver interface; alternates (VRPTW) plug in beside it, chosen by config |
 | Testability of objective | Only testable indirectly, by running the whole heuristic and inspecting output | `optimizer.test.ts` | Feed the objective two itineraries directly, assert the better one scores lower — no solver required |
 
@@ -109,7 +109,7 @@ the first cut can be. A reasonable default shape, subject to revision once actua
 | # | Slice | Scope |
 |---|---|---|
 | **O1** ✅ | **Objective module** | Extract ADR-0001's penalties (window, category-balance, day-budget) out of `nearestCentroidIndex`/`windowPenaltyKm`/`routeWindowPenalty` into one named, directly-testable module. No behavior change — same weights, same output — this is a pure extraction. **Done** — see status log. |
-| **O2** | **Travel-cost provider** | Wrap `haversine` + `AVG_SPEED_KM_PER_MIN` behind an **async** `cost`/`costMatrix(mode)` (ADR-0004's whole point is a future real routing API, which is inherently async — building the interface sync now would force a breaking rework later, exactly when it matters most). Default provider preserves current behavior/numbers exactly — no realism upgrade (e.g. no per-mode speeds) bundled into this slice. **Scope boundaries:** (1) the clustering step's centroid-distance math (`nearestCentroidIndex`/`seedCentroids`) is explicitly *not* part of this — a centroid is a synthetic averaged point, not a real place, so it stays on plain `haversine`, untouched, forever; only real Location-to-Location queries (sequencing + the window-penalty arrival simulation) go through the provider. (2) The sequencing algorithms (`sequenceDay`, `nearestNeighborOrder`, `twoOpt`) must fetch each day's full pairwise distances via one upfront `costMatrix()` batch call, not `cost()` one pair at a time inside their loops — the ad hoc-per-pair shape is exactly the N² live-network-call problem ADR-0004's matrix form exists to prevent, and it's cheaper to build correctly now than to fix once a real provider exists. (3) Async propagates: this slice must also update `objective.ts`'s `routeWindowPenalty` (its `travelMins` callback becomes `Promise`-returning), `optimizer.ts`'s sequencing functions, `optimize.ts`'s `optimizeTrip`, the `/api/trips/[id]/optimize` route, and `optimizer.test.ts` — **all in the same pass**, since a partial ripple wouldn't compile/run. |
+| **O2** ✅ | **Travel-cost provider** | Wrap `haversine` + `AVG_SPEED_KM_PER_MIN` behind an async `cost`/`costMatrix(mode)`. **Done** — see status log; turned out simpler than scoped (only `optimizeItinerary` needed to become `async`, not `objective.ts` or the sequencing functions, since the matrix is fetched once upfront and read synchronously after). |
 | **O3** | **Solver interface** | Define `OptimizationProblem`/`Itinerary` types; wrap the existing two-phase heuristic as the default `solve()` implementation (now async, inherited from O2). **Thin only:** no solver-registry or config-selection mechanism — there is exactly one implementation, so building a way to choose between solvers is speculative until a second one actually exists. `optimize.ts` assembles the problem from `TripWithDetails` and calls `solve()` instead of `optimizeItinerary()` directly. **Per ADR-0016:** the whole-itinerary comparator this slice introduces must compare feasibility violations *before* ever comparing travel cost — two lexicographic tiers, not one flattened weighted sum (the greedy per-stop/per-swap costs already inside `kMeans`/`twoOpt` stay approximate signals guiding construction; only the final comparator needs the real guarantee). **Per ADR-0017:** `Itinerary` must carry its feasibility outcome (which stops/days violated which rule, how badly) alongside the arrangement — not just a clean-looking list of stops with the violation data thrown away once the decision is made. No UI for this; plumbing only. Travel cost itself gets no named function in `objective.ts` (decided in the grill) — summing provider calls is arithmetic, not a rule, unlike the three feasibility functions. |
 
 This is a guess at slicing, not a locked plan — revisit if building O2 surfaces something new.
@@ -177,4 +177,24 @@ This is a guess at slicing, not a locked plan — revisit if building O2 surface
   arithmetic, not a judgment call, unlike the three feasibility rules; O3's comparator just sums
   `costMatrix` results inline for its travel tier. Also landed **ADR-0017**: `solve()`'s result
   must surface feasibility violations (which stop/day, which rule, how badly), not just a clean
-  arrangement with that information thrown away — plumbing only, no UI scoped. Next: build O2.
+  arrangement with that information thrown away — plumbing only, no UI scoped.
+- 2026-07-07 — **O2 done.** Added `src/lib/travelCost.ts`: `TravelCostProvider` (async
+  `cost`/`costMatrix`, mode-aware), `haversineProvider` (default impl, numerically identical to
+  the pre-O2 inline math — verified bit-exact on distance, ~1e-14 epsilon on duration from
+  reordered arithmetic), and `buildDistanceLookup` (one upfront `costMatrix` call → synchronous
+  by-id `km()`/`mins()` reads). `optimizer.ts`: `optimizeItinerary` is now `async` — one `await
+  buildDistanceLookup(...)` per run, covering every stop + lodging/edge anchor with valid coords;
+  clustering (`kMeans`/`nearestCentroidIndex`/`seedCentroids`) untouched, still local synchronous
+  `haversine`, confirmed excluded from the provider as scoped. **Simpler than planned:**
+  `sequenceDay`/`nearestNeighborOrder`/`twoOpt` take the precomputed `dist: DistanceLookup` and
+  read it synchronously — they never needed to become `async` themselves, since the batch fetch
+  happens once, upfront, before any of them run. That also means **`objective.ts` needed zero
+  changes** — `routeWindowPenalty`'s existing `travelMins` callback signature was already generic
+  and synchronous, so swapping in a matrix-backed closure for the raw-`haversine` one required no
+  interface change. The predicted async ripple into `objective.ts` (from the pre-O2 grill) simply
+  didn't materialize; the doc's forecast there was more pessimistic than the actual shape needed.
+  Async does still propagate through the public entry points as planned: `optimize.ts`'s
+  `optimizeTrip`, the `/api/trips/[id]/optimize` route, and `optimizer.test.ts` (wrapped in an
+  async `main()` — tsx compiles this file to CJS, no top-level `await` without `"type":
+  "module"`). Verified: `tsc` clean, `npm test` all green (unchanged assertions), `knip` clean.
+  Next: O3.

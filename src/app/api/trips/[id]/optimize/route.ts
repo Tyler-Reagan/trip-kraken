@@ -17,7 +17,7 @@ export async function POST(
   const body = await req.json().catch(() => ({}));
   const { dayBudgetHours } = body ?? {};
 
-  const trip = optimizeTrip(tripId, {
+  const trip = await optimizeTrip(tripId, {
     ...(typeof dayBudgetHours === "number" && dayBudgetHours > 0 ? { dayBudgetHours } : {}),
   });
   return NextResponse.json(trip);

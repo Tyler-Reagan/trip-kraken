@@ -26,7 +26,7 @@ function toInput(l: Location): LocationInput {
   };
 }
 
-export function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): TripWithDetails {
+export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): Promise<TripWithDetails> {
   const trip = getTripWithDetails(tripId);
   if (!trip) throw new Error(`Trip ${tripId} not found`);
 
@@ -49,7 +49,7 @@ export function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): TripWi
   const dayBudgetMinutes =
     typeof opts.dayBudgetHours === "number" && opts.dayBudgetHours > 0 ? opts.dayBudgetHours * 60 : undefined;
 
-  const dayPlans = optimizeItinerary(inputLocations, numDays, stays, dayBudgetMinutes);
+  const dayPlans = await optimizeItinerary(inputLocations, numDays, stays, dayBudgetMinutes);
 
   // Map day numbers onto calendar dates and flatten to the stored Placement shape.
   const placements = dayPlans.flatMap((p) =>
