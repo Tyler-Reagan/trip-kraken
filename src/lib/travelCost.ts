@@ -19,14 +19,20 @@ export interface Point {
   lng: number;
 }
 
+/** A location is treated as not-yet-geocoded when its coordinates default to (0,0) — the shape
+ * `toInput()` (optimize.ts) produces before a Location has real lat/lng. Shared by every caller
+ * that needs to exclude these from distance-lookup construction or anchor selection. */
+export function hasValidCoords(l: Point): boolean {
+  return l.lat !== 0 || l.lng !== 0;
+}
+
 export interface TravelCost {
   distanceMeters: number;
   durationSeconds: number;
 }
 
 export interface TravelCostProvider {
-  cost(from: Point, to: Point, mode: TravelMode): Promise<TravelCost>;
-  /** Batch form (ADR-0004): fetch every pairwise cost in one round trip, for sequencing's inner loops. */
+  /** Fetch every pairwise cost in one round trip (ADR-0004), for sequencing's inner loops. */
   costMatrix(points: Point[], mode: TravelMode): Promise<TravelCost[][]>;
 }
 
@@ -72,9 +78,6 @@ function haversineCost(from: Point, to: Point): TravelCost {
  * not bundled into this slice.
  */
 export const haversineProvider: TravelCostProvider = {
-  async cost(from, to) {
-    return haversineCost(from, to);
-  },
   async costMatrix(points) {
     return points.map((p) => points.map((q) => haversineCost(p, q)));
   },

@@ -41,6 +41,7 @@ import {
   haversineProvider,
   buildDistanceLookup,
   haversineKm,
+  hasValidCoords,
   type DistanceLookup,
   type TravelMode,
 } from "@/lib/travelCost";
@@ -98,7 +99,7 @@ export async function optimizeItinerary(
   const resolveAnchor = (id: string | null | undefined): LocationInput | null => {
     if (!id) return null;
     const l = byId.get(id);
-    return l && (l.lat !== 0 || l.lng !== 0) ? l : null;
+    return l && hasValidCoords(l) ? l : null;
   };
   const arrival = resolveAnchor(edges.arrivalId);
   const departure = resolveAnchor(edges.departureId);
@@ -134,12 +135,12 @@ export async function optimizeItinerary(
 
   // Non-anchor Locations are the clustering pool (lodgings/edges are anchors, never stops).
   const pool = locations.filter((l) => !anchorIds.has(l.id));
-  const valid = pool.filter((l) => l.lat !== 0 || l.lng !== 0);
-  const invalid = pool.filter((l) => l.lat === 0 && l.lng === 0);
+  const valid = pool.filter(hasValidCoords);
+  const invalid = pool.filter((l) => !hasValidCoords(l));
 
   // One upfront batch fetch (ADR-0004/O2) covering every point sequencing could ever need this run
   // (stops + all lodging/edge anchors) — every haversine/travel query below reads it synchronously.
-  const validForDist = locations.filter((l) => l.lat !== 0 || l.lng !== 0);
+  const validForDist = locations.filter(hasValidCoords);
   const dist = await buildDistanceLookup(haversineProvider, validForDist, DEFAULT_MODE);
 
   // Fewer locations than days: one per day, anchored at that day's lodging.

@@ -26,7 +26,7 @@ import {
   type DayPlan,
 } from "@/lib/optimizer";
 import { windowPenaltyKm, dayBudgetPenaltyKm } from "@/lib/objective";
-import { haversineProvider, buildDistanceLookup } from "@/lib/travelCost";
+import { haversineProvider, buildDistanceLookup, hasValidCoords } from "@/lib/travelCost";
 
 export interface OptimizationProblem {
   locations: LocationInput[];
@@ -65,7 +65,7 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
   const days = await optimizeItinerary(locations, numDays, stays, dayBudgetMinutes, dayStartMins, edges);
 
   const byId = new Map(locations.map((l) => [l.id, l]));
-  const validForDist = locations.filter((l) => l.lat !== 0 || l.lng !== 0);
+  const validForDist = locations.filter(hasValidCoords);
   const dist = await buildDistanceLookup(haversineProvider, validForDist, DEFAULT_MODE);
 
   const feasibilityViolations = days.flatMap((d) =>
