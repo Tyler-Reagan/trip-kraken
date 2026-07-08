@@ -227,3 +227,22 @@ This is a guess at slicing, not a locked plan — revisit if building O2 surface
   Verified: `tsc` clean, `npm test` all green including new `solve()` assertions, `knip` clean.
   Next: a closer review of O3 specifically (comparator design, the gaps above) before building
   anything further on top of it.
+- 2026-07-07 — **O3's requested scrutiny pass, done as `code-review high` before merge.** Found 10
+  issues, two of them confirmed crash bugs: any location with unset/zero coordinates (the normal
+  pre-geocode state) placed into a day or used as a lodging anchor now throws inside
+  `solve()`/`optimizeItinerary()`, because O2's `buildDistanceLookup` throws on an unknown id where
+  the pre-O2 inline haversine math would have silently (if wrongly) computed a distance to `(0,0)`.
+  Also found: `evaluateDayFeasibility` used `visitDuration ?? 0` instead of the rest of the
+  codebase's `DEFAULT_VISIT_MINS` convention and never accounted for the day's start-anchor travel
+  time, both understating simulated lateness; `windowPenaltyKm` double-counted a severe closed-hours
+  miss (its "arrival after close" term is always implied by, and redundant with, its "visit runs
+  past close" term); the cheapest-insertion sequencing branch (travel/edge days) was never
+  time-window-aware during construction, unlike the round-trip branch; haversine math was
+  triplicated (`travelCost.ts`, `optimizer.ts`, and unrelated `stations.ts`); a coordinate-validity
+  check was copy-pasted 5x; `TravelCostProvider.cost()` was dead code; and `solve()`/
+  `optimizeItinerary` each hardcoded their own `haversineProvider` import with no shared injection
+  point. Fixed all 10 as five follow-up commits on the same branch, grouped by category (reuse,
+  simplification, correctness ×2, altitude) rather than deferred — see commit log for detail.
+  `stations.ts`'s separate haversine implementation was intentionally left untouched (different
+  call signature, unrelated module, no benefit to this refactor from touching it) — tracked here as
+  a possible future dedupe, not urgent.

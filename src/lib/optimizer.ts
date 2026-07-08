@@ -37,7 +37,13 @@ import {
   dayBudgetPenaltyKm,
   DEFAULT_VISIT_MINS,
 } from "@/lib/objective";
-import { haversineProvider, buildDistanceLookup, type DistanceLookup, type TravelMode } from "@/lib/travelCost";
+import {
+  haversineProvider,
+  buildDistanceLookup,
+  haversineKm,
+  type DistanceLookup,
+  type TravelMode,
+} from "@/lib/travelCost";
 
 // No per-location travel-mode data exists yet; every sequencing query uses one mode until that
 // changes (a category-A quality improvement, docs/optimizer-rebuild.md — not this slice).
@@ -286,7 +292,7 @@ function seedCentroids(locations: LocationInput[], k: number, anchors: (Location
     let best = locations[0];
     let bestDist = -1;
     for (const loc of locations) {
-      const d = Math.min(...centroids.map((cc) => haversine(loc, cc)));
+      const d = Math.min(...centroids.map((cc) => haversineKm(loc, cc)));
       if (d > bestDist) { bestDist = d; best = loc; }
     }
     centroids.push({ id: `c${c}`, lat: best.lat, lng: best.lng });
@@ -303,7 +309,7 @@ function nearestCentroidIndex(
   let best = 0;
   let bestCost = Infinity;
   centroids.forEach((c, i) => {
-    let cost = haversine(loc, c);
+    let cost = haversineKm(loc, c);
 
     // Feasibility penalty (ADR-0001 #1) — geographic proximity stays dominant; this nudges stops
     // away from already-full days.
@@ -432,26 +438,4 @@ function twoOpt(locations: LocationInput[], dayStartMins: number, dist: Distance
   }
 
   return route;
-}
-
-// ---------------------------------------------------------------------------
-// Haversine distance (returns kilometres) — clustering-only (kMeans/seedCentroids above). Not
-// ADR-0004's concern: a k-means centroid is a synthetic averaged point, not a real place, so it
-// never goes through the travel-cost provider (see travelCost.ts's module comment).
-// ---------------------------------------------------------------------------
-
-function haversine(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
-  const R = 6371;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const sinDLat = Math.sin(dLat / 2);
-  const sinDLng = Math.sin(dLng / 2);
-  const x =
-    sinDLat * sinDLat +
-    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinDLng * sinDLng;
-  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-}
-
-function toRad(deg: number): number {
-  return (deg * Math.PI) / 180;
 }

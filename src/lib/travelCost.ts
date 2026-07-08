@@ -50,6 +50,16 @@ function haversineMeters(a: Point, b: Point): number {
   return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
+/**
+ * Straight-line distance in km. The single haversine implementation shared by the travel-cost
+ * provider above and clustering's centroid math (optimizer.ts) — a k-means centroid is a
+ * synthetic point, not a real place, so it never goes through the async `TravelCostProvider`
+ * itself, but there's no reason for it to duplicate the trig.
+ */
+export function haversineKm(a: Point, b: Point): number {
+  return haversineMeters(a, b) / 1000;
+}
+
 function haversineCost(from: Point, to: Point): TravelCost {
   const distanceMeters = haversineMeters(from, to);
   return { distanceMeters, durationSeconds: distanceMeters / AVG_SPEED_M_PER_S };
