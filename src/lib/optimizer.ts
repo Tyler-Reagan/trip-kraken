@@ -18,7 +18,38 @@
  *   Time-window awareness: if locations carry openTime/closeTime fields, both phases add a
  *   km-equivalent soft penalty for arriving outside those windows. The penalty discourages
  *   out-of-hours visits but never hard-blocks them.
+ *
+ * The ADR-0001 objective (time-window, day-budget penalties) lives in `objective.ts` (ADR-0003's
+ * "named, shared module"); this file owns the algorithm — clustering and sequencing — and calls
+ * that module to score candidates rather than encoding penalties itself.
+ *
+ * Travel cost for sequencing (ADR-0004) comes from a `TravelCostProvider` (`travelCost.ts`), fetched
+ * as one upfront `costMatrix` per optimize run rather than queried pair-by-pair inside the
+ * construction loops — the batching ADR-0004's matrix form exists for. That's the only async part:
+ * clustering's centroid distance stays on its own local, synchronous math (a centroid is a synthetic
+ * point, not a real place a travel-cost provider has any business being asked about), and once the
+ * matrix is fetched, sequencing itself reads from it synchronously — only `optimizeItinerary` awaits.
  */
+
+import {
+  windowPenaltyKm,
+  routeWindowPenalty,
+  dayBudgetPenaltyKm,
+  DEFAULT_VISIT_MINS,
+} from "@/lib/objective";
+import {
+  haversineProvider,
+  buildDistanceLookup,
+  haversineKm,
+  hasValidCoords,
+  type DistanceLookup,
+  type TravelMode,
+  type TravelCostProvider,
+} from "@/lib/travelCost";
+
+// No per-location travel-mode data exists yet; every sequencing query uses one mode until that
+// changes (a category-A quality improvement, docs/optimizer-rebuild.md — not this slice).
+export const DEFAULT_MODE: TravelMode = "walking";
 
 export interface LocationInput {
   id: string;
@@ -27,7 +58,6 @@ export interface LocationInput {
   visitDuration?: number;   // minutes; used for day duration balancing
   openTime?: string;        // "HH:MM" 24-hour; soft time-window constraint
   closeTime?: string;       // "HH:MM" 24-hour; soft time-window constraint
-  categories?: string[];    // Google Places categories; used for cross-day balance
 }
 
 /** A lodging occupied over a contiguous night-range (ADR-0015 — derived from its booking dates). */
@@ -51,16 +81,22 @@ export interface EdgeAnchors {
 export interface DayPlan {
   dayNumber: number;
   locationIds: string[];
+  /** The anchor sequencing woke from (a lodging or the arrival edge), if any — the same anchor
+   * `sequenceDay` routed from. Exposed so a feasibility pass (solver.ts) can seed its arrival-time
+   * simulation from the same starting point sequencing actually used, instead of re-deriving
+   * lodging/edge anchor logic a second time. */
+  startAnchor: LocationInput | null;
 }
 
-export function optimizeItinerary(
+export async function optimizeItinerary(
   locations: LocationInput[],
   numDays: number,
   stays: StayPlan[] = [],
   dayBudgetMinutes?: number,
   dayStartMins = 9 * 60,   // assumed start-of-day for time-window simulation (default 09:00)
-  edges: EdgeAnchors = {}
-): DayPlan[] {
+  edges: EdgeAnchors = {},
+  provider: TravelCostProvider = haversineProvider
+): Promise<DayPlan[]> {
   if (locations.length === 0) return [];
 
   const days = numDays > 0 ? numDays : 1;
@@ -70,7 +106,7 @@ export function optimizeItinerary(
   const resolveAnchor = (id: string | null | undefined): LocationInput | null => {
     if (!id) return null;
     const l = byId.get(id);
-    return l && (l.lat !== 0 || l.lng !== 0) ? l : null;
+    return l && hasValidCoords(l) ? l : null;
   };
   const arrival = resolveAnchor(edges.arrivalId);
   const departure = resolveAnchor(edges.departureId);
@@ -82,10 +118,17 @@ export function optimizeItinerary(
   if (edges.arrivalId) anchorIds.add(edges.arrivalId);
   if (edges.departureId) anchorIds.add(edges.departureId);
 
-  // The lodging you sleep at on night d — the day's clustering tether (k-means), unchanged.
+  // The lodging you sleep at on night d — the day's clustering tether (k-means) and its
+  // sequencing anchor. Resolved only when present with valid coordinates, same guard as
+  // resolveAnchor above: an ungeocoded lodging must never become a dist.km/mins lookup key (it
+  // was never included in validForDist below), and tethering a cluster toward (0,0) would be
+  // nonsensical anyway. Falls back to no anchor — clustering seeds greedily, sequencing uses the
+  // northernmost-start heuristic (both already handle a null anchor).
   const lodgingOnNight = (night: number): LocationInput | null => {
     const s = stays.find((s) => night >= s.startNight && night <= s.endNight);
-    return s ? byId.get(s.lodgingId) ?? null : null;
+    if (!s) return null;
+    const l = byId.get(s.lodgingId);
+    return l && hasValidCoords(l) ? l : null;
   };
   const dayAnchor: (LocationInput | null)[] = [];
   for (let d = 1; d <= days; d++) dayAnchor.push(lodgingOnNight(d));
@@ -106,15 +149,20 @@ export function optimizeItinerary(
 
   // Non-anchor Locations are the clustering pool (lodgings/edges are anchors, never stops).
   const pool = locations.filter((l) => !anchorIds.has(l.id));
-  const valid = pool.filter((l) => l.lat !== 0 || l.lng !== 0);
-  const invalid = pool.filter((l) => l.lat === 0 && l.lng === 0);
+  const valid = pool.filter(hasValidCoords);
+  const invalid = pool.filter((l) => !hasValidCoords(l));
+
+  // One upfront batch fetch (ADR-0004/O2) covering every point sequencing could ever need this run
+  // (stops + all lodging/edge anchors) — every haversine/travel query below reads it synchronously.
+  const validForDist = locations.filter(hasValidCoords);
+  const dist = await buildDistanceLookup(provider, validForDist, DEFAULT_MODE);
 
   // Fewer locations than days: one per day, anchored at that day's lodging.
   if (valid.length <= days) {
     const plans: DayPlan[] = [];
     for (let d = 0; d < days; d++) {
-      const ordered = sequenceDay(valid[d] ? [valid[d]] : [], seqStart[d] ?? undefined, dayStartMins, seqEnd[d] ?? undefined);
-      plans.push({ dayNumber: d + 1, locationIds: ordered.map((l) => l.id) });
+      const ordered = sequenceDay(valid[d] ? [valid[d]] : [], seqStart[d] ?? undefined, dayStartMins, dist, seqEnd[d] ?? undefined);
+      plans.push({ dayNumber: d + 1, locationIds: ordered.map((l) => l.id), startAnchor: seqStart[d] ?? null });
     }
     if (invalid.length > 0) plans[plans.length - 1].locationIds.push(...invalid.map((l) => l.id));
     return plans;
@@ -125,8 +173,8 @@ export function optimizeItinerary(
 
   // Phase 2: per day, sequence its stops between the day's woke/sleep anchors.
   const plans: DayPlan[] = clusters.map((cluster, d) => {
-    const ordered = sequenceDay(cluster, seqStart[d] ?? undefined, dayStartMins, seqEnd[d] ?? undefined);
-    return { dayNumber: d + 1, locationIds: ordered.map((l) => l.id) };
+    const ordered = sequenceDay(cluster, seqStart[d] ?? undefined, dayStartMins, dist, seqEnd[d] ?? undefined);
+    return { dayNumber: d + 1, locationIds: ordered.map((l) => l.id), startAnchor: seqStart[d] ?? null };
   });
 
   // Distribute coordinate-less locations across days round-robin.
@@ -143,15 +191,21 @@ export function optimizeItinerary(
  * edge) builds by cheapest insertion toward that end: each stop is slotted into the gap that adds
  * the least travel, with `anchor` as the virtual pre-start and `endAnchor` as the virtual tail, so
  * the route is pulled to run anchor → … → endAnchor without either being emitted as a stop.
+ *
+ * Time-window awareness: insertion cost also adds `windowPenaltyKm` for the simulated arrival time
+ * at the candidate position (matching nearestNeighborOrder's round-trip blend of dist.km +
+ * windowPenaltyKm), so travel/edge days get the same feasibility-steered construction round-trip
+ * days already get — not just a plain shortest-path insertion.
  */
 function sequenceDay(
   stops: LocationInput[],
   anchor: LocationInput | undefined,
   dayStartMins: number,
+  dist: DistanceLookup,
   endAnchor?: LocationInput
 ): LocationInput[] {
   if (!endAnchor) {
-    return twoOpt(nearestNeighborOrder(stops, dayStartMins, anchor), dayStartMins);
+    return twoOpt(nearestNeighborOrder(stops, dayStartMins, dist, anchor), dayStartMins, dist);
   }
   const route: LocationInput[] = [];
   for (const u of stops) {
@@ -161,17 +215,41 @@ function sequenceDay(
       const prev = pos === 0 ? anchor : route[pos - 1];
       const next = pos < route.length ? route[pos] : endAnchor;
       const added =
-        (prev ? haversine(prev, u) : 0) +
-        (next ? haversine(u, next) : 0) -
-        (prev && next ? haversine(prev, next) : 0);
-      if (added < bestCost) {
-        bestCost = added;
+        (prev ? dist.km(prev.id, u.id) : 0) +
+        (next ? dist.km(u.id, next.id) : 0) -
+        (prev && next ? dist.km(prev.id, next.id) : 0);
+      const arrival = simulateArrivalAt(route.slice(0, pos), anchor, u, dayStartMins, dist);
+      const cost = added + windowPenaltyKm(arrival, u);
+      if (cost < bestCost) {
+        bestCost = cost;
         bestPos = pos;
       }
     }
     route.splice(bestPos, 0, u);
   }
   return route;
+}
+
+/** Simulated arrival time at `target` if it followed `precedingRoute` (already-placed stops
+ * before the candidate insertion point), starting from `anchor`'s departure — same clock model as
+ * nearestNeighborOrder/evaluateDayFeasibility (anchor's own visit time, then travel + visit time
+ * per stop). */
+function simulateArrivalAt(
+  precedingRoute: LocationInput[],
+  anchor: LocationInput | undefined,
+  target: LocationInput,
+  dayStartMins: number,
+  dist: DistanceLookup
+): number {
+  let t = dayStartMins + (anchor ? anchor.visitDuration ?? DEFAULT_VISIT_MINS : 0);
+  let prevId = anchor?.id;
+  for (const loc of precedingRoute) {
+    if (prevId) t += dist.mins(prevId, loc.id);
+    t += loc.visitDuration ?? DEFAULT_VISIT_MINS;
+    prevId = loc.id;
+  }
+  if (prevId) t += dist.mins(prevId, target.id);
+  return t;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,15 +272,6 @@ function kMeans(
   const centroids = seedCentroids(locations, k, anchors);
   let assignments = new Array<number>(locations.length).fill(0);
 
-  // Pre-compute ideal category distribution across days (cross-day balance).
-  const allCategories = locations.flatMap((l) => l.categories ?? []);
-  const uniqueCategories = [...new Set(allCategories)];
-  const idealCategoryCounts: Record<string, number> = {};
-  for (const cat of uniqueCategories) {
-    const total = locations.filter((l) => l.categories?.includes(cat)).length;
-    idealCategoryCounts[cat] = total / k;
-  }
-
   for (let iter = 0; iter < 100; iter++) {
     // Day durations from the previous assignment, so the cost can penalise over-budget days.
     const dayDurations = dayBudgetMinutes
@@ -211,17 +280,8 @@ function kMeans(
         )
       : undefined;
 
-    const dayCategoryCounts: Record<string, number>[] = Array.from({ length: k }, () => ({}));
-    if (uniqueCategories.length > 0) {
-      locations.forEach((loc, i) => {
-        for (const cat of loc.categories ?? []) {
-          dayCategoryCounts[assignments[i]][cat] = (dayCategoryCounts[assignments[i]][cat] ?? 0) + 1;
-        }
-      });
-    }
-
     const newAssignments = locations.map((loc) =>
-      nearestCentroidIndex(loc, centroids, dayDurations, dayBudgetMinutes, dayCategoryCounts, idealCategoryCounts)
+      nearestCentroidIndex(loc, centroids, dayDurations, dayBudgetMinutes)
     );
 
     const changed = newAssignments.some((a, i) => a !== assignments[i]);
@@ -276,7 +336,7 @@ function seedCentroids(locations: LocationInput[], k: number, anchors: (Location
     let best = locations[0];
     let bestDist = -1;
     for (const loc of locations) {
-      const d = Math.min(...centroids.map((cc) => haversine(loc, cc)));
+      const d = Math.min(...centroids.map((cc) => haversineKm(loc, cc)));
       if (d > bestDist) { bestDist = d; best = loc; }
     }
     centroids.push({ id: `c${c}`, lat: best.lat, lng: best.lng });
@@ -284,44 +344,21 @@ function seedCentroids(locations: LocationInput[], k: number, anchors: (Location
   return centroids;
 }
 
-// Category balance penalty scale: ~1 km per unit excess over ideal count.
-// Keeps geographic proximity dominant while gently spreading categories across days.
-const CATEGORY_BALANCE_KM = 1.0;
-
 function nearestCentroidIndex(
   loc: LocationInput,
   centroids: Centroid[],
   dayDurations?: number[],
-  dayBudgetMinutes?: number,
-  dayCategoryCounts?: Record<string, number>[],
-  idealCategoryCounts?: Record<string, number>
+  dayBudgetMinutes?: number
 ): number {
   let best = 0;
   let bestCost = Infinity;
   centroids.forEach((c, i) => {
-    let cost = haversine(loc, c);
+    let cost = haversineKm(loc, c);
 
-    // Soft duration penalty: add 2 km per hour that this assignment would put
-    // the day over budget. Keeps geographic proximity dominant while nudging
-    // stops away from already-full days.
+    // Feasibility penalty (ADR-0001 #1) — geographic proximity stays dominant; this nudges stops
+    // away from already-full days.
     if (dayDurations && dayBudgetMinutes) {
-      const excess = Math.max(
-        0,
-        dayDurations[i] + (loc.visitDuration ?? 0) - dayBudgetMinutes
-      );
-      cost += (excess / 60) * 2;
-    }
-
-    // Soft category balance penalty: penalize concentrating the same category
-    // on one day. For each category of this location, add penalty proportional
-    // to how much the day would exceed the ideal per-day count.
-    if (dayCategoryCounts && idealCategoryCounts) {
-      for (const cat of loc.categories ?? []) {
-        const current = dayCategoryCounts[i][cat] ?? 0;
-        const ideal = idealCategoryCounts[cat] ?? 0;
-        const excess = Math.max(0, current + 1 - ideal);
-        cost += excess * CATEGORY_BALANCE_KM;
-      }
+      cost += dayBudgetPenaltyKm(dayDurations[i] + (loc.visitDuration ?? 0), dayBudgetMinutes);
     }
 
     if (cost < bestCost) {
@@ -338,7 +375,8 @@ function nearestCentroidIndex(
 
 function nearestNeighborOrder(
   locations: LocationInput[],
-  dayStartMins = 9 * 60,
+  dayStartMins: number,
+  dist: DistanceLookup,
   lodging?: LocationInput
 ): LocationInput[] {
   if (locations.length <= 1) return locations;
@@ -347,9 +385,13 @@ function nearestNeighborOrder(
   const ordered: LocationInput[] = [];
   let timeMins = dayStartMins;
 
+  // Start entry used only as a walk position, never a real stop — kept as the same object
+  // reference (not a renamed id) so it stays a valid `dist` lookup key, then filtered out by
+  // identity below.
+  let startEntry: LocationInput | null = null;
   if (lodging) {
-    // Start greedy walk from lodging's position (lodging itself is not in the stop list)
-    ordered.push({ ...lodging, id: "__lodging_start__" });
+    startEntry = lodging;
+    ordered.push(startEntry);
     timeMins += lodging.visitDuration ?? DEFAULT_VISIT_MINS;
   } else {
     // Fall back to northernmost heuristic
@@ -365,8 +407,7 @@ function nearestNeighborOrder(
     let nearestIdx = 0;
     let nearestCost = Infinity;
     unvisited.forEach((loc, i) => {
-      const travelTime = haversine(last, loc) / AVG_SPEED_KM_PER_MIN;
-      const cost = haversine(last, loc) + windowPenaltyKm(timeMins + travelTime, loc);
+      const cost = dist.km(last.id, loc.id) + windowPenaltyKm(timeMins + dist.mins(last.id, loc.id), loc);
       if (cost < nearestCost) {
         nearestCost = cost;
         nearestIdx = i;
@@ -374,11 +415,10 @@ function nearestNeighborOrder(
     });
     const next = unvisited.splice(nearestIdx, 1)[0];
     ordered.push(next);
-    timeMins += haversine(last, next) / AVG_SPEED_KM_PER_MIN + (next.visitDuration ?? DEFAULT_VISIT_MINS);
+    timeMins += dist.mins(last.id, next.id) + (next.visitDuration ?? DEFAULT_VISIT_MINS);
   }
 
-  // Remove the sentinel lodging entry used only as a starting position
-  return ordered.filter((l) => l.id !== "__lodging_start__");
+  return startEntry ? ordered.filter((l) => l !== startEntry) : ordered;
 }
 
 // ---------------------------------------------------------------------------
@@ -399,13 +439,14 @@ function nearestNeighborOrder(
  * (even if it improves distance). This prevents 2-opt from undoing the
  * time-aware ordering established by nearestNeighborOrder.
  */
-function twoOpt(locations: LocationInput[], dayStartMins = 9 * 60): LocationInput[] {
+function twoOpt(locations: LocationInput[], dayStartMins: number, dist: DistanceLookup): LocationInput[] {
   if (locations.length <= 2) return locations;
 
   let route = [...locations];
   const n = route.length;
   const hasTimeWindows = route.some((l) => l.openTime || l.closeTime);
-  let currentWindowPenalty = hasTimeWindows ? routeWindowPenalty(route, dayStartMins) : 0;
+  const travelMins = (a: LocationInput, b: LocationInput) => dist.mins(a.id, b.id);
+  let currentWindowPenalty = hasTimeWindows ? routeWindowPenalty(route, dayStartMins, travelMins) : 0;
   let improved = true;
 
   while (improved) {
@@ -413,11 +454,11 @@ function twoOpt(locations: LocationInput[], dayStartMins = 9 * 60): LocationInpu
     for (let i = 0; i < n - 1; i++) {
       for (let j = i + 2; j < n; j++) {
         const oldCost =
-          haversine(route[i], route[i + 1]) +
-          (j < n - 1 ? haversine(route[j], route[j + 1]) : 0);
+          dist.km(route[i].id, route[i + 1].id) +
+          (j < n - 1 ? dist.km(route[j].id, route[j + 1].id) : 0);
         const newCost =
-          haversine(route[i], route[j]) +
-          (j < n - 1 ? haversine(route[i + 1], route[j + 1]) : 0);
+          dist.km(route[i].id, route[j].id) +
+          (j < n - 1 ? dist.km(route[i + 1].id, route[j + 1].id) : 0);
 
         if (newCost < oldCost - 1e-10) {
           const candidate = [
@@ -428,7 +469,7 @@ function twoOpt(locations: LocationInput[], dayStartMins = 9 * 60): LocationInpu
 
           // Reject swaps that worsen time-window compliance
           if (hasTimeWindows) {
-            const newWindowPenalty = routeWindowPenalty(candidate, dayStartMins);
+            const newWindowPenalty = routeWindowPenalty(candidate, dayStartMins, travelMins);
             if (newWindowPenalty > currentWindowPenalty + 1e-10) continue;
             currentWindowPenalty = newWindowPenalty;
           }
@@ -441,83 +482,4 @@ function twoOpt(locations: LocationInput[], dayStartMins = 9 * 60): LocationInpu
   }
 
   return route;
-}
-
-// ---------------------------------------------------------------------------
-// Time-window helpers
-// ---------------------------------------------------------------------------
-
-// Assumed visit time when visitDuration is not set (used only for arrival simulation)
-const DEFAULT_VISIT_MINS = 60;
-
-// Average city travel speed for estimating arrival times (20 km/h)
-const AVG_SPEED_KM_PER_MIN = 20 / 60;
-
-// Penalty scale factors (km-equivalent per minute of violation).
-// LATE is 10× EARLY: arriving after close is far worse than arriving before open.
-const WINDOW_EARLY_KM_PER_MIN = 0.5;
-const WINDOW_LATE_KM_PER_MIN  = 5;
-
-/** Parses a "HH:MM" string to minutes from midnight. */
-function timeToMins(hhmm: string): number {
-  const [h, m] = hhmm.split(":").map(Number);
-  return h * 60 + m;
-}
-
-/**
- * Returns a km-equivalent soft penalty for visiting `loc` when the simulated
- * clock reads `arrivalMins` minutes from midnight.
- *
- * Three cases penalised:
- *   1. Arriving before open  → waiting cost (mild)
- *   2. Arriving after close  → missed window (severe)
- *   3. Visit runs past close → partial overrun (severe)
- */
-function windowPenaltyKm(arrivalMins: number, loc: LocationInput): number {
-  const vd    = loc.visitDuration ?? DEFAULT_VISIT_MINS;
-  const open  = loc.openTime  ? timeToMins(loc.openTime)  : null;
-  const close = loc.closeTime ? timeToMins(loc.closeTime) : null;
-  let penalty = 0;
-  if (open  !== null && arrivalMins < open)
-    penalty += (open - arrivalMins) * WINDOW_EARLY_KM_PER_MIN;
-  if (close !== null && arrivalMins > close)
-    penalty += (arrivalMins - close) * WINDOW_LATE_KM_PER_MIN;
-  if (close !== null && arrivalMins + vd > close)
-    penalty += (arrivalMins + vd - close) * WINDOW_LATE_KM_PER_MIN;
-  return penalty;
-}
-
-/**
- * Simulates travel through a route and sums all time-window penalties.
- * Used by twoOpt to guard against swaps that worsen temporal ordering.
- */
-function routeWindowPenalty(route: LocationInput[], dayStartMins: number): number {
-  let t = dayStartMins;
-  let p = 0;
-  for (let i = 0; i < route.length; i++) {
-    if (i > 0) t += haversine(route[i - 1], route[i]) / AVG_SPEED_KM_PER_MIN;
-    p += windowPenaltyKm(t, route[i]);
-    t += route[i].visitDuration ?? DEFAULT_VISIT_MINS;
-  }
-  return p;
-}
-
-// ---------------------------------------------------------------------------
-// Haversine distance (returns kilometres)
-// ---------------------------------------------------------------------------
-
-function haversine(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
-  const R = 6371;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const sinDLat = Math.sin(dLat / 2);
-  const sinDLng = Math.sin(dLng / 2);
-  const x =
-    sinDLat * sinDLat +
-    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinDLng * sinDLng;
-  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-}
-
-function toRad(deg: number): number {
-  return (deg * Math.PI) / 180;
 }
