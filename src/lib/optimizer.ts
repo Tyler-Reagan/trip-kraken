@@ -80,6 +80,11 @@ export interface EdgeAnchors {
 export interface DayPlan {
   dayNumber: number;
   locationIds: string[];
+  /** The anchor sequencing woke from (a lodging or the arrival edge), if any — the same anchor
+   * `sequenceDay` routed from. Exposed so a feasibility pass (solver.ts) can seed its arrival-time
+   * simulation from the same starting point sequencing actually used, instead of re-deriving
+   * lodging/edge anchor logic a second time. */
+  startAnchor: LocationInput | null;
 }
 
 export async function optimizeItinerary(
@@ -155,7 +160,7 @@ export async function optimizeItinerary(
     const plans: DayPlan[] = [];
     for (let d = 0; d < days; d++) {
       const ordered = sequenceDay(valid[d] ? [valid[d]] : [], seqStart[d] ?? undefined, dayStartMins, dist, seqEnd[d] ?? undefined);
-      plans.push({ dayNumber: d + 1, locationIds: ordered.map((l) => l.id) });
+      plans.push({ dayNumber: d + 1, locationIds: ordered.map((l) => l.id), startAnchor: seqStart[d] ?? null });
     }
     if (invalid.length > 0) plans[plans.length - 1].locationIds.push(...invalid.map((l) => l.id));
     return plans;
@@ -167,7 +172,7 @@ export async function optimizeItinerary(
   // Phase 2: per day, sequence its stops between the day's woke/sleep anchors.
   const plans: DayPlan[] = clusters.map((cluster, d) => {
     const ordered = sequenceDay(cluster, seqStart[d] ?? undefined, dayStartMins, dist, seqEnd[d] ?? undefined);
-    return { dayNumber: d + 1, locationIds: ordered.map((l) => l.id) };
+    return { dayNumber: d + 1, locationIds: ordered.map((l) => l.id), startAnchor: seqStart[d] ?? null };
   });
 
   // Distribute coordinate-less locations across days round-robin.

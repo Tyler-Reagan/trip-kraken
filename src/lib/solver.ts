@@ -25,7 +25,7 @@ import {
   type EdgeAnchors,
   type DayPlan,
 } from "@/lib/optimizer";
-import { windowPenaltyKm, dayBudgetPenaltyKm } from "@/lib/objective";
+import { windowPenaltyKm, dayBudgetPenaltyKm, DEFAULT_VISIT_MINS } from "@/lib/objective";
 import { haversineProvider, buildDistanceLookup, hasValidCoords } from "@/lib/travelCost";
 
 export interface OptimizationProblem {
@@ -85,20 +85,27 @@ function evaluateDayFeasibility(
   const violations: FeasibilityViolation[] = [];
   const stops = day.locationIds.map((id) => byId.get(id)).filter((l): l is LocationInput => l != null);
 
-  let t = dayStartMins;
+  // Seed the clock from the day's actual start anchor (travel + its own visit time), matching
+  // nearestNeighborOrder's model (optimizer.ts) — the same anchor sequencing actually routed from
+  // — instead of assuming arrival at dayStartMins with no travel cost from wherever the day began.
+  const anchor = day.startAnchor && hasValidCoords(day.startAnchor) ? day.startAnchor : null;
+  let t = dayStartMins + (anchor ? anchor.visitDuration ?? DEFAULT_VISIT_MINS : 0);
   let totalDuration = 0;
   // Locations without real coordinates (not yet geocoded) were never routed through the distance
   // lookup — optimizer.ts places them without sequencing or distance-considering them at all — so
   // they're excluded here the same way: no travel-time cost, and they never anchor the next real
   // stop's travel time either (travelMins has no entry for their id, per solve()'s validForDist).
-  let lastWithCoords: LocationInput | null = null;
+  let lastWithCoords: LocationInput | null = anchor;
   stops.forEach((stop) => {
     if (hasValidCoords(stop) && lastWithCoords) t += travelMins(lastWithCoords.id, stop.id);
     const penalty = windowPenaltyKm(t, stop);
     if (penalty > 0) {
       violations.push({ locationId: stop.id, dayNumber: day.dayNumber, rule: "closed-hours", magnitude: penalty });
     }
-    t += stop.visitDuration ?? 0;
+    // Arrival-clock advance uses DEFAULT_VISIT_MINS (matches every other arrival simulation in the
+    // codebase); the day-budget total below deliberately doesn't — kMeans's dayDurations uses
+    // `?? 0`, i.e. an unset visitDuration isn't assumed to count against the day's time budget.
+    t += stop.visitDuration ?? DEFAULT_VISIT_MINS;
     totalDuration += stop.visitDuration ?? 0;
     if (hasValidCoords(stop)) lastWithCoords = stop;
   });

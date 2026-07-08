@@ -112,6 +112,29 @@ const clean = await solve({
 });
 assert.deepEqual(clean.feasibilityViolations, [], "a feasible day reports no violations");
 
+// Regression (arrival-simulation fix, review finding): evaluateDayFeasibility must seed its clock
+// from the day's actual start anchor (travel time from the lodging, plus the lodging's own
+// assumed visit time), not assume arrival at dayStartMins with zero travel cost — otherwise a stop
+// only reachable late because of a long transfer from the lodging is missed entirely. Lodging
+// covers night 1 only, so Day 2's start anchor is that lodging (~90km / ~4.5h walking from the
+// far stop); Day 2's stop closes well before that travel time would land you there.
+const anchorTravel = await solve({
+  locations: [
+    { id: "lo", lat: 35.0, lng: 139.0 },
+    { id: "s_near", lat: 35.0, lng: 139.01 }, // Day 1, no window — never a source of violations
+    { id: "s_far", lat: 35.0, lng: 140.0, openTime: "09:00", closeTime: "11:00" }, // Day 2
+  ],
+  numDays: 2,
+  stays: [{ lodgingId: "lo", startNight: 1, endNight: 1 }],
+  dayStartMins: 9 * 60,
+});
+assert.equal(
+  anchorTravel.feasibilityViolations.length,
+  1,
+  "a stop only reachable late once the start anchor's travel time is counted is reported"
+);
+assert.equal(anchorTravel.feasibilityViolations[0].locationId, "s_far");
+
 // Regression (crash-bug fix, review finding): a not-yet-geocoded lodging (lat/lng default to
 // (0,0)) must never be handed to sequencing as an anchor — it's excluded from the distance
 // lookup, so using it as a dist.km/mins key would throw. Falls back to no anchor instead.

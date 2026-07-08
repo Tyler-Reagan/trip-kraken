@@ -38,10 +38,11 @@ function timeToMins(hhmm: string): number {
  * Feasibility penalty (ADR-0001 #1): a km-equivalent cost for visiting `loc` when the simulated
  * clock reads `arrivalMins` minutes from midnight. Never a hard block — always a soft steer.
  *
- * Three cases penalised:
+ * Two cases penalised:
  *   1. Arriving before open  -> waiting cost (mild)
- *   2. Arriving after close  -> missed window (severe)
- *   3. Visit runs past close -> partial overrun (severe)
+ *   2. Visit runs past close -> missed/overrun window (severe). Arriving after close is always
+ *      a special case of this (vd >= 0, so arrivalMins > close implies arrivalMins + vd > close
+ *      too) — charged once here rather than twice for the same lateness.
  */
 export function windowPenaltyKm(arrivalMins: number, loc: WindowedLocation): number {
   const vd = loc.visitDuration ?? DEFAULT_VISIT_MINS;
@@ -49,7 +50,6 @@ export function windowPenaltyKm(arrivalMins: number, loc: WindowedLocation): num
   const close = loc.closeTime ? timeToMins(loc.closeTime) : null;
   let penalty = 0;
   if (open !== null && arrivalMins < open) penalty += (open - arrivalMins) * WINDOW_EARLY_KM_PER_MIN;
-  if (close !== null && arrivalMins > close) penalty += (arrivalMins - close) * WINDOW_LATE_KM_PER_MIN;
   if (close !== null && arrivalMins + vd > close) penalty += (arrivalMins + vd - close) * WINDOW_LATE_KM_PER_MIN;
   return penalty;
 }
