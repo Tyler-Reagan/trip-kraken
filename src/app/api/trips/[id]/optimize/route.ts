@@ -17,8 +17,9 @@ export async function POST(
   const body = await req.json().catch(() => ({}));
   const { dayBudgetHours } = body ?? {};
 
-  const trip = await optimizeTrip(tripId, {
+  const { trip, feasibilityViolations } = await optimizeTrip(tripId, {
     ...(typeof dayBudgetHours === "number" && dayBudgetHours > 0 ? { dayBudgetHours } : {}),
   });
-  return NextResponse.json(trip);
+  // feasibilityViolations (ADR-0017) rides along on the response; no UI reads it yet.
+  return NextResponse.json({ ...trip, feasibilityViolations });
 }

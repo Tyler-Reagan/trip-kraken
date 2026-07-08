@@ -41,7 +41,7 @@ import { haversineProvider, buildDistanceLookup, type DistanceLookup, type Trave
 
 // No per-location travel-mode data exists yet; every sequencing query uses one mode until that
 // changes (a category-A quality improvement, docs/optimizer-rebuild.md — not this slice).
-const DEFAULT_MODE: TravelMode = "walking";
+export const DEFAULT_MODE: TravelMode = "walking";
 
 export interface LocationInput {
   id: string;

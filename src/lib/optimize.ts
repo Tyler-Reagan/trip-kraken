@@ -1,18 +1,26 @@
 /**
- * Optimize orchestrator (ADR-0015) — the bridge between the pure, day-indexed `optimizeItinerary`
- * solver and the persisted model. It derives the solver's inputs from the trip's constraint fields
- * (lodging booking dates → integer night-ranges; day count from the required date range), runs the
- * solver, maps the day-indexed plan back onto calendar dates, and replaces the plan wholesale via
- * `setPlacements`. Re-optimize is total and explicit: no locks, no diff (ADR-0015 §5).
+ * Optimize orchestrator (ADR-0015) — the bridge between the solver interface (`solve()`,
+ * ADR-0003) and the persisted model. It derives the solver's inputs from the trip's constraint
+ * fields (lodging booking dates → integer night-ranges; day count from the required date range),
+ * runs the solver, maps the day-indexed plan back onto calendar dates, and replaces the plan
+ * wholesale via `setPlacements`. Re-optimize is total and explicit: no locks, no diff (ADR-0015 §5).
  */
 
 import { getTripWithDetails, setPlacements } from "@/lib/db";
-import { optimizeItinerary, type LocationInput, type StayPlan } from "@/lib/optimizer";
+import { solve, type FeasibilityViolation } from "@/lib/solver";
+import type { LocationInput, StayPlan } from "@/lib/optimizer";
 import { isActivity, isLodging, dayNumberOf, addDaysIso, numDaysOf, type Location, type TripWithDetails } from "@/types";
 
 export type OptimizeOptions = {
   /** Soft per-day time budget in hours; over-budget days are gently penalized during clustering. */
   dayBudgetHours?: number;
+};
+
+export type OptimizeResult = {
+  trip: TripWithDetails;
+  /** ADR-0017: which stops/days the solved itinerary still violates, if any. Plumbing only —
+   * nothing acts on this yet; it exists so a caller (the API route, eventually a UI) can. */
+  feasibilityViolations: FeasibilityViolation[];
 };
 
 function toInput(l: Location): LocationInput {
@@ -26,7 +34,7 @@ function toInput(l: Location): LocationInput {
   };
 }
 
-export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): Promise<TripWithDetails> {
+export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): Promise<OptimizeResult> {
   const trip = getTripWithDetails(tripId);
   if (!trip) throw new Error(`Trip ${tripId} not found`);
 
@@ -49,10 +57,10 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
   const dayBudgetMinutes =
     typeof opts.dayBudgetHours === "number" && opts.dayBudgetHours > 0 ? opts.dayBudgetHours * 60 : undefined;
 
-  const dayPlans = await optimizeItinerary(inputLocations, numDays, stays, dayBudgetMinutes);
+  const itinerary = await solve({ locations: inputLocations, numDays, stays, dayBudgetMinutes });
 
   // Map day numbers onto calendar dates and flatten to the stored Placement shape.
-  const placements = dayPlans.flatMap((p) =>
+  const placements = itinerary.days.flatMap((p) =>
     p.locationIds.map((locationId, order) => ({
       locationId,
       date: addDaysIso(trip.startDate, p.dayNumber - 1),
@@ -60,5 +68,5 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
     }))
   );
 
-  return setPlacements(tripId, placements);
+  return { trip: setPlacements(tripId, placements), feasibilityViolations: itinerary.feasibilityViolations };
 }

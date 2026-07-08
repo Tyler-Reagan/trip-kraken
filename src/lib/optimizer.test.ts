@@ -16,6 +16,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "@/lib/db/schema";
 import { optimizeItinerary } from "@/lib/optimizer";
+import { solve } from "@/lib/solver";
 import { optimizeTrip } from "@/lib/optimize";
 import { createTripWithLocations, createLocation, setLodgingDates, updateLocation, getTripWithDetails } from "@/lib/db";
 import { isActivity } from "@/types";
@@ -89,6 +90,28 @@ assert.equal(dayOf("w1"), dayOf("w2"), "the west pair shares a day");
 assert.equal(dayOf("e1"), dayOf("e2"), "the east pair shares a day");
 assert.notEqual(dayOf("w1"), dayOf("e1"), "the two clusters are on different days");
 
+// ── solve() / ADR-0017 feasibility violations ─────────────────────────────────
+
+// A single stop whose window can't be hit at all (closes before the day even starts) must be
+// reported, not silently absorbed into the arrangement.
+const impossible = await solve({
+  locations: [{ id: "late", lat: 35.0, lng: 139.0, openTime: "06:00", closeTime: "07:00" }],
+  numDays: 1,
+  dayStartMins: 9 * 60,
+});
+assert.equal(impossible.feasibilityViolations.length, 1, "an unreachable window is reported");
+assert.equal(impossible.feasibilityViolations[0].rule, "closed-hours");
+assert.equal(impossible.feasibilityViolations[0].locationId, "late");
+
+// A day comfortably within budget and hours reports no violations.
+const clean = await solve({
+  locations: [{ id: "ok", lat: 35.0, lng: 139.0, visitDuration: 60, openTime: "09:00", closeTime: "18:00" }],
+  numDays: 1,
+  dayBudgetMinutes: 8 * 60,
+  dayStartMins: 9 * 60,
+});
+assert.deepEqual(clean.feasibilityViolations, [], "a feasible day reports no violations");
+
 // ── optimizeTrip orchestrator (over a temp DB) ────────────────────────────────
 
 const dir = fs.mkdtempSync(path.join(tmpdir(), "tk-opt-"));
@@ -118,21 +141,22 @@ const W = createLocation(trip.id, { name: "W (excluded)", lat: 35.2, lng: 139.2 
 updateLocation(trip.id, W, { excluded: true });
 
 const after = await optimizeTrip(trip.id);
-const placed = new Set(after.placements.map((p) => p.locationId));
+const placed = new Set(after.trip.placements.map((p) => p.locationId));
 assert.ok(!placed.has(id("H")), "the lodging is an anchor, never placed");
 assert.ok(!placed.has(W), "the excluded activity is not placed");
 assert.deepEqual([...placed].sort(), [id("X"), id("Y"), id("Z")].sort(), "all three activities are placed");
+assert.ok(Array.isArray(after.feasibilityViolations), "optimizeTrip surfaces a feasibilityViolations list (ADR-0017)");
 
 // Placements sit on real trip dates and only on activities.
 const tripDateSet = new Set(["2026-06-24", "2026-06-25", "2026-06-26"]);
-for (const p of after.placements) {
+for (const p of after.trip.placements) {
   assert.ok(tripDateSet.has(p.date), `placement date ${p.date} is within the trip`);
-  assert.ok(isActivity(after.locations.find((l) => l.id === p.locationId)!), "only activities are placed");
+  assert.ok(isActivity(after.trip.locations.find((l) => l.id === p.locationId)!), "only activities are placed");
 }
 
 // Re-optimize is wholesale: the count stays put, not appended.
 const again = await optimizeTrip(trip.id);
-assert.equal(again.placements.length, after.placements.length, "re-optimize replaces, never appends");
+assert.equal(again.trip.placements.length, after.trip.placements.length, "re-optimize replaces, never appends");
 assert.equal(getTripWithDetails(trip.id)!.placements.length, 3, "exactly the three activities remain placed");
 
 fs.rmSync(dir, { recursive: true, force: true });

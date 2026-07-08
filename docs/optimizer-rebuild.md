@@ -110,7 +110,7 @@ the first cut can be. A reasonable default shape, subject to revision once actua
 |---|---|---|
 | **O1** ✅ | **Objective module** | Extract ADR-0001's penalties (window, category-balance, day-budget) out of `nearestCentroidIndex`/`windowPenaltyKm`/`routeWindowPenalty` into one named, directly-testable module. No behavior change — same weights, same output — this is a pure extraction. **Done** — see status log. |
 | **O2** ✅ | **Travel-cost provider** | Wrap `haversine` + `AVG_SPEED_KM_PER_MIN` behind an async `cost`/`costMatrix(mode)`. **Done** — see status log; turned out simpler than scoped (only `optimizeItinerary` needed to become `async`, not `objective.ts` or the sequencing functions, since the matrix is fetched once upfront and read synchronously after). |
-| **O3** | **Solver interface** | Define `OptimizationProblem`/`Itinerary` types; wrap the existing two-phase heuristic as the default `solve()` implementation (now async, inherited from O2). **Thin only:** no solver-registry or config-selection mechanism — there is exactly one implementation, so building a way to choose between solvers is speculative until a second one actually exists. `optimize.ts` assembles the problem from `TripWithDetails` and calls `solve()` instead of `optimizeItinerary()` directly. **Per ADR-0016:** the whole-itinerary comparator this slice introduces must compare feasibility violations *before* ever comparing travel cost — two lexicographic tiers, not one flattened weighted sum (the greedy per-stop/per-swap costs already inside `kMeans`/`twoOpt` stay approximate signals guiding construction; only the final comparator needs the real guarantee). **Per ADR-0017:** `Itinerary` must carry its feasibility outcome (which stops/days violated which rule, how badly) alongside the arrangement — not just a clean-looking list of stops with the violation data thrown away once the decision is made. No UI for this; plumbing only. Travel cost itself gets no named function in `objective.ts` (decided in the grill) — summing provider calls is arithmetic, not a rule, unlike the three feasibility functions. |
+| **O3** ⚠️ | **Solver interface** | Define `OptimizationProblem`/`Itinerary` types; wrap the existing two-phase heuristic as the default `solve()` implementation. **Landed in first-pass form — see status log for what's simplified and still needs scrutiny.** |
 
 This is a guess at slicing, not a locked plan — revisit if building O2 surfaces something new.
 
@@ -197,4 +197,33 @@ This is a guess at slicing, not a locked plan — revisit if building O2 surface
   `optimizeTrip`, the `/api/trips/[id]/optimize` route, and `optimizer.test.ts` (wrapped in an
   async `main()` — tsx compiles this file to CJS, no top-level `await` without `"type":
   "module"`). Verified: `tsc` clean, `npm test` all green (unchanged assertions), `knip` clean.
-  Next: O3.
+- 2026-07-07 — **O3 landed as a first pass, explicitly not fully grilled** — done quickly to get
+  something real down, flagged here for a closer read later rather than treated as settled.
+  Added `src/lib/solver.ts`: `OptimizationProblem`/`Itinerary`/`FeasibilityViolation` types,
+  `solve()` wrapping `optimizeItinerary` and then walking each day's finished route to detect
+  ADR-0016's feasibility violations (closed-hours per stop, day-budget per day), returned on
+  `Itinerary.feasibilityViolations` per ADR-0017. `optimize.ts`'s `optimizeTrip` now assembles an
+  `OptimizationProblem` and calls `solve()`; its return type changed to `{ trip,
+  feasibilityViolations }` (was bare `TripWithDetails`) — the API route spreads violations into
+  the JSON response, no UI reads them yet. Known gaps worth scrutiny before trusting this:
+  - **No actual comparator was built.** ADR-0016 asked for a whole-itinerary comparator that
+    checks feasibility before travel; what landed is a violation-*detector* for one candidate, not
+    a `compare(a, b)` — there's only ever one candidate today (one deterministic heuristic run), so
+    a comparator has nothing to compare against yet. Judgment call, not verified against the ADR's
+    intent as carefully as the rest of this doc's decisions were.
+  - **Duplicate `costMatrix` fetch.** `solve()` rebuilds its own `DistanceLookup` to evaluate
+    violations, separate from the one `optimizeItinerary` already builds internally for sequencing
+    — two round trips instead of one. Flagged in `solver.ts`'s own comment; harmless for the
+    default provider, real cost once a network-backed provider exists.
+  - **Day-budget violations still ignore travel time** (sum of `visitDuration` only) — an existing
+    simplification carried over unchanged from before O1, not introduced here, but ADR-0017 makes
+    violations something a caller might actually trust/display, which raises the bar on this being
+    accurate.
+  - **`magnitude` is in `objective.ts`'s km-equivalent units**, not something directly meaningful
+    like "43 minutes late" — chosen for consistency with the existing penalty functions rather than
+    inventing a second unit system; not obviously the right call for anything user-facing later.
+  - Test coverage added (`optimizer.test.ts`) is a first pass: one unreachable-window case, one
+    clean case. Not exhaustive (no day-budget-violation test, no multi-violation-per-day case).
+  Verified: `tsc` clean, `npm test` all green including new `solve()` assertions, `knip` clean.
+  Next: a closer review of O3 specifically (comparator design, the gaps above) before building
+  anything further on top of it.
