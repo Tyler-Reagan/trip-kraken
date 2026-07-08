@@ -12,7 +12,7 @@
  * point" isn't a meaningful provider query. Clustering stays on its own local distance math.
  */
 
-export type TravelMode = "walking" | "driving" | "transit";
+export type TravelMode = "walking" | "driving" | "transit" | "bicycle";
 
 export interface Point {
   lat: number;
@@ -31,9 +31,26 @@ export interface TravelCost {
   durationSeconds: number;
 }
 
+export interface TravelCostOptions {
+  /** Representative departure datetime (ADR-0018) — timetables are calendar-dependent, so a real
+   * transit provider needs a date, not just a time-of-day. One matrix is fetched per optimize run
+   * at one representative datetime; providers that don't model time-of-day (haversine) ignore it. */
+  departureTime?: Date;
+}
+
+/** Display-only transit detail for one leg (ADR-0018) — never consumed by the objective; a
+ * provider/mode with nothing to add (walking, driving, haversine) omits the optional fields. */
+export interface LegDetail extends TravelCost {
+  transferCount?: number;
+  lineNames?: string[];
+}
+
 export interface TravelCostProvider {
   /** Fetch every pairwise cost in one round trip (ADR-0004), for sequencing's inner loops. */
-  costMatrix(points: Point[], mode: TravelMode): Promise<TravelCost[][]>;
+  costMatrix(points: Point[], mode: TravelMode, opts?: TravelCostOptions): Promise<TravelCost[][]>;
+  /** One point-to-point journey with display detail (ADR-0018) — for the final plan's legs only;
+   * called lazily at display time, never inside sequencing's construction/refinement loops. */
+  describeLeg(from: Point, to: Point, mode: TravelMode, opts?: TravelCostOptions): Promise<LegDetail>;
 }
 
 const EARTH_RADIUS_M = 6_371_000;
@@ -81,6 +98,9 @@ export const haversineProvider: TravelCostProvider = {
   async costMatrix(points) {
     return points.map((p) => points.map((q) => haversineCost(p, q)));
   },
+  async describeLeg(from, to) {
+    return haversineCost(from, to);
+  },
 };
 
 export interface DistanceLookup {
@@ -97,10 +117,11 @@ export interface DistanceLookup {
 export async function buildDistanceLookup(
   provider: TravelCostProvider,
   points: (Point & { id: string })[],
-  mode: TravelMode
+  mode: TravelMode,
+  opts?: TravelCostOptions
 ): Promise<DistanceLookup> {
   const index = new Map(points.map((p, i) => [p.id, i]));
-  const matrix = await provider.costMatrix(points, mode);
+  const matrix = await provider.costMatrix(points, mode, opts);
 
   const cellOf = (aId: string, bId: string) => {
     const i = index.get(aId);
