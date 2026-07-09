@@ -4,7 +4,10 @@
 - **Date:** 2026-06-24
 - **Supersedes:** —
 - **Superseded by:** —
-- **Amended by:** ADR-0015 (transit becomes a Location `kind`; times are constraint fields)
+- **Amended by:** ADR-0015 (transit becomes a Location `kind`; times are constraint fields),
+  ADR-0018 (resolves the deferred time-of-day complexity as a representative-time
+  approximation policy; regional providers demoted to gap-assessment-contingent
+  enhancements behind a Google Routes default)
 - **Constrained by:** ADR-0001 (scope-out: real-time, booking), ADR-0004 (travel cost)
 - **Mirrors:** ADR-0009 (pluggable providers with regional applicability)
 - **Note:** Decided in the 2026-06-24 grilling session.
@@ -64,9 +67,25 @@ makes adding a region's transit provider a contained addition, not a routing rew
   contract as ADR-0009's discovery providers.
 - The UI gains a "directions" affordance per leg that deep-links out; no in-app transit
   rendering is built.
-- **Open complexity (deferred grill):** transit duration is **time-of-day dependent**,
+- **Open complexity (deferred grill):** ~~transit duration is **time-of-day dependent**,
   which interacts with the optimizer's arrival-time simulation (ADR-0003) — the provider
   may need the simulated departure time as input, and cost becomes time-varying and
-  asymmetric. To be designed when the first real routing provider is built.
+  asymmetric. To be designed when the first real routing provider is built.~~
+  **Resolved by ADR-0018** (2026-07-07): a representative-time approximation policy —
+  one matrix per trip at a representative departure datetime; the feasibility clock
+  stays exact; exact schedule-aware re-checks can later slot into `solve()`'s
+  violation pass.
 - Caching and rate-limit handling live in the provider layer (as for travel cost and
   discovery), not the optimizer.
+- **Open question (conditional — only if a regional provider is ever built, per
+  ADR-0018):** a Japan-specific transit provider (e.g. NAVITIME-based) may not accept
+  raw lat/lng directly for routing — some transit APIs require a separate
+  name/coordinate → provider-internal-POI resolution call before a route can be
+  computed. If so, `costMatrix()` calls need an internal resolve-and-cache step on top
+  of ADR-0004's cost-matrix cache, adding a network hop and its own cache layer. Not a
+  concern for the Google Routes default, which accepts the `placeId`s committed
+  Locations already carry (ADR-0009). To be confirmed against the provider's actual
+  API docs if a gap assessment ever demands a regional provider — informed by a
+  2026-07-07 transcript of the NAVITIME/JapanTravel agent describing its own tool
+  contract (`docs/japantravel-agent-transcript.md`), which is evidence of behavioral
+  shape only, not authoritative API documentation.

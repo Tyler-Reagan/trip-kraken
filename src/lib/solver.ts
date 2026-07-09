@@ -32,6 +32,7 @@ import {
   hasValidCoords,
   type TravelCostProvider,
 } from "@/lib/travelCost";
+import type { IsoDate } from "@/types";
 
 export interface OptimizationProblem {
   locations: LocationInput[];
@@ -44,6 +45,10 @@ export interface OptimizationProblem {
    * each of solve() and optimizeItinerary independently hardcoding the same import — so both
    * halves of one optimize run are guaranteed to score against the same cost model. */
   provider?: TravelCostProvider;
+  /** The trip's first date (ADR-0018) — combined with dayStartMins into one representative
+   * departure datetime, fetched once per optimize run for time-of-day-dependent providers.
+   * Undefined skips time-of-day entirely (providers that ignore it, like haversine, don't need it). */
+  startDate?: IsoDate;
 }
 
 /** A feasibility rule violated by the solved itinerary (ADR-0016's gate tier). `locationId` is
@@ -70,13 +75,28 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
     dayStartMins = 9 * 60,
     edges = {},
     provider = haversineProvider,
+    startDate,
   } = problem;
 
-  const days = await optimizeItinerary(locations, numDays, stays, dayBudgetMinutes, dayStartMins, edges, provider);
+  // One representative departure datetime for the whole run (ADR-0018): the trip's first date at
+  // dayStartMins. Both optimizeItinerary's and this function's own costMatrix fetch use the same
+  // value, so sequencing and violation-evaluation score against the same time-of-day snapshot.
+  const departureTime = startDate ? new Date(Date.parse(startDate + "T00:00:00Z") + dayStartMins * 60000) : undefined;
+
+  const days = await optimizeItinerary(
+    locations,
+    numDays,
+    stays,
+    dayBudgetMinutes,
+    dayStartMins,
+    edges,
+    provider,
+    departureTime
+  );
 
   const byId = new Map(locations.map((l) => [l.id, l]));
   const validForDist = locations.filter(hasValidCoords);
-  const dist = await buildDistanceLookup(provider, validForDist, DEFAULT_MODE);
+  const dist = await buildDistanceLookup(provider, validForDist, DEFAULT_MODE, { departureTime });
 
   const feasibilityViolations = days.flatMap((d) =>
     evaluateDayFeasibility(d, byId, dist.mins, dayStartMins, dayBudgetMinutes)

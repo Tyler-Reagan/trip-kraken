@@ -57,7 +57,7 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
   const dayBudgetMinutes =
     typeof opts.dayBudgetHours === "number" && opts.dayBudgetHours > 0 ? opts.dayBudgetHours * 60 : undefined;
 
-  const itinerary = await solve({ locations: inputLocations, numDays, stays, dayBudgetMinutes });
+  const itinerary = await solve({ locations: inputLocations, numDays, stays, dayBudgetMinutes, startDate: trip.startDate });
 
   // Map day numbers onto calendar dates and flatten to the stored Placement shape.
   const placements = itinerary.days.flatMap((p) =>

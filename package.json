@@ -6,7 +6,7 @@
     "dev": "next dev 2>&1 | tee dev.log",
     "build": "next build",
     "start": "next start",
-    "test": "tsx src/lib/db/model.test.ts && tsx src/lib/optimizer.test.ts && tsx src/lib/places.test.ts && tsx src/lib/discovery.test.ts && tsx src/lib/placementOrdering.test.ts",
+    "test": "tsx src/lib/db/model.test.ts && tsx src/lib/optimizer.test.ts && tsx src/lib/places.test.ts && tsx src/lib/discovery.test.ts && tsx src/lib/placementOrdering.test.ts && tsx src/lib/googleRoutesProvider.test.ts",
     "knip": "knip",
     "knip:fix": "knip --fix"
   },

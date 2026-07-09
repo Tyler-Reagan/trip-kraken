@@ -51,6 +51,12 @@ _Avoid_: stop, visit, waypoint, item
 A date in the Trip; clusters the Placements that fall on it and may carry a label. Derived
 from the Trip's date range, not an entity in its own right.
 
+**Leg**:
+The travel segment between consecutive Placements (or between a Day's Anchor and its first
+or last Placement) within a Day — the unit travel cost, transit detail, and directions
+operate on. Derived from the Plan, never stored.
+_Avoid_: hop, segment, edge
+
 **Anchor (derived)**:
 A Location that bookends a Day, *projected* from a constraint-field — the lodging you sleep
 at, the transit you enter or exit by. Computed every read, never stored.

@@ -6,6 +6,8 @@
 - **Superseded by:** —
 - **Constrained by:** ADR-0001 (feasibility/travel objective)
 - **Feeds:** ADR-0003 (solver), ADR-0011 (transit)
+- **Amended by:** ADR-0018 (`costMatrix` gains optional `departureTime`; a lazy
+  `describeLeg` method is added for display-only transit detail)
 
 ## Context
 

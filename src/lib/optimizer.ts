@@ -95,7 +95,10 @@ export async function optimizeItinerary(
   dayBudgetMinutes?: number,
   dayStartMins = 9 * 60,   // assumed start-of-day for time-window simulation (default 09:00)
   edges: EdgeAnchors = {},
-  provider: TravelCostProvider = haversineProvider
+  provider: TravelCostProvider = haversineProvider,
+  /** Representative departure datetime (ADR-0018), forwarded to the provider's costMatrix call.
+   * Undefined for providers/callers that don't model time-of-day. */
+  departureTime?: Date
 ): Promise<DayPlan[]> {
   if (locations.length === 0) return [];
 
@@ -155,7 +158,7 @@ export async function optimizeItinerary(
   // One upfront batch fetch (ADR-0004/O2) covering every point sequencing could ever need this run
   // (stops + all lodging/edge anchors) — every haversine/travel query below reads it synchronously.
   const validForDist = locations.filter(hasValidCoords);
-  const dist = await buildDistanceLookup(provider, validForDist, DEFAULT_MODE);
+  const dist = await buildDistanceLookup(provider, validForDist, DEFAULT_MODE, { departureTime });
 
   // Fewer locations than days: one per day, anchored at that day's lodging.
   if (valid.length <= days) {

@@ -42,3 +42,6 @@ status to **Superseded by ADR-NNNN**.
 | [0013](0013-accommodation-bookings-and-derived-anchors.md) | Accommodations as timed bookings; day anchors derived | Superseded by 0015 |
 | [0014](0014-location-primitive-date-bookings-derived-roles.md) | Location as primitive; stays as date bookings; roles and anchors derived | Superseded by 0015 |
 | [0015](0015-locations-typed-by-kind-constraints-and-plan.md) | Locations typed by kind; constraints as fields, plan as placements | Accepted |
+| [0016](0016-feasibility-gate-and-deferred-balance.md) | Feasibility is a hard gate; category balance deferred to advisory suggestions | Accepted |
+| [0017](0017-surface-feasibility-violations.md) | The solver's result surfaces feasibility violations, not just an arrangement | Accepted |
+| [0018](0018-transit-cost-time-policy-and-provider-shape.md) | Transit cost: time-of-day policy and provider shape | Accepted |
