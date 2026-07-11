@@ -202,12 +202,17 @@ const db = drizzle(sqlite, { schema });
 migrate(db, { migrationsFolder: path.join(process.cwd(), "db", "migrations") });
 (globalThis as unknown as { _drizzle?: typeof db })._drizzle = db;
 
-// 3-day trip; lodging H across all nights; three activities with coords; one excluded.
+// 3-day trip; lodging H across all nights; three activities with coords; one excluded. Pinned to
+// walking (ADR-0019 #86): this test is about placement/DB mechanics, not provider selection, and
+// its Tokyo-area coordinates would otherwise resolve to the OSM-Japan transit provider by default
+// (transit is the default primary mode) — which requires a real ingested `db/transit-japan.db`
+// this test environment doesn't have.
 const trip = createTripWithLocations({
   name: "Opt trip",
   sourceUrl: "",
   startDate: "2026-06-24",
   endDate: "2026-06-26",
+  allowedModes: ["walking"],
   locations: [
     { name: "H", lat: 35.0, lng: 139.0 },
     { name: "X", lat: 35.01, lng: 139.01 },

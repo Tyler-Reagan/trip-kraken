@@ -6,7 +6,7 @@
     "dev": "next dev 2>&1 | tee dev.log",
     "build": "next build",
     "start": "next start",
-    "test": "tsx src/lib/db/model.test.ts && tsx src/lib/optimizer.test.ts && tsx src/lib/places.test.ts && tsx src/lib/discovery.test.ts && tsx src/lib/placementOrdering.test.ts && tsx src/lib/googleRoutesProvider.test.ts && tsx src/lib/transitGraphStore.test.ts && tsx src/lib/osmTransitProvider.test.ts && tsx src/lib/transitGraphIngest.test.ts",
+    "test": "tsx src/lib/db/model.test.ts && tsx src/lib/optimizer.test.ts && tsx src/lib/places.test.ts && tsx src/lib/discovery.test.ts && tsx src/lib/placementOrdering.test.ts && tsx src/lib/googleRoutesProvider.test.ts && tsx src/lib/transitGraphStore.test.ts && tsx src/lib/osmTransitProvider.test.ts && tsx src/lib/transitGraphIngest.test.ts && tsx src/lib/travelCostRegistry.test.ts && tsx src/lib/optimizeJapanTransit.test.ts",
     "knip": "knip",
     "knip:fix": "knip --fix",
     "ingest:transit-graph": "./scripts/ingest-transit-graph.sh"

@@ -18,6 +18,7 @@
 
 import { sql } from "drizzle-orm";
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import type { TravelMode } from "@/lib/travelCost";
 
 export const trip = sqliteTable("Trip", {
   id: text("id").primaryKey(),
@@ -30,6 +31,12 @@ export const trip = sqliteTable("Trip", {
   // A day's optional label, keyed by date. Days are a derived clustering of Placements, not an
   // entity, so the only thing a day "owns" — a label — rides here (locked decision, ADR-0015).
   dayLabels: text("dayLabels", { mode: "json" }).$type<Record<string, string>>(),
+  // The Trip's allowed travel modes (ADR-0019 §mode) — resolved to a single primary mode by
+  // `resolvePrimaryMode` (travelCostRegistry.ts) at optimize time, replacing the old hardcoded
+  // `DEFAULT_MODE` constant. Nullable rather than DB-defaulted: `resolvePrimaryMode` already
+  // treats an unset Trip as the default set (which includes transit), so there is no meaningful
+  // "unset" state to distinguish at the schema level.
+  allowedModes: text("allowedModes", { mode: "json" }).$type<TravelMode[]>(),
   createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
   updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
 });

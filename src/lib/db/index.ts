@@ -5,6 +5,7 @@ import { trip, location, placement } from "./schema";
 import type { TripWithDetails, Location, Placement, IsoDate } from "@/types";
 import type { LocationEnrichment } from "@/lib/places";
 import type { ParsedBooking } from "@/lib/bookingImport";
+import type { TravelMode } from "@/lib/travelCost";
 import { reorderPlacements, insertPlacement } from "@/lib/placementOrdering";
 
 /**
@@ -29,6 +30,7 @@ function parseTrip(r: typeof trip.$inferSelect) {
     startDate: r.startDate,
     endDate: r.endDate,
     dayLabels: r.dayLabels ?? null,
+    allowedModes: r.allowedModes ?? null,
     createdAt: new Date(r.createdAt),
     updatedAt: new Date(r.updatedAt),
   };
@@ -151,6 +153,8 @@ export function createTripWithLocations(data: {
   /** Required temporal axis (ADR-0015 §3): every trip has a real calendar range. */
   startDate: IsoDate;
   endDate: IsoDate;
+  /** ADR-0019 §mode; unset resolves to the default set (transit included) at optimize time. */
+  allowedModes?: TravelMode[] | null;
   locations: Array<{
     name: string;
     address?: string | null;
@@ -169,6 +173,7 @@ export function createTripWithLocations(data: {
         sourceUrl: data.sourceUrl ?? null,
         startDate: data.startDate,
         endDate: data.endDate,
+        allowedModes: data.allowedModes ?? null,
       })
       .run();
     for (const loc of data.locations) {
@@ -194,7 +199,13 @@ export function createTripWithLocations(data: {
 
 export function updateTrip(
   id: string,
-  fields: { name?: string; startDate?: IsoDate; endDate?: IsoDate; dayLabels?: Record<string, string> | null }
+  fields: {
+    name?: string;
+    startDate?: IsoDate;
+    endDate?: IsoDate;
+    dayLabels?: Record<string, string> | null;
+    allowedModes?: TravelMode[] | null;
+  }
 ): TripWithDetails {
   getDrizzle()
     .update(trip)
@@ -203,6 +214,7 @@ export function updateTrip(
       ...(fields.startDate !== undefined ? { startDate: fields.startDate } : {}),
       ...(fields.endDate !== undefined ? { endDate: fields.endDate } : {}),
       ...(fields.dayLabels !== undefined ? { dayLabels: fields.dayLabels } : {}),
+      ...(fields.allowedModes !== undefined ? { allowedModes: fields.allowedModes } : {}),
       updatedAt: sql`(datetime('now'))`,
     })
     .where(eq(trip.id, id))

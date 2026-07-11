@@ -9,6 +9,8 @@
 import { getTripWithDetails, setPlacements } from "@/lib/db";
 import { solve, type FeasibilityViolation } from "@/lib/solver";
 import type { LocationInput, StayPlan } from "@/lib/optimizer";
+import { hasValidCoords } from "@/lib/travelCost";
+import { selectTravelCostProvider, resolvePrimaryMode } from "@/lib/travelCostRegistry";
 import { isActivity, isLodging, dayNumberOf, addDaysIso, numDaysOf, type Location, type TripWithDetails } from "@/types";
 
 export type OptimizeOptions = {
@@ -57,7 +59,23 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
   const dayBudgetMinutes =
     typeof opts.dayBudgetHours === "number" && opts.dayBudgetHours > 0 ? opts.dayBudgetHours * 60 : undefined;
 
-  const itinerary = await solve({ locations: inputLocations, numDays, stays, dayBudgetMinutes, startDate: trip.startDate });
+  // Resolve the Trip's allowed-mode set to a single primary mode and select the applicable
+  // provider once, up front (ADR-0019 #86) — solve() itself stays provider- and mode-agnostic.
+  // The representative point is whichever input location has real coordinates first; an itinerary
+  // is single-region by domain invariant, so no all-points scan is needed (ADR-0019).
+  const mode = resolvePrimaryMode(trip.allowedModes);
+  const representativePoints = inputLocations.filter(hasValidCoords);
+  const provider = selectTravelCostProvider(representativePoints, mode);
+
+  const itinerary = await solve({
+    locations: inputLocations,
+    numDays,
+    stays,
+    dayBudgetMinutes,
+    startDate: trip.startDate,
+    mode,
+    provider,
+  });
 
   // Map day numbers onto calendar dates and flatten to the stored Placement shape.
   const placements = itinerary.days.flatMap((p) =>

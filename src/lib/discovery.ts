@@ -77,8 +77,10 @@ const googleProvider: DiscoveryProvider = {
 
 // ─── Tabelog: regional (Japan), anchored only ────────────────────────────────
 // Japan bounding box. Gates Tabelog to its region — an explicit applicability
-// contract replacing the incidental nearestPrefecture gating (ADR-0009).
-function inJapan(lat: number, lng: number): boolean {
+// contract replacing the incidental nearestPrefecture gating (ADR-0009). Exported: the OSM-Japan
+// transit-cost provider registry (travelCostRegistry.ts, ADR-0019) gates on the same region and
+// shares this check rather than duplicating the bounding box.
+export function inJapan(lat: number, lng: number): boolean {
   return lat >= 24 && lat <= 46 && lng >= 122 && lng <= 146;
 }
 
