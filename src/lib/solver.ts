@@ -11,10 +11,9 @@
  * information once the arrangement is built. This is plumbing only: no UI consumes it yet, and no
  * caller is required to act on it.
  *
- * Known simplification (flagged for the next pass, not fixed here): evaluating violations
- * re-fetches a `costMatrix` that `optimizeItinerary` already fetched internally for sequencing —
- * two round trips instead of one. Harmless for the default haversine provider; worth collapsing to
- * one fetch before/if a real routing-API provider makes that duplication actually costly.
+ * `solve()` fetches the `costMatrix` once (#82) and passes it into `optimizeItinerary` as
+ * `precomputedDist`, reusing the same lookup for the violation pass below — a real routing
+ * provider is queried/billed once per optimize run, not twice.
  */
 
 import {
@@ -83,6 +82,11 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
   // value, so sequencing and violation-evaluation score against the same time-of-day snapshot.
   const departureTime = startDate ? new Date(Date.parse(startDate + "T00:00:00Z") + dayStartMins * 60000) : undefined;
 
+  // One costMatrix fetch for the whole run (#82), shared between sequencing and the feasibility
+  // pass below — passed into optimizeItinerary as precomputedDist so it doesn't fetch its own.
+  const validForDist = locations.filter(hasValidCoords);
+  const dist = await buildDistanceLookup(provider, validForDist, DEFAULT_MODE, { departureTime });
+
   const days = await optimizeItinerary(
     locations,
     numDays,
@@ -91,12 +95,11 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
     dayStartMins,
     edges,
     provider,
-    departureTime
+    departureTime,
+    dist
   );
 
   const byId = new Map(locations.map((l) => [l.id, l]));
-  const validForDist = locations.filter(hasValidCoords);
-  const dist = await buildDistanceLookup(provider, validForDist, DEFAULT_MODE, { departureTime });
 
   const feasibilityViolations = days.flatMap((d) =>
     evaluateDayFeasibility(d, byId, dist.mins, dayStartMins, dayBudgetMinutes)

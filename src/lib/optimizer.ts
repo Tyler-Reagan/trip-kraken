@@ -24,8 +24,9 @@
  * that module to score candidates rather than encoding penalties itself.
  *
  * Travel cost for sequencing (ADR-0004) comes from a `TravelCostProvider` (`travelCost.ts`), fetched
- * as one upfront `costMatrix` per optimize run rather than queried pair-by-pair inside the
- * construction loops — the batching ADR-0004's matrix form exists for. That's the only async part:
+ * as one upfront `costMatrix` per optimize run — shared with solver.ts's feasibility pass via its
+ * `precomputedDist` param (#82) — rather than queried pair-by-pair inside the construction loops,
+ * or fetched a second time for feasibility. That's the only async part:
  * clustering's centroid distance stays on its own local, synchronous math (a centroid is a synthetic
  * point, not a real place a travel-cost provider has any business being asked about), and once the
  * matrix is fetched, sequencing itself reads from it synchronously — only `optimizeItinerary` awaits.
@@ -98,7 +99,12 @@ export async function optimizeItinerary(
   provider: TravelCostProvider = haversineProvider,
   /** Representative departure datetime (ADR-0018), forwarded to the provider's costMatrix call.
    * Undefined for providers/callers that don't model time-of-day. */
-  departureTime?: Date
+  departureTime?: Date,
+  /** A `DistanceLookup` the caller already fetched (solver.ts, sharing its own costMatrix fetch
+   * with the feasibility pass) — skips this function's own `buildDistanceLookup` call so one
+   * optimize run costs one costMatrix round trip, not two (#82). Undefined (the common/test-only
+   * case) falls back to fetching it here. */
+  precomputedDist?: DistanceLookup
 ): Promise<DayPlan[]> {
   if (locations.length === 0) return [];
 
@@ -157,8 +163,9 @@ export async function optimizeItinerary(
 
   // One upfront batch fetch (ADR-0004/O2) covering every point sequencing could ever need this run
   // (stops + all lodging/edge anchors) — every haversine/travel query below reads it synchronously.
+  // Reuses the caller's lookup when one is passed in (#82) instead of fetching a second costMatrix.
   const validForDist = locations.filter(hasValidCoords);
-  const dist = await buildDistanceLookup(provider, validForDist, DEFAULT_MODE, { departureTime });
+  const dist = precomputedDist ?? (await buildDistanceLookup(provider, validForDist, DEFAULT_MODE, { departureTime }));
 
   // Fewer locations than days: one per day, anchored at that day's lodging.
   if (valid.length <= days) {

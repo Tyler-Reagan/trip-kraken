@@ -18,6 +18,7 @@ import * as schema from "@/lib/db/schema";
 import { optimizeItinerary } from "@/lib/optimizer";
 import { solve } from "@/lib/solver";
 import { optimizeTrip } from "@/lib/optimize";
+import { haversineProvider, type TravelCostProvider } from "@/lib/travelCost";
 import { createTripWithLocations, createLocation, setLodgingDates, updateLocation, getTripWithDetails } from "@/lib/db";
 import { isActivity } from "@/types";
 
@@ -169,6 +170,27 @@ assert.equal(
   3,
   "all three stops are placed, including the ungeocoded one"
 );
+
+// Regression (#82): solve() must fetch the costMatrix once and reuse it for both sequencing and
+// the feasibility-violation pass — not once per phase (Seam 3, docs/optimizer-rebuild.md).
+let costMatrixCalls = 0;
+const countingProvider: TravelCostProvider = {
+  async costMatrix(points, mode, opts) {
+    costMatrixCalls++;
+    return haversineProvider.costMatrix(points, mode, opts);
+  },
+  describeLeg: haversineProvider.describeLeg,
+};
+await solve({
+  locations: [
+    { id: "c1", lat: 35.0, lng: 139.0, visitDuration: 60 },
+    { id: "c2", lat: 35.01, lng: 139.01, visitDuration: 60 },
+  ],
+  numDays: 1,
+  dayBudgetMinutes: 8 * 60,
+  provider: countingProvider,
+});
+assert.equal(costMatrixCalls, 1, "solve() fetches costMatrix exactly once per call");
 
 // ── optimizeTrip orchestrator (over a temp DB) ────────────────────────────────
 
