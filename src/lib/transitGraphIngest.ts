@@ -148,7 +148,7 @@ function buildLines(
     }
   }
 
-  return new Map([...rawNodeToStopNodes].map(([rawId, stopIds]) => [rawId, stopIds] as const));
+  return rawNodeToStopNodes;
 }
 
 function addCluster(graph: TransitGraph, id: string, name: string, stopNodeIds: string[]): void {
