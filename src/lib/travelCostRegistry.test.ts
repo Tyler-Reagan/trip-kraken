@@ -9,12 +9,7 @@
 import assert from "node:assert/strict";
 import { haversineProvider } from "./travelCost";
 import { googleRoutesProvider } from "./googleRoutesProvider";
-import {
-  selectTravelCostProvider,
-  getTravelCostProviderById,
-  resolvePrimaryMode,
-  DEFAULT_ALLOWED_MODES,
-} from "./travelCostRegistry";
+import { selectTravelCostProvider, getTravelCostProviderById } from "./travelCostRegistry";
 
 // tsx compiles this file to CJS (no "type": "module" in package.json), which doesn't support
 // top-level await — same wrapper as optimizer.test.ts, with an explicit exit-1 on failure.
@@ -79,14 +74,6 @@ await assert.rejects(
   /transit graph not ingested/,
   "a selected provider's error propagates instead of falling through to a lower-precedence provider"
 );
-
-// ── resolvePrimaryMode: precedence + defaulting ──
-assert.equal(resolvePrimaryMode(["walking", "transit"]), "transit", "transit wins over walking when both are allowed");
-assert.equal(resolvePrimaryMode(["driving", "walking"]), "driving", "driving wins over walking when transit isn't allowed");
-assert.equal(resolvePrimaryMode(["bicycle"]), "bicycle", "falls through to bicycle when nothing higher-precedence is allowed");
-assert.equal(resolvePrimaryMode(null), "transit", "an unset Trip resolves to the default set, transit first");
-assert.equal(resolvePrimaryMode([]), "transit", "an empty allowed-mode set also resolves to the default set");
-assert.equal(DEFAULT_ALLOWED_MODES.includes("transit"), true, "the default allowed-mode set includes transit");
 
 console.log("✓ travelCostRegistry.test.ts passed");
 }

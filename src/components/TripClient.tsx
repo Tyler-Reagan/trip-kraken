@@ -5,12 +5,14 @@ import dynamic from "next/dynamic";
 import { deriveDays, numDaysOf, type TripWithDetails } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import { dayColorCss } from "@/lib/dayColors";
+import { resolvePrimaryMode } from "@/lib/travelMode";
 import OptimizeModal from "./OptimizeModal";
 import LocationInspector from "./LocationInspector";
 import AddLocationModal from "./AddLocationModal";
 import NearbyDrawer from "./NearbyDrawer";
 import Manifest from "./Manifest";
 import ScheduleView from "./ScheduleView";
+import TransitEstimateCaveat from "./TransitEstimateCaveat";
 
 const MapView = dynamic(() => import("./MapView"), { ssr: false });
 
@@ -67,6 +69,9 @@ export default function TripClient({ trip: initial }: Props) {
 
   const days = deriveDays(trip);
   const hasPlan = trip.placements.length > 0;
+  // ADR-0019's accepted v1 limitation only applies when transit is actually in play (#88) — a
+  // driving/walking-only Trip never touches an estimated-timing transit provider.
+  const showTransitCaveat = hasPlan && resolvePrimaryMode(trip.allowedModes) === "transit";
   const pendingCount = trip.locations.filter((l) => l.enrichmentStatus === "pending").length;
   const failedCount = trip.locations.filter((l) => l.enrichmentStatus === "failed").length;
   const numDays = numDaysOf(trip.startDate, trip.endDate);
@@ -227,6 +232,7 @@ export default function TripClient({ trip: initial }: Props) {
       ) : (
         <div className="flex flex-col lg:flex-row gap-4 items-start">
           <div className="flex-1 min-w-0 space-y-4">
+            {showTransitCaveat && <TransitEstimateCaveat />}
             <ScheduleView />
           </div>
           {companion && (
