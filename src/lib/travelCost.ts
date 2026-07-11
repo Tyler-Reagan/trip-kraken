@@ -62,7 +62,10 @@ function toRad(deg: number): number {
   return (deg * Math.PI) / 180;
 }
 
-function haversineMeters(a: Point, b: Point): number {
+/** Straight-line distance in meters — the single haversine implementation shared by the
+ * travel-cost provider below, clustering's centroid math (optimizer.ts), and the transit graph's
+ * spatial index (transitGraph.ts). */
+export function haversineMeters(a: Point, b: Point): number {
   const dLat = toRad(b.lat - a.lat);
   const dLng = toRad(b.lng - a.lng);
   const sinDLat = Math.sin(dLat / 2);

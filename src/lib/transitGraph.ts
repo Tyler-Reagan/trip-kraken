@@ -17,6 +17,8 @@
  *  - Transfer edges: stop nodes within one cluster (the interchange walk).
  */
 
+import { haversineMeters } from "./travelCost";
+
 export interface StopNode {
   id: string;
   lineId: string;
@@ -80,18 +82,6 @@ function cellKey(lat: number, lng: number): string {
   return `${row}:${col}`;
 }
 
-function haversineMeters(aLat: number, aLng: number, bLat: number, bLng: number): number {
-  const EARTH_RADIUS_M = 6_371_000;
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(bLat - aLat);
-  const dLng = toRad(bLng - aLng);
-  const sinDLat = Math.sin(dLat / 2);
-  const sinDLng = Math.sin(dLng / 2);
-  const x =
-    sinDLat * sinDLat + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * sinDLng * sinDLng;
-  return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-}
-
 export function buildSpatialIndex(graph: TransitGraph): SpatialIndex {
   const buckets = new Map<string, StopNode[]>();
   for (const stop of graph.stopNodes.values()) {
@@ -112,7 +102,7 @@ export function buildSpatialIndex(graph: TransitGraph): SpatialIndex {
           const bucket = buckets.get(`${row + dr}:${col + dc}`);
           if (!bucket) continue;
           for (const stop of bucket) {
-            if (haversineMeters(lat, lng, stop.lat, stop.lng) <= radiusMeters) results.push(stop);
+            if (haversineMeters({ lat, lng }, stop) <= radiusMeters) results.push(stop);
           }
         }
       }

@@ -27,9 +27,12 @@ import {
 
 export const DEFAULT_GRAPH_PATH = path.join(process.cwd(), "db", "transit-japan.db");
 
+// Table/column naming mirrors the app's Drizzle schema convention (schema.ts): PascalCase
+// singular table names, camelCase columns — even though this file is a distinct, non-Drizzle
+// serialization.
 function createSchema(sqlite: Database.Database): void {
   sqlite.exec(`
-    CREATE TABLE stop_node (
+    CREATE TABLE StopNode (
       id TEXT PRIMARY KEY,
       lineId TEXT NOT NULL,
       lineName TEXT NOT NULL,
@@ -38,20 +41,20 @@ function createSchema(sqlite: Database.Database): void {
       lng REAL NOT NULL,
       sequence INTEGER NOT NULL
     );
-    CREATE TABLE cluster (
+    CREATE TABLE Cluster (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL
     );
-    CREATE TABLE cluster_member (
+    CREATE TABLE ClusterMember (
       clusterId TEXT NOT NULL,
       stopNodeId TEXT NOT NULL
     );
-    CREATE TABLE ride_edge (
+    CREATE TABLE RideEdge (
       fromStopId TEXT NOT NULL,
       toStopId TEXT NOT NULL,
       distanceMeters REAL NOT NULL
     );
-    CREATE TABLE transfer_edge (
+    CREATE TABLE TransferEdge (
       fromStopId TEXT NOT NULL,
       toStopId TEXT NOT NULL,
       clusterId TEXT NOT NULL
@@ -68,17 +71,17 @@ export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH)
   try {
     createSchema(sqlite);
     const insertStop = sqlite.prepare(
-      "INSERT INTO stop_node (id, lineId, lineName, stationName, lat, lng, sequence) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO StopNode (id, lineId, lineName, stationName, lat, lng, sequence) VALUES (?, ?, ?, ?, ?, ?, ?)"
     );
-    const insertCluster = sqlite.prepare("INSERT INTO cluster (id, name) VALUES (?, ?)");
+    const insertCluster = sqlite.prepare("INSERT INTO Cluster (id, name) VALUES (?, ?)");
     const insertMember = sqlite.prepare(
-      "INSERT INTO cluster_member (clusterId, stopNodeId) VALUES (?, ?)"
+      "INSERT INTO ClusterMember (clusterId, stopNodeId) VALUES (?, ?)"
     );
     const insertRide = sqlite.prepare(
-      "INSERT INTO ride_edge (fromStopId, toStopId, distanceMeters) VALUES (?, ?, ?)"
+      "INSERT INTO RideEdge (fromStopId, toStopId, distanceMeters) VALUES (?, ?, ?)"
     );
     const insertTransfer = sqlite.prepare(
-      "INSERT INTO transfer_edge (fromStopId, toStopId, clusterId) VALUES (?, ?, ?)"
+      "INSERT INTO TransferEdge (fromStopId, toStopId, clusterId) VALUES (?, ?, ?)"
     );
 
     const writeAll = sqlite.transaction(() => {
@@ -114,23 +117,23 @@ export function load(filePath: string = DEFAULT_GRAPH_PATH): { graph: TransitGra
   try {
     const graph = createGraph();
 
-    for (const row of sqlite.prepare("SELECT * FROM stop_node").all() as StopNode[]) {
+    for (const row of sqlite.prepare("SELECT * FROM StopNode").all() as StopNode[]) {
       graph.stopNodes.set(row.id, row);
     }
-    const clusterRows = sqlite.prepare("SELECT * FROM cluster").all() as { id: string; name: string }[];
+    const clusterRows = sqlite.prepare("SELECT * FROM Cluster").all() as { id: string; name: string }[];
     for (const row of clusterRows) {
       graph.clusters.set(row.id, { id: row.id, name: row.name, stopNodeIds: [] });
     }
-    const memberRows = sqlite.prepare("SELECT * FROM cluster_member").all() as {
+    const memberRows = sqlite.prepare("SELECT * FROM ClusterMember").all() as {
       clusterId: string;
       stopNodeId: string;
     }[];
     for (const row of memberRows) {
       graph.clusters.get(row.clusterId)?.stopNodeIds.push(row.stopNodeId);
     }
-    graph.rideEdges.push(...(sqlite.prepare("SELECT fromStopId, toStopId, distanceMeters FROM ride_edge").all() as RideEdge[]));
+    graph.rideEdges.push(...(sqlite.prepare("SELECT fromStopId, toStopId, distanceMeters FROM RideEdge").all() as RideEdge[]));
     graph.transferEdges.push(
-      ...(sqlite.prepare("SELECT fromStopId, toStopId, clusterId FROM transfer_edge").all() as TransferEdge[])
+      ...(sqlite.prepare("SELECT fromStopId, toStopId, clusterId FROM TransferEdge").all() as TransferEdge[])
     );
 
     return { graph, spatialIndex: buildSpatialIndex(graph) };
@@ -142,8 +145,12 @@ export function load(filePath: string = DEFAULT_GRAPH_PATH): { graph: TransitGra
 const g = globalThis as unknown as { _transitGraph?: { graph: TransitGraph; spatialIndex: SpatialIndex } };
 
 /** The cached, lazily-loaded singleton (mirrors `db/client.ts`'s `getDrizzle()`) — loads once
- * per process/hot-reload, every later call reuses the same in-memory graph + index. */
-export function getTransitGraph(filePath: string = DEFAULT_GRAPH_PATH): { graph: TransitGraph; spatialIndex: SpatialIndex } {
-  if (!g._transitGraph) g._transitGraph = load(filePath);
+ * per process/hot-reload, every later call reuses the same in-memory graph + index. Takes no
+ * path argument, exactly like `getDrizzle()`: a memoized singleton and a caller-supplied path
+ * are in tension, since a later call with a different path would otherwise silently return the
+ * graph loaded for the first one. `load()` above is the parameterized entry point for callers
+ * (tests, ingestion) that need a specific file. */
+export function getTransitGraph(): { graph: TransitGraph; spatialIndex: SpatialIndex } {
+  if (!g._transitGraph) g._transitGraph = load(DEFAULT_GRAPH_PATH);
   return g._transitGraph;
 }

@@ -11,7 +11,7 @@ import path from "node:path";
 import fs from "node:fs";
 import assert from "node:assert/strict";
 import { createGraph, type TransitGraph } from "./transitGraph";
-import { save, load, getTransitGraph } from "./transitGraphStore";
+import { save, load, getTransitGraph, DEFAULT_GRAPH_PATH } from "./transitGraphStore";
 
 function buildFixture(): TransitGraph {
   const graph = createGraph();
@@ -113,10 +113,21 @@ save(original, dbPath);
 const { graph: resaved } = load(dbPath);
 assert.deepEqual(normalize(resaved), normalize(original), "re-saving over an existing file produces the same graph");
 
-// ── getTransitGraph() caches the singleton across calls (module/global cache, per ADR) ──
-const first = getTransitGraph(dbPath);
-const second = getTransitGraph(dbPath);
-assert.equal(first, second, "getTransitGraph returns the same cached instance on repeat calls");
+// ── getTransitGraph() caches the singleton across calls (module/global cache, per ADR),
+// against the one real default path (it takes no argument, mirroring getDrizzle()). Back up
+// any pre-existing file first — this must never clobber a real ingested graph.
+const backupPath = `${DEFAULT_GRAPH_PATH}.bak-${Date.now()}`;
+const hadExisting = fs.existsSync(DEFAULT_GRAPH_PATH);
+if (hadExisting) fs.renameSync(DEFAULT_GRAPH_PATH, backupPath);
+try {
+  save(original, DEFAULT_GRAPH_PATH);
+  const first = getTransitGraph();
+  const second = getTransitGraph();
+  assert.equal(first, second, "getTransitGraph returns the same cached instance on repeat calls");
+} finally {
+  fs.rmSync(DEFAULT_GRAPH_PATH, { force: true });
+  if (hadExisting) fs.renameSync(backupPath, DEFAULT_GRAPH_PATH);
+}
 
 fs.rmSync(dir, { recursive: true, force: true });
 
