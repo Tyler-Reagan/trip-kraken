@@ -97,6 +97,9 @@ export async function optimizeItinerary(
   dayStartMins = 9 * 60,   // assumed start-of-day for time-window simulation (default 09:00)
   edges: EdgeAnchors = {},
   provider: TravelCostProvider = haversineProvider,
+  /** The run's travel mode (ADR-0019 #86) — the orchestrator resolves a Trip's allowed-mode set to
+   * one mode and passes it in via `solve()`; direct/test callers default to `DEFAULT_MODE`. */
+  mode: TravelMode = DEFAULT_MODE,
   /** Representative departure datetime (ADR-0018), forwarded to the provider's costMatrix call.
    * Undefined for providers/callers that don't model time-of-day. */
   departureTime?: Date,
@@ -165,7 +168,7 @@ export async function optimizeItinerary(
   // (stops + all lodging/edge anchors) — every haversine/travel query below reads it synchronously.
   // Reuses the caller's lookup when one is passed in (#82) instead of fetching a second costMatrix.
   const validForDist = locations.filter(hasValidCoords);
-  const dist = precomputedDist ?? (await buildDistanceLookup(provider, validForDist, DEFAULT_MODE, { departureTime }));
+  const dist = precomputedDist ?? (await buildDistanceLookup(provider, validForDist, mode, { departureTime }));
 
   // Fewer locations than days: one per day, anchored at that day's lodging.
   if (valid.length <= days) {

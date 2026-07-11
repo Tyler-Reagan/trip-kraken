@@ -1,0 +1,1 @@
+ALTER TABLE `Trip` ADD `allowedModes` text;
