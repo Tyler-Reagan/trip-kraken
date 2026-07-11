@@ -19,10 +19,16 @@
 
 import { haversineMeters } from "./travelCost";
 
+/** A line's physical service class (issue #85's duration model) — the key into the OSM-transit
+ * provider's per-type effective-speed table. Sourced from OSM route-relation tags by ingestion
+ * (`route=train`/`subway`/`light_rail`/`monorail`, `service=shinkansen`), not derived here. */
+export type LineType = "subway" | "commuter" | "limitedExpress" | "shinkansen";
+
 export interface StopNode {
   id: string;
   lineId: string;
   lineName: string;
+  lineType: LineType;
   stationName: string;
   lat: number;
   lng: number;

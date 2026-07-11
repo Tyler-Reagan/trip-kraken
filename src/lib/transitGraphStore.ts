@@ -36,6 +36,7 @@ function createSchema(sqlite: Database.Database): void {
       id TEXT PRIMARY KEY,
       lineId TEXT NOT NULL,
       lineName TEXT NOT NULL,
+      lineType TEXT NOT NULL,
       stationName TEXT NOT NULL,
       lat REAL NOT NULL,
       lng REAL NOT NULL,
@@ -71,7 +72,7 @@ export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH)
   try {
     createSchema(sqlite);
     const insertStop = sqlite.prepare(
-      "INSERT INTO StopNode (id, lineId, lineName, stationName, lat, lng, sequence) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO StopNode (id, lineId, lineName, lineType, stationName, lat, lng, sequence) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     );
     const insertCluster = sqlite.prepare("INSERT INTO Cluster (id, name) VALUES (?, ?)");
     const insertMember = sqlite.prepare(
@@ -86,7 +87,7 @@ export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH)
 
     const writeAll = sqlite.transaction(() => {
       for (const stop of graph.stopNodes.values()) {
-        insertStop.run(stop.id, stop.lineId, stop.lineName, stop.stationName, stop.lat, stop.lng, stop.sequence);
+        insertStop.run(stop.id, stop.lineId, stop.lineName, stop.lineType, stop.stationName, stop.lat, stop.lng, stop.sequence);
       }
       for (const cluster of graph.clusters.values()) {
         insertCluster.run(cluster.id, cluster.name);
