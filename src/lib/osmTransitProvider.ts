@@ -15,14 +15,16 @@
  * Station-snapping + fallback (ADR-0019): a point connects to every stop node within
  * `STATION_SNAP_RADIUS_METERS` via a walk edge (distance ÷ walk speed) — not just the nearest, so
  * the search can still pick whichever entry line is actually shortest. A point with no stop node
- * in range (or a target with no path from the source's snapped stops) falls back to
- * haversine-as-walking, a plain `TravelCost` with no `transferCount`/`lineNames` — the existing
- * `LegDetail` convention already used by `haversineProvider`/`googleRoutesProvider` for "nothing
- * transit to report", so the fallback is visibly an estimate rather than masquerading as a routed
- * transit Leg.
+ * in range falls back to haversine-as-walking, a plain `TravelCost` with no
+ * `transferCount`/`lineNames` — the existing `LegDetail` convention already used by
+ * `haversineProvider`/`googleRoutesProvider` for "nothing transit to report", so the fallback is
+ * visibly an estimate rather than masquerading as a routed transit Leg. A pair that both snap but
+ * turn out disconnected in the graph is a different failure (nationwide rail should be one
+ * connected component) and throws rather than silently walking instead — ADR-0017/0018's
+ * fail-loud precedent, not a station-snapping fallback case.
  */
 
-import { haversineMeters, type Point, type TravelCost, type TravelCostProvider, type LegDetail } from "@/lib/travelCost";
+import { haversineMeters, dedupeConsecutive, type Point, type TravelCost, type TravelCostProvider, type LegDetail } from "@/lib/travelCost";
 import type { TransitGraph, StopNode, LineType, SpatialIndex } from "@/lib/transitGraph";
 
 /** Effective speed per line type (ADR-0019's coarse duration model) — one number per type
@@ -202,9 +204,8 @@ function shortestPath(
 
 function stepsToLegDetail(steps: Step[]): { transferCount: number; lineNames: string[] } {
   const lineNames = steps.filter((s): s is RideStep => s.kind === "ride").map((s) => s.lineName);
-  const dedupedLines = lineNames.filter((name, i) => name !== lineNames[i - 1]);
   const transferCount = steps.filter((s) => s.kind === "transfer").length;
-  return { transferCount, lineNames: dedupedLines };
+  return { transferCount, lineNames: dedupeConsecutive(lineNames) };
 }
 
 /** One point's snapped stop nodes plus the walk-access cost to each, or `null` when nothing is

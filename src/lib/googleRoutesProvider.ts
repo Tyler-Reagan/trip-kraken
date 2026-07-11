@@ -20,7 +20,7 @@
  * speculative mode-specific branching.
  */
 
-import type { Point, TravelCost, TravelCostProvider, LegDetail, TravelMode } from "@/lib/travelCost";
+import { dedupeConsecutive, type Point, type TravelCost, type TravelCostProvider, type LegDetail, type TravelMode } from "@/lib/travelCost";
 
 const MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
 const ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
@@ -211,15 +211,12 @@ export const googleRoutesProvider: TravelCostProvider = {
     const lineNames = transitSteps
       .map((s) => s.transitDetails?.transitLine?.nameShort ?? s.transitDetails?.transitLine?.name)
       .filter((name): name is string => !!name);
-    // Collapse only consecutive duplicates — a line ridden twice non-consecutively is a real second
-    // ride, not a naming artifact.
-    const dedupedLines = lineNames.filter((name, i) => name !== lineNames[i - 1]);
 
     return {
       distanceMeters,
       durationSeconds,
       transferCount: Math.max(0, transitSteps.length - 1),
-      lineNames: dedupedLines,
+      lineNames: dedupeConsecutive(lineNames),
     };
   },
 };

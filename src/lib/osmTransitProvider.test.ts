@@ -6,10 +6,13 @@
  * googleRoutesProvider.test.ts, which mocks `global.fetch`).
  *
  * Fixture geography (all coordinates real Tokyo-area positions, distances/lines invented for the
- * test): a Shinkansen trunk (Tokyo <-> Shin-Yokohama, one long hop) crossed with a subway loop
+ * test): a Shinkansen trunk (Tokyo <-> Nagoya, one long hop) crossed with a subway loop
  * (Yamanote-ish: Tokyo <-> Kanda <-> Akihabara) and a short Marunouchi-ish subway spur off Tokyo
  * (Tokyo <-> Otemachi), joined to the Yamanote-ish line only at Tokyo (an interchange cluster).
- * One isolated station (Machida) sits far from everything to exercise the no-path-in-range case.
+ * A standalone subway hop of the Shinkansen trunk's exact distance backs the line-type speed
+ * comparison; a decoy stop node sits within Akihabara's snap radius but farther away, to prove
+ * nearest-station selection actually discriminates. One far-flung point has no station in range
+ * at all, to exercise the walking-estimate fallback.
  */
 
 import assert from "node:assert/strict";
@@ -75,6 +78,25 @@ function buildFixture(): TransitGraph {
   });
   graph.rideEdges.push({ fromStopId: "shinkansen-tokyo", toStopId: "shinkansen-nagoya", distanceMeters: 260_000 });
 
+  // An isolated subway hop of the exact same distance as the Shinkansen trunk above — a clean
+  // apples-to-apples duration comparison (same distance, different line type) with no derived rate.
+  graph.stopNodes.set("compare-subway-a", {
+    id: "compare-subway-a", lineId: "compare-subway", lineName: "Compare Subway", lineType: "subway",
+    stationName: "Compare A", lat: 35.0, lng: 139.0, sequence: 0,
+  });
+  graph.stopNodes.set("compare-subway-b", {
+    id: "compare-subway-b", lineId: "compare-subway", lineName: "Compare Subway", lineType: "subway",
+    stationName: "Compare B", lat: 35.0, lng: 141.0, sequence: 1,
+  });
+  graph.rideEdges.push({ fromStopId: "compare-subway-a", toStopId: "compare-subway-b", distanceMeters: 260_000 });
+
+  // A decoy stop node within Akihabara's snap radius but farther away than the real Akihabara
+  // stop — proves station-snapping picks the nearest candidate, not just any candidate in range.
+  graph.stopNodes.set("decoy-near-akihabara", {
+    id: "decoy-near-akihabara", lineId: "decoy", lineName: "Decoy Line", lineType: "commuter",
+    stationName: "Decoy", lat: 35.703, lng: 139.7731, sequence: 0,
+  });
+
   return graph;
 }
 
@@ -91,6 +113,8 @@ const nearOtemachi = P(35.6869, 139.7644); // ~10m from spur-otemachi
 const nearKanda = P(35.6917, 139.7707); // ~10m from loop-kanda
 const nearNagoya = P(35.1708, 136.8816); // ~10m from shinkansen-nagoya
 const nearTokyoForShinkansen = P(35.6813, 139.767); // ~10m from shinkansen-tokyo
+const nearCompareA = P(35.0001, 139.0001); // ~10m from compare-subway-a
+const nearCompareB = P(35.0001, 141.0001); // ~10m from compare-subway-b
 const isolated = P(36.5, 140.5); // far from every stop node in the fixture
 
 // ── Multi-line journey: Akihabara -> Otemachi crosses the Tokyo interchange (loop -> spur) ──
@@ -104,20 +128,22 @@ assert.deepEqual(singleRide.lineNames, ["Loop Line"], "single-line journey repor
 assert.equal(singleRide.transferCount, 0, "no transfer edges traversed on a single-ride journey");
 
 // ── Shinkansen vs. subway: an equal-distance hop is faster on the Shinkansen ──
+// Both hops are exactly 260km (compare-subway-a/b's ride edge matches the Shinkansen trunk's
+// distance exactly), so this isolates line-type speed from trip length directly, with no derived
+// rate: same distance, different effective speed.
 const shinkansenLeg = await provider.describeLeg(nearTokyoForShinkansen, nearNagoya, "transit");
-// A same-distance subway hop, built from the loop's per-meter rate (its two real hops average
-// ~1250m at commuter speed) scaled up to the Shinkansen distance, isolates line-type speed from
-// trip length: same distance, different effective speed.
-const subwayRatePerMeter = (await provider.describeLeg(nearAkihabara, nearKanda, "transit")).durationSeconds / 1300;
-const equalDistanceSubwaySeconds = subwayRatePerMeter * 260_000;
+const equalDistanceSubwayLeg = await provider.describeLeg(nearCompareA, nearCompareB, "transit");
 assert.ok(
-  shinkansenLeg.durationSeconds < equalDistanceSubwaySeconds,
+  shinkansenLeg.durationSeconds < equalDistanceSubwayLeg.durationSeconds,
   "a Shinkansen hop is faster than an equal-distance subway hop"
 );
 
 // ── Station-snapping picks the nearest station, not just any station in range ──
+// decoy-near-akihabara is also within the snap radius (~520m) but farther than the real Akihabara
+// stop (~20m), so this actually discriminates nearest-vs-farther rather than finding one candidate.
 const nearestStops = snapStations(spatialIndex, nearAkihabara);
-assert.equal(nearestStops[0]?.id, "loop-akihabara", "the nearest stop in range is Akihabara");
+assert.ok(nearestStops.some((s) => s.id === "decoy-near-akihabara"), "the farther decoy is in range too");
+assert.equal(nearestStops[0]?.id, "loop-akihabara", "the nearest stop in range is Akihabara, not the farther decoy");
 
 // ── No station in range: falls back to a haversine-as-walking estimate, visibly marked ──
 const noStationLeg = await provider.describeLeg(isolated, nearAkihabara, "transit");

@@ -53,6 +53,13 @@ export interface TravelCostProvider {
   describeLeg(from: Point, to: Point, mode: TravelMode, opts?: TravelCostOptions): Promise<LegDetail>;
 }
 
+/** Collapses only consecutive duplicate line names — a line ridden twice non-consecutively is a
+ * real second ride, not a naming artifact. Shared by every `describeLeg` that derives an ordered
+ * line-name list from a sequence of steps (`googleRoutesProvider.ts`, `osmTransitProvider.ts`). */
+export function dedupeConsecutive(names: string[]): string[] {
+  return names.filter((name, i) => name !== names[i - 1]);
+}
+
 const EARTH_RADIUS_M = 6_371_000;
 
 // Average city travel speed for estimating durations (20 km/h) — unchanged from the pre-O2 constant.
