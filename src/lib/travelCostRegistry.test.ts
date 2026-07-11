@@ -7,14 +7,9 @@
  */
 
 import assert from "node:assert/strict";
-import { haversineProvider } from "./travelCost";
+import { haversineProvider, resolvePrimaryMode, DEFAULT_ALLOWED_MODES } from "./travelCost";
 import { googleRoutesProvider } from "./googleRoutesProvider";
-import {
-  selectTravelCostProvider,
-  getTravelCostProviderById,
-  resolvePrimaryMode,
-  DEFAULT_ALLOWED_MODES,
-} from "./travelCostRegistry";
+import { selectTravelCostProvider, getTravelCostProviderById } from "./travelCostRegistry";
 
 // tsx compiles this file to CJS (no "type": "module" in package.json), which doesn't support
 // top-level await — same wrapper as optimizer.test.ts, with an explicit exit-1 on failure.

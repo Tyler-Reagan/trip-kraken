@@ -14,6 +14,26 @@
 
 export type TravelMode = "walking" | "driving" | "transit" | "bicycle";
 
+/** A Trip's allowed-mode set, most-preferred first (ADR-0019 §mode) — transit already blends
+ * walking internally, so most allowed-mode combinations collapse to this single primary mode the
+ * optimizer actually runs on. */
+const MODE_PRECEDENCE: readonly TravelMode[] = ["transit", "driving", "walking", "bicycle"];
+
+/** The default allowed-mode set for a Trip that hasn't set one explicitly (ADR-0019: "the default
+ * set includes transit"). Resolves to `"transit"` via `resolvePrimaryMode` below. Lives here
+ * (rather than `travelCostRegistry.ts`, which pulls in server-only providers/better-sqlite3)
+ * specifically so client components — e.g. the mode-selector UI — can import it without dragging
+ * a server-only module graph into the browser bundle. */
+export const DEFAULT_ALLOWED_MODES: readonly TravelMode[] = ["transit", "driving", "walking", "bicycle"];
+
+/** Resolves a Trip's allowed-mode set to the single primary mode the optimizer runs on — replaces
+ * the hardcoded `DEFAULT_MODE` constant at the optimize call site (`optimize.ts`). An empty or
+ * unset set falls back to `DEFAULT_ALLOWED_MODES`, never to no mode at all. */
+export function resolvePrimaryMode(allowedModes: readonly TravelMode[] | null | undefined): TravelMode {
+  const modes = allowedModes && allowedModes.length > 0 ? allowedModes : DEFAULT_ALLOWED_MODES;
+  return MODE_PRECEDENCE.find((m) => modes.includes(m)) ?? DEFAULT_ALLOWED_MODES[0];
+}
+
 export interface Point {
   lat: number;
   lng: number;

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { TripWithDetails, Location, Lodging } from "@/types";
 import { reorderPlacements, insertPlacement } from "@/lib/placementOrdering";
+import type { TravelMode } from "@/lib/travelCost";
 
 type ActiveSurface = "itinerary" | "places";
 export type ScheduleFilter = number | "unassigned" | null;
@@ -49,6 +50,7 @@ interface TripStore {
     dates: { checkInDate: string; checkOutDate: string } | null
   ) => Promise<string | null>;
   setDayLabel: (date: string, label: string | null) => Promise<void>;
+  setAllowedModes: (modes: TravelMode[]) => Promise<void>;
   importBooking: (text: string) => Promise<string | null>;
   enrich: () => Promise<void>;
 
@@ -220,6 +222,17 @@ export const useTripStore = create<TripStore>()((set, get) => ({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ date, label }),
+    });
+    await get().reload();
+  },
+
+  setAllowedModes: async (modes) => {
+    const tripId = get().tripId;
+    if (!tripId) return;
+    await fetch(`/api/trips/${tripId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ allowedModes: modes }),
     });
     await get().reload();
   },

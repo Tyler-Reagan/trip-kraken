@@ -3,16 +3,37 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
+import { DEFAULT_ALLOWED_MODES, type TravelMode } from "@/lib/travelCost";
+
+// Mirrors consumer maps' mode order; also travelCost.ts's resolvePrimaryMode precedence.
+const MODE_OPTIONS: { mode: TravelMode; label: string }[] = [
+  { mode: "transit", label: "Transit" },
+  { mode: "driving", label: "Driving" },
+  { mode: "walking", label: "Walking" },
+  { mode: "bicycle", label: "Bicycle" },
+];
 
 export default function OptimizeModal() {
   const trip = useTripStore((s) => s.trip);
   const setShowOptimize = useTripStore((s) => s.setShowOptimize);
   const optimize = useTripStore((s) => s.optimize);
+  const setAllowedModes = useTripStore((s) => s.setAllowedModes);
   const [dayBudgetHours, setDayBudgetHours] = useState<number>(8);
+  const [modes, setModes] = useState<TravelMode[]>(() => [...(trip?.allowedModes ?? DEFAULT_ALLOWED_MODES)]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!trip) return null;
+
+  function toggleMode(mode: TravelMode) {
+    setModes((current) => {
+      const checked = current.includes(mode);
+      // At least one mode must stay selected — an empty set would silently fall back to "every
+      // mode allowed" (resolvePrimaryMode's default), which would contradict what the user sees.
+      if (checked && current.length === 1) return current;
+      return checked ? current.filter((m) => m !== mode) : [...current, mode];
+    });
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -21,6 +42,7 @@ export default function OptimizeModal() {
     try {
       // The day count and dates come from the trip's required range (ADR-0015); only the soft
       // knobs are chosen here. Re-optimize replaces the plan wholesale.
+      await setAllowedModes(modes);
       await optimize({ dayBudgetHours });
       setShowOptimize(false);
     } catch {
@@ -59,6 +81,26 @@ export default function OptimizeModal() {
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-ink">Travel modes</label>
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {MODE_OPTIONS.map(({ mode, label }) => (
+                <label key={mode} className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={modes.includes(mode)}
+                    onChange={() => toggleMode(mode)}
+                    className="rounded border-line-strong text-brand-600 focus:ring-brand-500"
+                  />
+                  <span className="text-sm text-sub">{label}</span>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-faint">
+              Transit already includes the walk to and from stations — no separate walking selection needed.
+            </p>
+          </div>
+
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium text-ink">
