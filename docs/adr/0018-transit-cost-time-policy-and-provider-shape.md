@@ -3,7 +3,9 @@
 - **Status:** Accepted
 - **Date:** 2026-07-07
 - **Supersedes:** —
-- **Superseded by:** —
+- **Superseded by:** — (superseded-in-part — see ADR-0019 for the Japan regional
+  provider that fires §5's contingent-enhancement clause and generalizes provider
+  selection into a registry)
 - **Amends:** ADR-0004 (provider interface gains `departureTime` and `describeLeg`),
   ADR-0011 (resolves its deferred time-of-day complexity; demotes regional providers
   to contingent enhancements)

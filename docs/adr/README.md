@@ -45,3 +45,4 @@ status to **Superseded by ADR-NNNN**.
 | [0016](0016-feasibility-gate-and-deferred-balance.md) | Feasibility is a hard gate; category balance deferred to advisory suggestions | Accepted |
 | [0017](0017-surface-feasibility-violations.md) | The solver's result surfaces feasibility violations, not just an arrangement | Accepted |
 | [0018](0018-transit-cost-time-policy-and-provider-shape.md) | Transit cost: time-of-day policy and provider shape | Accepted |
+| [0019](0019-japan-osm-transit-graph-provider.md) | Japan transit provider: OSM topology graph, no timetables (Phase 1) | Accepted |

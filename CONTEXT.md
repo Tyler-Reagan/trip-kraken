@@ -86,3 +86,27 @@ existing Location, e.g. food nearby) or *unanchored* (a text/keyword Places sear
 an empty trip). Distinct from Enrichment: Discovery surfaces *new* candidates; Enrichment
 completes *existing* ones.
 _Avoid_: nearby search, suggestions
+
+**Rail graph**:
+The offline-ingested structure a regional transit provider (e.g. Japan) routes over —
+stations and lines from OpenStreetMap, real distances, no timetables. An implementation
+detail of one `TravelCostProvider`, not domain vocabulary; a Trip never references it
+directly.
+
+**Stop node** (rail graph):
+One line's presence at one station — a busy interchange is several stop nodes. Distinct
+from Placement; not a scheduled thing.
+
+**Station cluster** (rail graph):
+A grouping of stop nodes that represent one physical interchange, used to find transfers
+between lines and operators.
+
+**Ride edge / transfer edge** (rail graph):
+Graph-internal connections the rail graph's shortest-path search traverses — a ride edge
+between consecutive stops on one line, a transfer edge between stop nodes in one station
+cluster. Implementation concepts of the rail graph only; never used for a Leg, which stays
+the domain unit of travel between Placements.
+
+**Travel mode**:
+How a Trip gets around — one of a Trip-level allowed set (transit, driving, walking,
+bicycle), resolved to a single primary mode the optimizer runs on.
