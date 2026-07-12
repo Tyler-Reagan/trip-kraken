@@ -197,3 +197,70 @@ a redesign.
 - New graph-internal vocabulary (stop node, station cluster, ride edge, transfer
   edge) is added to `CONTEXT.md`, kept explicitly distinct from the domain terms
   **Leg** and **Placement** it must not be confused with.
+
+## Manual eval (J5, issue #88)
+
+A real graph was ingested (2026-07-11 Geofabrik `japan-260101.osm.pbf` snapshot, filtered to
+rail-only): 21,690 stop nodes, 5,931 station clusters, 20,281 ride edges, 69,428 transfer edges.
+Twelve real Legs were spot-checked via `describeLeg` against known real-world routing: seven
+ordinary Tokyo-area JR/subway hops, and five that exposed a real miscalibration (two intra-city
+hops that resolved to an infrequent limited-express service instead of the obvious local line, plus
+three inter-city Shinkansen trunk journeys):
+
+| Leg | Estimate | Real-world sanity |
+| --- | --- | --- |
+| Tokyo → Shinjuku | 13 min, JR中央線快速, 0 transfers | Matches (~14 min direct) |
+| Tokyo → Ueno | 7 min, 上野東京ライン, 0 transfers | Matches (~5–8 min direct) |
+| Shinjuku → Shibuya | 6 min, JR山手線, 0 transfers | Matches (~7 min direct) |
+| Shibuya → Ebisu | 2 min, JR山手線, 0 transfers | Matches (~2–3 min) |
+| Akihabara → Ochanomizu | 1 min, 中央・総武緩行線, 0 transfers | Matches (one stop) |
+| Shinagawa → Tokyo | 9 min, JR東海道本線, 0 transfers | Matches (~8–10 min) |
+| Tokyo → Ikebukuro | 17 min, JR山手線, 0 transfers | A bit fast vs. real ~24–27 min, same order |
+
+Ordinary same-line/short commuter hops are directionally honest: line names are real, transfer
+counts are real, durations land in the right ballpark. The graph/pathfinding/line-name machinery
+itself works as designed.
+
+**Miscalibration found — line-type classification never fires for limited-express/Shinkansen.**
+Five Legs exposed it, two of them intra-city (a surprising line choice, not just a slow number) and
+three inter-city (a duration badly off):
+
+| Leg | Estimate | Real-world | 
+| --- | --- | --- |
+| Tokyo → Shibuya | 17 min, JR成田エクスプレス (Narita Express), 0 transfers | Real commuters ride the Yamanote Line (~25 min); Narita Express is an infrequent, reserved-seat airport train no one takes for this hop |
+| Tokyo → Yokohama | 37 min, 踊り子 (Odoriko), 0 transfers | Real commuters ride the Tokaido/Keihin-Tōhoku Line (~25–28 min); Odoriko is an infrequent resort limited express |
+| Tokyo → Shin-Osaka | 545 min (9h), のぞみ, 1 transfer | ~150 min (Nozomi Shinkansen) |
+| Tokyo → Kyoto | 503 min, 常磐快速線 → JR東海道本線 | ~140 min (Shinkansen) — didn't even route via Shinkansen |
+| Nagoya → Tokyo | 359 min, のぞみ | ~100 min (Nozomi Shinkansen) |
+
+The two intra-city Legs show the same root cause from a different angle: because Narita
+Express/Odoriko carry no real frequency or fare-surcharge penalty in this model, and their route
+relations connect the two stations with fewer, more direct real-distance hops than the Yamanote
+loop, the search picks them purely for being marginally shorter in km — a plausible duration, but a
+misleading recommended line name a real rider would never take for that hop.
+
+Root cause, confirmed directly against the ingested data and the real OSM source: `lineTypeOf()`
+(`transitGraphIngest.ts`) classifies a `route=train` relation as `"shinkansen"` only when
+`service=high_speed`, and `"limitedExpress"` only when `service=long_distance` — but real OSM
+route relations for Japanese Shinkansen/limited-express services (checked directly:
+`openstreetmap.org/relation/9807033`/`9807034`, the real Nozomi Tokyo↔Hakata relations) carry no
+`service` tag at all. Querying the ingested graph confirms this is total, not a fluke: **zero**
+of 1,419 distinct lines nationwide were classified `shinkansen` or `limitedExpress` — every
+non-subway/light-rail/monorail line (1,278 of them, including every Shinkansen and limited-express
+service) silently fell through to the `"commuter"` (45 km/h) default. A same-effective-speed graph
+then has no reason to prefer the real Shinkansen trunk over a longer sequence of conventional
+lines, and duration for a trunk journey comes out 3–4× too slow.
+
+This is exactly the kind of finding this eval exists to catch, and per this ADR's own scoping it's
+**captured as follow-up, not fixed in this ticket** (#88 is the caveat + eval; retuning the
+classifier is ingestion work, #87's domain). Concrete leads for that follow-up:
+- `service=high_speed`/`long_distance` should stay as a check (some OSM contributors do tag it),
+  but needs a fallback: e.g. a known-network/line-name allowlist (のぞみ/ひかり/こだま/はやぶさ/
+  こまち/つばさ/かがやき/はくたか/つるぎ/みずほ/さくら and other named Shinkansen/limited-express
+  services), or — more robust and self-calibrating — the real Nozomi/Hikari/Kodama relations
+  observed during this eval carry a `duration` tag (e.g. `04:57` for Tokyo↔Hakata); computing a
+  relation's implied average speed from `duration` ÷ its real distance and thresholding on that
+  (e.g. >150 km/h → shinkansen, >80 km/h → limitedExpress) would classify correctly without
+  depending on inconsistently-applied tags.
+- Ordinary commuter/subway classification (route-tag-based, no `service` dependency) is unaffected
+  and already correct — this bug is scoped entirely to the two high-speed-adjacent line types.
