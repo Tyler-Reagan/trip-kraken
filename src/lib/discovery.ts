@@ -14,8 +14,7 @@
 
 import type { NearbyPlace } from "@/types";
 import { searchNearby, searchText } from "./places";
-import { searchTabelog, enrichTabelogAddresses } from "./tabelog";
-import { approximateAnchorDistance, haversineMeters } from "./stations";
+import { haversineMeters } from "./travelCost";
 
 export type DiscoveryMode = "anchored" | "unanchored";
 
@@ -27,9 +26,6 @@ export interface AnchoredQuery {
   type?: string;
   limit?: number;
   openNow?: boolean;
-  /** Opt-in: resolve street addresses for results that only carry an area
-   *  (Tabelog). Slow (sequential, rate-limited); providers that don't need it ignore it. */
-  enrichAddresses?: boolean;
 }
 
 export interface UnanchoredQuery {
@@ -42,7 +38,7 @@ export interface DiscoveryProvider {
   readonly label: string;
   readonly modes: readonly DiscoveryMode[];
   /** Whether this provider serves the given anchor. Global providers always apply;
-   *  regional ones (e.g. Tabelog → Japan) gate by region. */
+   *  regional ones gate by region. */
   appliesAt(lat: number, lng: number): boolean;
   searchAnchored?(q: AnchoredQuery): Promise<NearbyPlace[]>;
   searchUnanchored?(q: UnanchoredQuery): Promise<NearbyPlace[]>;
@@ -66,7 +62,7 @@ const googleProvider: DiscoveryProvider = {
     // distance is a pure in-process computation (no extra API calls).
     return places.map((p) =>
       p.lat !== null && p.lng !== null
-        ? { ...p, distanceMeters: Math.round(haversineMeters(q.lat, q.lng, p.lat, p.lng)) }
+        ? { ...p, distanceMeters: Math.round(haversineMeters({ lat: q.lat, lng: q.lng }, { lat: p.lat, lng: p.lng })) }
         : p
     );
   },
@@ -75,34 +71,14 @@ const googleProvider: DiscoveryProvider = {
   },
 };
 
-// ─── Tabelog: regional (Japan), anchored only ────────────────────────────────
-// Japan bounding box. Gates Tabelog to its region — an explicit applicability
-// contract replacing the incidental nearestPrefecture gating (ADR-0009). Exported: the OSM-Japan
-// transit-cost provider registry (travelCostRegistry.ts, ADR-0019) gates on the same region and
-// shares this check rather than duplicating the bounding box.
+// Japan bounding box. Not used by any discovery provider today, but exported for
+// the OSM-Japan transit-cost provider registry (travelCostRegistry.ts, ADR-0019),
+// which gates on the same region and shares this check rather than duplicating the box.
 export function inJapan(lat: number, lng: number): boolean {
   return lat >= 24 && lat <= 46 && lng >= 122 && lng <= 146;
 }
 
-const tabelogProvider: DiscoveryProvider = {
-  id: "tabelog",
-  label: "Tabelog",
-  modes: ["anchored"],
-  appliesAt: inJapan,
-  async searchAnchored(q) {
-    let places = await searchTabelog(q.lat, q.lng, { keyword: q.keyword, limit: q.limit });
-    if (q.enrichAddresses) places = await enrichTabelogAddresses(places);
-    // anchor→station (Haversine, static dataset) + station→restaurant (listing text).
-    // Overwrites the station-only distance from the parser; null where the station
-    // isn't in the dataset (better to show nothing than a misleading number).
-    return places.map((p) => ({
-      ...p,
-      distanceMeters: approximateAnchorDistance(p.address, p.distanceMeters, q.lat, q.lng),
-    }));
-  },
-};
-
-const PROVIDERS: readonly DiscoveryProvider[] = [googleProvider, tabelogProvider];
+const PROVIDERS: readonly DiscoveryProvider[] = [googleProvider];
 
 export function getDiscoveryProvider(id: string): DiscoveryProvider | undefined {
   return PROVIDERS.find((p) => p.id === id);

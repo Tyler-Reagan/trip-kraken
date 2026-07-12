@@ -16,7 +16,6 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "better-sqlite3": "^12.11.1",
-    "cheerio": "^1.2.0",
     "drizzle-orm": "^0.45.2",
     "fast-xml-parser": "^5.5.9",
     "lucide-react": "^1.23.0",
