@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
-import { DEFAULT_ALLOWED_MODES, type TravelMode } from "@/lib/travelCost";
+import type { TravelMode } from "@/lib/travelCost";
+import { DEFAULT_ALLOWED_MODES } from "@/lib/travelMode";
 
-// Mirrors consumer maps' mode order; also travelCost.ts's resolvePrimaryMode precedence.
+// Mirrors consumer maps' mode order; also travelMode.ts's resolvePrimaryMode precedence.
 const MODE_OPTIONS: { mode: TravelMode; label: string }[] = [
   { mode: "transit", label: "Transit" },
   { mode: "driving", label: "Driving" },

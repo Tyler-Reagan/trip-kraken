@@ -33,6 +33,12 @@ export function parseOsmXml(xml: string): { nodes: OsmNode[]; relations: OsmRela
     ignoreAttributes: false,
     attributeNamePrefix: "@_",
     isArray: (name) => ["node", "relation", "member", "tag"].includes(name),
+    // fast-xml-parser's entity-expansion guard defaults to 1000 total expansions — a billion-laughs
+    // safeguard sized for arbitrary untrusted input. A nationwide rail extract is neither untrusted
+    // nor small: station/line names routinely carry `&amp;`/`&apos;` entities, easily exceeding the
+    // default across hundreds of thousands of tags. This is our own pinned, trusted Geofabrik
+    // extract (never user-supplied XML), so raising the ceiling is safe, not a security regression.
+    processEntities: { maxTotalExpansions: 5_000_000, maxExpandedLength: 50_000_000 },
   });
 
   let parsed: unknown;

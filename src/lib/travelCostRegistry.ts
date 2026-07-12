@@ -80,4 +80,3 @@ export function selectTravelCostProvider(points: Point[], mode: TravelMode): Tra
   const entry = REGISTRY.find((e) => e.appliesTo(points, mode));
   return (entry ?? REGISTRY[REGISTRY.length - 1]).provider;
 }
-

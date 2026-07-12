@@ -9,8 +9,9 @@
 import { getTripWithDetails, setPlacements } from "@/lib/db";
 import { solve, type FeasibilityViolation } from "@/lib/solver";
 import type { LocationInput, StayPlan } from "@/lib/optimizer";
-import { hasValidCoords, resolvePrimaryMode } from "@/lib/travelCost";
+import { hasValidCoords } from "@/lib/travelCost";
 import { selectTravelCostProvider } from "@/lib/travelCostRegistry";
+import { resolvePrimaryMode } from "@/lib/travelMode";
 import { isActivity, isLodging, dayNumberOf, addDaysIso, numDaysOf, type Location, type TripWithDetails } from "@/types";
 
 export type OptimizeOptions = {

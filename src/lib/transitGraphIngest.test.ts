@@ -205,3 +205,22 @@ assert.deepEqual(rows.map((r) => r.stationName), ["Tokyo", "Kanda"], "db/transit
 fs.rmSync(smokeDir, { recursive: true, force: true });
 
 console.log("transitGraphIngest pipeline smoke test: OK");
+
+// ── Regression (issue #88's manual eval against a real Geofabrik extract): fast-xml-parser's
+// entity-expansion guard defaults to 1000 total expansions — a billion-laughs safeguard sized for
+// arbitrary untrusted input — and parsing the real, pinned Japan extract during #88's eval threw
+// exactly this error ("Entity expansion limit exceeded: 1001 > 1000") on real data, which is not
+// untrusted input (a trusted Geofabrik snapshot), just large. A DOCTYPE-declared entity referenced
+// past the default ceiling reproduces the identical failure/limit on a small fixture (plain
+// `&amp;`-style predefined entities in attribute values didn't reproduce it in isolation — the
+// real file's trigger wasn't isolated further — but this exercises the same counter and the same
+// guard `parseOsmXml`'s raised `maxTotalExpansions`/`maxExpandedLength` must tolerate).
+const manyEntityXml =
+  `<?xml version="1.0"?><!DOCTYPE osm [<!ENTITY amp2 "AB">]><osm>` +
+  Array.from({ length: 1200 }, (_, i) => `<node id="${i}" lat="35.0" lon="139.0"><tag k="name" v="&amp2;"/></node>`).join("") +
+  `</osm>`;
+const { nodes: manyEntityParsed } = parseOsmXml(manyEntityXml);
+assert.equal(manyEntityParsed.length, 1200, "parseOsmXml tolerates entity expansion past the library's default 1000-expansion ceiling");
+assert.equal(manyEntityParsed[0].tags.name, "AB", "the DOCTYPE entity still decodes correctly past the raised ceiling");
+
+console.log("transitGraphIngest entity-expansion regression: OK");
