@@ -22,21 +22,20 @@ export async function GET(
   const limit   = Math.max(1, parseInt(searchParams.get("limit")   ?? "20", 10));
   const openNow = searchParams.get("openNow") === "true";
   const date    = searchParams.get("date")    ?? undefined;
-  const enrichAddresses = searchParams.get("enrichAddresses") === "true";
   const source  = searchParams.get("source") ?? "google";
 
   const provider = getDiscoveryProvider(source);
   if (!provider || !provider.modes.includes("anchored") || !provider.searchAnchored) {
     return NextResponse.json({ error: `Unknown discovery source: ${source}` }, { status: 400 });
   }
-  // Regional providers (e.g. Tabelog outside Japan) don't serve this anchor → no results.
+  // A regional provider that doesn't serve this anchor → no results.
   if (!provider.appliesAt(loc.lat, loc.lng)) {
     return NextResponse.json([]);
   }
 
   try {
     const places = await provider.searchAnchored({
-      lat: loc.lat, lng: loc.lng, radius, keyword, type, limit, openNow, enrichAddresses,
+      lat: loc.lat, lng: loc.lng, radius, keyword, type, limit, openNow,
     });
 
     // Category set for the target day (diversity bonus in the ranking).

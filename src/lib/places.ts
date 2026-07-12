@@ -196,7 +196,7 @@ function extractWeeklyHours(
 
 /**
  * Resolve a placeId + coordinates via Text Search.
- * When lat/lng are null (e.g. Tabelog-sourced locations), searches by name alone.
+ * When lat/lng are null, searches by name alone.
  * Pass lat/lng as a geographic bias when you know the approximate area (e.g. the
  * anchor location) — this prevents name collisions for common restaurant names.
  * Returns null on ZERO_RESULTS or any error — never throws.
@@ -268,9 +268,7 @@ export async function getPlaceDetails(placeId: string): Promise<PlaceDetails | n
 
 /**
  * Orchestrates Text Search → Place Details for one location.
- * Handles Tabelog-sourced locations (placeId starts with "tabelog:") by
- * treating them as if they have no Google placeId — Text Search re-resolves
- * to a real Google placeId and supplies coordinates.
+ * A location with no Google placeId is resolved via Text Search first.
  * Returns a partial enrichment object. Never throws.
  */
 export async function enrichLocation(loc: {
@@ -281,11 +279,8 @@ export async function enrichLocation(loc: {
   placeId: string | null;
 }): Promise<Partial<LocationEnrichment>> {
   try {
-    const isTabelog = loc.placeId?.startsWith("tabelog:") ?? false;
-    const googlePlaceId = isTabelog ? null : loc.placeId;
-
     // Resolve Google placeId + coordinates if needed
-    let resolvedPlaceId = googlePlaceId;
+    let resolvedPlaceId = loc.placeId;
     let resolvedLat = loc.lat;
     let resolvedLng = loc.lng;
 

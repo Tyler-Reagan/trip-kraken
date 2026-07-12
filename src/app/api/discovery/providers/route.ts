@@ -4,7 +4,7 @@ import { listDiscoveryProviders, type DiscoveryMode } from "@/lib/discovery";
 /**
  * The discovery registry, for building source toggles client-side (ADR-0009).
  * Optional `mode` filters to providers serving that mode; optional `lat`/`lng`
- * filters to providers that apply at the anchor (e.g. Tabelog → Japan only).
+ * filters to providers that apply at the anchor (a regional provider gates by region).
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);

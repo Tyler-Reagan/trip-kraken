@@ -10,27 +10,20 @@ import { getDiscoveryProvider, listDiscoveryProviders, scoreAndSort } from "@/li
 
 // ── Registry ──
 assert.equal(getDiscoveryProvider("google")?.id, "google", "google resolves");
-assert.equal(getDiscoveryProvider("tabelog")?.id, "tabelog", "tabelog resolves");
 assert.equal(getDiscoveryProvider("nope"), undefined, "unknown source → undefined");
 assert.deepEqual(
   listDiscoveryProviders().map((p) => p.id).sort(),
-  ["google", "tabelog"],
-  "registry lists both providers"
+  ["google"],
+  "registry lists the google provider"
 );
 
 // ── Declared modes ──
 const google = getDiscoveryProvider("google")!;
-const tabelog = getDiscoveryProvider("tabelog")!;
 assert.deepEqual([...google.modes].sort(), ["anchored", "unanchored"], "google serves both modes");
 assert.ok(google.searchAnchored && google.searchUnanchored, "google implements both methods");
-assert.deepEqual([...tabelog.modes], ["anchored"], "tabelog is anchored-only");
-assert.ok(tabelog.searchAnchored && !tabelog.searchUnanchored, "tabelog has no unanchored method");
 
-// ── Applicability (region gating replaces nearestPrefecture) ──
+// ── Applicability ──
 assert.equal(google.appliesAt(48.85, 2.35), true, "google applies anywhere (Paris)");
-assert.equal(tabelog.appliesAt(35.69, 139.69), true, "tabelog applies in Tokyo");
-assert.equal(tabelog.appliesAt(48.85, 2.35), false, "tabelog does not apply in Paris");
-assert.equal(tabelog.appliesAt(40.71, -74.0), false, "tabelog does not apply in New York");
 
 // ── Ranking ──
 function place(over: Partial<NearbyPlace>): NearbyPlace {

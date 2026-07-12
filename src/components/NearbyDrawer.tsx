@@ -75,8 +75,8 @@ export default function NearbyDrawer() {
 
   if (!tripId || !trip || !searchLocation) return null;
 
-  // Anchored providers that apply at this location (Tabelog is dropped outside
-  // Japan via appliesAt) — drives the source toggle (ADR-0009).
+  // Anchored providers that apply at this location — drives the source toggle
+  // (ADR-0009). Only Google today; regional providers gate via appliesAt.
   useEffect(() => {
     const params = new URLSearchParams({ mode: "anchored" });
     if (searchLocation.lat !== null && searchLocation.lng !== null) {
@@ -150,10 +150,6 @@ export default function NearbyDrawer() {
           rating: place.rating,
           reviewCount: place.reviewCount,
           categories: place.categories,
-          // Anchor coordinates used as a Text Search bias when geocoding Tabelog
-          // locations (which have no coordinates in the scraper response).
-          hintLat: searchLocation?.lat ?? null,
-          hintLng: searchLocation?.lng ?? null,
         }),
       });
 
@@ -327,7 +323,7 @@ export default function NearbyDrawer() {
 
         {showMoreFilters && (
           <div className="space-y-3">
-            {/* Open now — Google only (Tabelog listings don't expose current open status) */}
+            {/* Open now — a Google capability; hidden for sources that don't expose live open status */}
             {source === "google" && <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"

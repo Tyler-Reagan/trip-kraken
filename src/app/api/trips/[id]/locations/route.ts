@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { locationExistsByPlaceId, createLocation } from "@/lib/db";
-import { findPlaceFromText, getPlaceDetails } from "@/lib/places";
+import { getPlaceDetails } from "@/lib/places";
 import { enqueueLocationEnrichment } from "@/lib/enrichmentQueue";
 
 export async function POST(
@@ -9,7 +9,7 @@ export async function POST(
 ) {
   const { id: tripId } = await params;
   const body = await req.json();
-  const { name, address, lat, lng, placeId, rating, reviewCount, categories, hintLat, hintLng } = body;
+  const { name, address, lat, lng, placeId, rating, reviewCount, categories } = body;
 
   if (!name) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
@@ -34,25 +34,7 @@ export async function POST(
   let inlineReviewCount: number | null = reviewCount ?? null;
   let inlineCategories: string[] | null = categories ?? null;
 
-  if (typeof placeId === "string" && placeId.startsWith("tabelog:")) {
-    // Path C: Tabelog — geocode to get real Google placeId + coordinates.
-    // The original tabelog: prefix is replaced at write time so the subsequent
-    // enrichment queue call only needs getPlaceDetails (no redundant Text Search).
-    const hint =
-      typeof hintLat === "number" && typeof hintLng === "number"
-        ? { lat: hintLat as number, lng: hintLng as number }
-        : null;
-    // 5 km bias radius — anchor is a hotel, not the restaurant, so a tight
-    // radius would miss most results in the same neighbourhood.
-    const found = await findPlaceFromText(name, hint?.lat ?? null, hint?.lng ?? null, 5000);
-    if (found) {
-      resolvedLat = found.lat;
-      resolvedLng = found.lng;
-      resolvedPlaceId = found.placeId; // replaces "tabelog:" prefix
-    }
-    // Always pending: getPlaceDetails (phone/hours) will be fetched by the queue.
-    enrichmentStatus = "pending";
-  } else if (typeof placeId === "string" && placeId.length > 0) {
+  if (typeof placeId === "string" && placeId.length > 0) {
     // Path B: Google nearby add — has a real placeId already.
     // Call getPlaceDetails inline (~300 ms) so the location is fully enriched
     // when the response arrives. Fall back to queued enrichment on failure.
