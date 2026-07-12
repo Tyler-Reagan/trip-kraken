@@ -84,17 +84,25 @@ export default function OptimizeModal() {
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-ink">Travel modes</label>
             <div className="flex flex-wrap gap-x-4 gap-y-2">
-              {MODE_OPTIONS.map(({ mode, label }) => (
-                <label key={mode} className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={modes.includes(mode)}
-                    onChange={() => toggleMode(mode)}
-                    className="rounded border-line-strong text-brand-600 focus:ring-brand-500"
-                  />
-                  <span className="text-sm text-sub">{label}</span>
-                </label>
-              ))}
+              {MODE_OPTIONS.map(({ mode, label }) => {
+                const isLastChecked = modes.length === 1 && modes.includes(mode);
+                return (
+                  <label
+                    key={mode}
+                    className="flex items-center gap-2 cursor-pointer select-none has-[:disabled]:cursor-not-allowed"
+                    title={isLastChecked ? "At least one travel mode must stay selected" : undefined}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={modes.includes(mode)}
+                      disabled={isLastChecked}
+                      onChange={() => toggleMode(mode)}
+                      className="rounded border-line-strong text-brand-600 focus:ring-brand-500 disabled:opacity-50"
+                    />
+                    <span className="text-sm text-sub">{label}</span>
+                  </label>
+                );
+              })}
             </div>
             <p className="text-xs text-faint">
               Transit already includes the walk to and from stations — no separate walking selection needed.
