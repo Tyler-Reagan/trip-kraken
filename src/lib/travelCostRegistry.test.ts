@@ -7,9 +7,11 @@
  */
 
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { haversineProvider } from "./travelCost";
 import { googleRoutesProvider } from "./googleRoutesProvider";
 import { selectTravelCostProvider, getTravelCostProviderById } from "./travelCostRegistry";
+import { DEFAULT_GRAPH_PATH } from "./transitGraphStore";
 
 // tsx compiles this file to CJS (no "type": "module" in package.json), which doesn't support
 // top-level await — same wrapper as optimizer.test.ts, with an explicit exit-1 on failure.
@@ -66,14 +68,24 @@ withApiKey("test-key", () => {
 });
 
 // ── A selected provider's errors propagate — no silent fallthrough to haversine/Google ──
-// This test environment has no real ingested db/transit-japan.db, so OSM-Japan's costMatrix
-// throws its loud "not ingested" error; selection must not swallow that and quietly retry a
-// lower-precedence provider instead.
-await assert.rejects(
-  () => selectTravelCostProvider([TOKYO], "transit").costMatrix([TOKYO], "transit"),
-  /transit graph not ingested/,
-  "a selected provider's error propagates instead of falling through to a lower-precedence provider"
-);
+// Forces the "not ingested" case regardless of whether this dev environment has a real graph
+// file (issue #88's manual eval ingested one): temporarily hides it, mirroring
+// transitGraphStore.test.ts's own backup/restore pattern around its singleton test — this must
+// never clobber a real ingested graph. Safe to do here: nothing earlier in this file calls
+// costMatrix/describeLeg on the OSM-Japan provider, so getTransitGraph()'s cache is never
+// populated before this point in this process.
+const hadRealGraph = fs.existsSync(DEFAULT_GRAPH_PATH);
+const backupPath = `${DEFAULT_GRAPH_PATH}.bak-${Date.now()}`;
+if (hadRealGraph) fs.renameSync(DEFAULT_GRAPH_PATH, backupPath);
+try {
+  await assert.rejects(
+    () => selectTravelCostProvider([TOKYO], "transit").costMatrix([TOKYO], "transit"),
+    /transit graph not ingested/,
+    "a selected provider's error propagates instead of falling through to a lower-precedence provider"
+  );
+} finally {
+  if (hadRealGraph) fs.renameSync(backupPath, DEFAULT_GRAPH_PATH);
+}
 
 console.log("✓ travelCostRegistry.test.ts passed");
 }
