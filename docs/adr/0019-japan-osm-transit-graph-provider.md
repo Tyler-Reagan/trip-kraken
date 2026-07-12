@@ -202,8 +202,10 @@ a redesign.
 
 A real graph was ingested (2026-07-11 Geofabrik `japan-260101.osm.pbf` snapshot, filtered to
 rail-only): 21,690 stop nodes, 5,931 station clusters, 20,281 ride edges, 69,428 transfer edges.
-Twelve real Legs were spot-checked via `describeLeg` against known real-world routing (Tokyo-area
-JR/subway hops plus three inter-city Shinkansen trunk journeys):
+Twelve real Legs were spot-checked via `describeLeg` against known real-world routing: seven
+ordinary Tokyo-area JR/subway hops, and five that exposed a real miscalibration (two intra-city
+hops that resolved to an infrequent limited-express service instead of the obvious local line, plus
+three inter-city Shinkansen trunk journeys):
 
 | Leg | Estimate | Real-world sanity |
 | --- | --- | --- |
@@ -214,20 +216,28 @@ JR/subway hops plus three inter-city Shinkansen trunk journeys):
 | Akihabara → Ochanomizu | 1 min, 中央・総武緩行線, 0 transfers | Matches (one stop) |
 | Shinagawa → Tokyo | 9 min, JR東海道本線, 0 transfers | Matches (~8–10 min) |
 | Tokyo → Ikebukuro | 17 min, JR山手線, 0 transfers | A bit fast vs. real ~24–27 min, same order |
-| Akihabara → Otemachi (fixture, #85) | — | Seam 1 fixture, not this eval |
 
 Ordinary same-line/short commuter hops are directionally honest: line names are real, transfer
 counts are real, durations land in the right ballpark. The graph/pathfinding/line-name machinery
 itself works as designed.
 
 **Miscalibration found — line-type classification never fires for limited-express/Shinkansen.**
-Three inter-city Legs exposed it:
+Five Legs exposed it, two of them intra-city (a surprising line choice, not just a slow number) and
+three inter-city (a duration badly off):
 
 | Leg | Estimate | Real-world | 
 | --- | --- | --- |
+| Tokyo → Shibuya | 17 min, JR成田エクスプレス (Narita Express), 0 transfers | Real commuters ride the Yamanote Line (~25 min); Narita Express is an infrequent, reserved-seat airport train no one takes for this hop |
+| Tokyo → Yokohama | 37 min, 踊り子 (Odoriko), 0 transfers | Real commuters ride the Tokaido/Keihin-Tōhoku Line (~25–28 min); Odoriko is an infrequent resort limited express |
 | Tokyo → Shin-Osaka | 545 min (9h), のぞみ, 1 transfer | ~150 min (Nozomi Shinkansen) |
 | Tokyo → Kyoto | 503 min, 常磐快速線 → JR東海道本線 | ~140 min (Shinkansen) — didn't even route via Shinkansen |
 | Nagoya → Tokyo | 359 min, のぞみ | ~100 min (Nozomi Shinkansen) |
+
+The two intra-city Legs show the same root cause from a different angle: because Narita
+Express/Odoriko carry no real frequency or fare-surcharge penalty in this model, and their route
+relations connect the two stations with fewer, more direct real-distance hops than the Yamanote
+loop, the search picks them purely for being marginally shorter in km — a plausible duration, but a
+misleading recommended line name a real rider would never take for that hop.
 
 Root cause, confirmed directly against the ingested data and the real OSM source: `lineTypeOf()`
 (`transitGraphIngest.ts`) classifies a `route=train` relation as `"shinkansen"` only when
