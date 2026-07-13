@@ -106,7 +106,6 @@ export async function searchNearby(
   opts: {
     radius?: number;
     keyword?: string;
-    type?: string;
     limit?: number;
     openNow?: boolean;
   }
@@ -122,7 +121,6 @@ export async function searchNearby(
       textQuery: opts.keyword,
       pageSize: limit,
       locationBias: circle(lat, lng, radius),
-      ...(opts.type ? { includedType: opts.type } : {}),
       ...(opts.openNow ? { openNow: true } : {}),
     });
     return places
@@ -140,7 +138,6 @@ export async function searchNearby(
     {
       locationRestriction: circle(lat, lng, radius),
       maxResultCount: limit,
-      ...(opts.type ? { includedTypes: [opts.type] } : {}),
     },
     opts.openNow ? `${SEARCH_FIELD_MASK},places.currentOpeningHours.openNow` : SEARCH_FIELD_MASK
   );
@@ -155,11 +152,12 @@ export async function searchNearby(
  */
 export async function searchText(
   query: string,
-  opts: { limit?: number } = {}
+  opts: { limit?: number; openNow?: boolean } = {}
 ): Promise<NearbyPlace[]> {
   const places = await postSearch("searchText", {
     textQuery: query,
     pageSize: Math.min(opts.limit ?? 20, 20),
+    ...(opts.openNow ? { openNow: true } : {}),
   });
   return places.map(toNearbyPlace);
 }

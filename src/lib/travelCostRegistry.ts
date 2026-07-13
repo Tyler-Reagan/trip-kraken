@@ -4,7 +4,7 @@
  * `TravelCostProvider`s, each carrying an `appliesTo(points, mode)` predicate; the first entry
  * whose predicate matches wins. Precedence: OSM-Japan (Japan + transit) → Google (global default,
  * when an API key is present) → haversine (the floor, always applies) — mirrors
- * `discovery.ts`'s existing provider-list + `appliesAt`/region-gating pattern.
+ * `discovery.ts`'s existing provider-list + `applies`/region-gating pattern.
  *
  * Selection is by applicability, not try-and-fallback (ADR-0018 §4): once a provider is selected,
  * its errors propagate — a missing `db/transit-japan.db` throws loudly (`transitGraphStore.ts`)
