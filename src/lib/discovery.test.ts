@@ -35,8 +35,8 @@ async function main() {
   const google = getDiscoveryProvider("google")!;
   assert.deepEqual(
     [...google.modes].sort(),
-    ["anchored", "unanchored"],
-    "google serves anchor + none scopes (alongRoute lands with route support)"
+    ["alongRoute", "anchored", "unanchored"],
+    "google serves all three scopes"
   );
 
   // ── Applicability ──
@@ -91,11 +91,19 @@ async function main() {
     "none scope without query rejects"
   );
 
-  // route scope → not declared by google yet; search refuses rather than misbehaving
+  // route scope → text search with searchAlongRouteParameters; missing query fails loud
+  await google.search({ query: "bakery", scope: { kind: "route", polyline: "abc123" }, limit: 5 });
+  assert.ok(lastUrl.endsWith("places:searchText"), "route scope hits searchText");
+  assert.equal(lastBody.textQuery, "bakery", "query becomes textQuery");
+  assert.deepEqual(
+    lastBody.searchAlongRouteParameters,
+    { polyline: { encodedPolyline: "abc123" } },
+    "polyline becomes searchAlongRouteParameters"
+  );
   await assert.rejects(
-    () => google.search({ query: "bakery", scope: { kind: "route", polyline: "abc" } }),
-    /route/,
-    "undeclared route scope rejects"
+    () => google.search({ scope: { kind: "route", polyline: "abc123" } }),
+    /query is required/,
+    "route scope without query rejects"
   );
 
   global.fetch = originalFetch;

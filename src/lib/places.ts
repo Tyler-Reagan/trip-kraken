@@ -162,6 +162,26 @@ export async function searchText(
   return places.map(toNearbyPlace);
 }
 
+/**
+ * Along-route Places discovery (#102): a free-text query scoped to a corridor via a
+ * caller-computed encoded polyline. `searchAlongRouteParameters` is the structured
+ * mechanism New requires for this — the same query as bare text has no corridor bias
+ * and returns unrelated results (#100 prototype finding).
+ */
+export async function searchAlongRoute(
+  query: string,
+  polyline: string,
+  opts: { limit?: number; openNow?: boolean } = {}
+): Promise<NearbyPlace[]> {
+  const places = await postSearch("searchText", {
+    textQuery: query,
+    pageSize: Math.min(opts.limit ?? 20, 20),
+    searchAlongRouteParameters: { polyline: { encodedPolyline: polyline } },
+    ...(opts.openNow ? { openNow: true } : {}),
+  });
+  return places.map(toNearbyPlace);
+}
+
 // ─── Place Details enrichment ────────────────────────────────────────────────
 
 export type LocationEnrichment = {

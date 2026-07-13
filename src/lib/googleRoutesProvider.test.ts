@@ -5,7 +5,7 @@
  */
 
 import assert from "node:assert/strict";
-import { googleRoutesProvider } from "@/lib/googleRoutesProvider";
+import { googleRoutesProvider, computeRoutePolyline } from "@/lib/googleRoutesProvider";
 
 process.env.GOOGLE_MAPS_API_KEY = "test-key";
 
@@ -124,6 +124,24 @@ assert.equal(walkLeg.lineNames, undefined, "walking has no line names");
 // ── describeLeg: no route found throws ──
 mockFetch(() => ({ routes: [] }));
 await assert.rejects(() => googleRoutesProvider.describeLeg(P(0, 0), P(0, 0), "driving"), /no route found/, "empty routes throws");
+
+// ── computeRoutePolyline: encoded polyline extracted, minimal field mask ──
+mockFetch((_url, init) => {
+  const body = JSON.parse(init.body as string);
+  assert.equal(body.travelMode, "DRIVE", "mode mapped to Google enum");
+  assert.equal(body.departureTime, undefined, "driving never sends departureTime");
+  return { routes: [{ polyline: { encodedPolyline: "abc123~xyz" } }] };
+});
+const polyline = await computeRoutePolyline(P(34.7, 135.5), P(35.0, 135.75), "driving");
+assert.equal(polyline, "abc123~xyz", "encoded polyline returned");
+
+// ── computeRoutePolyline: no route found throws ──
+mockFetch(() => ({ routes: [] }));
+await assert.rejects(
+  () => computeRoutePolyline(P(0, 0), P(0, 0), "walking"),
+  /no route found/,
+  "empty routes throws"
+);
 
 // ── HTTP failure throws (fail loudly) ──
 global.fetch = (async () => ({ ok: false, status: 403, text: async () => "PERMISSION_DENIED" }) as Response) as typeof fetch;

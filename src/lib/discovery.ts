@@ -13,7 +13,7 @@
  */
 
 import type { NearbyPlace } from "@/types";
-import { searchNearby, searchText } from "./places";
+import { searchAlongRoute, searchNearby, searchText } from "./places";
 import { haversineMeters } from "./travelCost";
 
 export type DiscoveryMode = "anchored" | "unanchored" | "alongRoute";
@@ -52,11 +52,11 @@ export function modeForScope(scope: DiscoveryScope): DiscoveryMode {
   }
 }
 
-// ─── Google: global; anchor + none (alongRoute lands with route support) ─────
+// ─── Google: global; serves all three scopes ──────────────────────────────────
 const googleProvider: DiscoveryProvider = {
   id: "google",
   label: "Google",
-  modes: ["anchored", "unanchored"],
+  modes: ["anchored", "unanchored", "alongRoute"],
   applies: () => true,
   async search(q) {
     const { scope } = q;
@@ -80,7 +80,8 @@ const googleProvider: DiscoveryProvider = {
         if (!q.query) throw new Error("query is required for unanchored discovery");
         return searchText(q.query, { limit: q.limit, openNow: q.openNow });
       case "route":
-        throw new Error("google does not serve route scope yet");
+        if (!q.query) throw new Error("query is required for along-route discovery");
+        return searchAlongRoute(q.query, scope.polyline, { limit: q.limit, openNow: q.openNow });
     }
   },
 };

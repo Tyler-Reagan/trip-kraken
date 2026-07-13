@@ -161,6 +161,39 @@ type ComputeRoutesResponse = {
   }>;
 };
 
+type PolylineResponse = { routes?: Array<{ polyline?: { encodedPolyline?: string } }> };
+
+/**
+ * Encoded polyline for one leg (discovery route scope, #102) — a separate call from
+ * `describeLeg` because along-route discovery needs only the corridor shape, not
+ * distance/duration/transit detail, and callers compute it once per leg to reuse
+ * across several category searches (routing stays a separate seam, ADR-0018/0019).
+ */
+export async function computeRoutePolyline(from: Point, to: Point, mode: TravelMode): Promise<string> {
+  const googleMode = GOOGLE_TRAVEL_MODE[mode];
+  const res = await fetch(ROUTES_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": apiKey(),
+      "X-Goog-FieldMask": "routes.polyline.encodedPolyline",
+    },
+    body: JSON.stringify({
+      origin: toWaypoint(from),
+      destination: toWaypoint(to),
+      travelMode: googleMode,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Google Routes API error: HTTP ${res.status} ${text}`);
+  }
+  const data = (await res.json()) as PolylineResponse;
+  const polyline = data.routes?.[0]?.polyline?.encodedPolyline;
+  if (!polyline) throw new Error("Google Routes API: no route found for this leg");
+  return polyline;
+}
+
 export const googleRoutesProvider: TravelCostProvider = {
   async costMatrix(points, mode, opts) {
     if (points.length === 0) return [];

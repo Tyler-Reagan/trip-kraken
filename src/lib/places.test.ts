@@ -5,7 +5,7 @@
  */
 
 import assert from "node:assert/strict";
-import { searchText, searchNearby, findPlaceFromText, getPlaceDetails } from "@/lib/places";
+import { searchText, searchNearby, searchAlongRoute, findPlaceFromText, getPlaceDetails } from "@/lib/places";
 
 process.env.GOOGLE_MAPS_API_KEY = "test-key";
 
@@ -120,6 +120,22 @@ async function main() {
     "openNow adds currentOpeningHours to the mask"
   );
   assert.deepEqual(results.map((p) => p.placeId), ["open"], "closed places filtered out");
+
+  // ── searchAlongRoute: text search with a structured corridor param ──
+  mockFetch({ places: [newPlace] });
+  results = await searchAlongRoute("bakery", "abc123", { limit: 5, openNow: true });
+  assert.equal(lastRequest!.url, "https://places.googleapis.com/v1/places:searchText", "along-route uses text search");
+  assert.deepEqual(
+    requestBody(),
+    {
+      textQuery: "bakery",
+      pageSize: 5,
+      searchAlongRouteParameters: { polyline: { encodedPolyline: "abc123" } },
+      openNow: true,
+    },
+    "polyline becomes searchAlongRouteParameters, no location bias"
+  );
+  assert.equal(results[0].placeId, "place-1", "along-route result mapped");
 
   // ── findPlaceFromText: single best match with bias circle ──
   mockFetch({ places: [{ id: "place-2", location: { latitude: 34.66, longitude: 135.5 } }] });
