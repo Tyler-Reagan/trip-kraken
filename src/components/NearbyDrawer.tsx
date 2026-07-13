@@ -16,14 +16,16 @@ const RATING_OPTIONS = [
   { label: "4.5+", value: 4.5  },
 ] as const;
 
+// Query-text shortcuts, not API type filters: the chip folds into the free-text
+// query (#100 — category lookup is a text-search problem, not a type filter).
 const PLACE_TYPES = [
   { label: "All", value: "" },
   { label: "Restaurants", value: "restaurant" },
-  { label: "Attractions", value: "tourist_attraction" },
+  { label: "Attractions", value: "tourist attraction" },
   { label: "Cafes", value: "cafe" },
   { label: "Museums", value: "museum" },
   { label: "Parks", value: "park" },
-  { label: "Shopping", value: "shopping_mall" },
+  { label: "Shopping", value: "shopping" },
   { label: "Bars", value: "bar" },
 ];
 
@@ -76,7 +78,7 @@ export default function NearbyDrawer() {
   if (!tripId || !trip || !searchLocation) return null;
 
   // Anchored providers that apply at this location — drives the source toggle
-  // (ADR-0009). Only Google today; regional providers gate via appliesAt.
+  // (ADR-0009). Only Google today; regional providers gate via applies(scope).
   useEffect(() => {
     const params = new URLSearchParams({ mode: "anchored" });
     if (searchLocation.lat !== null && searchLocation.lng !== null) {
@@ -101,8 +103,8 @@ export default function NearbyDrawer() {
     setError(null);
     try {
       const params = new URLSearchParams({ radius: String(r), limit: "20" });
-      if (t) params.set("type", t);
-      if (kw.trim()) params.set("keyword", kw.trim());
+      const q = [t, kw.trim()].filter(Boolean).join(" ");
+      if (q) params.set("keyword", q);
       if (on) params.set("openNow", "true");
       if (date) params.set("date", date);
       params.set("source", src);
@@ -263,7 +265,7 @@ export default function NearbyDrawer() {
           </div>
         )}
 
-        {/* Type filter — Google only */}
+        {/* Category chips — shortcuts folded into the query text */}
         {source === "google" && <div className="flex gap-1.5 flex-wrap">
           {PLACE_TYPES.map((pt) => (
             <button

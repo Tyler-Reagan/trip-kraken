@@ -70,16 +70,15 @@ async function main() {
 
   // ── searchNearby without keyword: Places-New searchNearby with circle restriction ──
   mockFetch({ places: [newPlace] });
-  results = await searchNearby(35.71, 139.79, { radius: 800, type: "museum", limit: 5 });
+  results = await searchNearby(35.71, 139.79, { radius: 800, limit: 5 });
   assert.equal(lastRequest!.url, "https://places.googleapis.com/v1/places:searchNearby", "New searchNearby endpoint");
   assert.deepEqual(
     requestBody(),
     {
       locationRestriction: { circle: { center: { latitude: 35.71, longitude: 139.79 }, radius: 800 } },
-      includedTypes: ["museum"],
       maxResultCount: 5,
     },
-    "circle restriction + includedTypes + maxResultCount"
+    "circle restriction + maxResultCount"
   );
   assert.equal(results[0].placeId, "place-1", "nearby result mapped");
 

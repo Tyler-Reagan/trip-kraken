@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
 
   const providers = listDiscoveryProviders()
     .filter((p) => (mode ? p.modes.includes(mode) : true))
-    .filter((p) => (hasAnchor ? p.appliesAt(lat!, lng!) : true))
+    .filter((p) => (hasAnchor ? p.applies({ kind: "anchor", lat: lat!, lng: lng! }) : true))
     .map((p) => ({ id: p.id, label: p.label }));
 
   return NextResponse.json(providers);
