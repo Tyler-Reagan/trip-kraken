@@ -1,11 +1,14 @@
 # ADR-0009: Enrichment & external data sources
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-07-12, see below)
 - **Date:** 2026-06-24
 - **Supersedes:** —
 - **Superseded by:** —
 - **Constrained by:** ADR-0007 (background stage), ADR-0008 (persistence)
-- **Note:** Decided in the 2026-06-24 grilling session.
+- **Note:** Decided in the 2026-06-24 grilling session. Discovery contract amended
+  2026-07-12 per the discovery-rebuild wayfinder
+  ([#97](https://github.com/Tyler-Reagan/trip-kraken/issues/97), locked in
+  [#102](https://github.com/Tyler-Reagan/trip-kraken/issues/102)).
 
 ## Context
 
@@ -47,7 +50,8 @@ data-loss limitation with no new schema. Manual "Retry" becomes automatic recove
 - **Discovery has two modes:** *anchored* (nearby an existing Location) and *unanchored*
   (text/keyword Places search with no anchor — used to seed an empty trip, ADR-0010's
   blank-slate foundation). Providers may support either or both; Google supports both,
-  Tabelog is anchored-regional.
+  Tabelog is anchored-regional. *(Amended 2026-07-12: three modes, one search method —
+  see Amendment below.)*
 - All providers return the common `NearbyPlace` shape. A candidate from a regional
   provider (e.g. a Tabelog result, which has no coordinates) is **resolved to canonical
   Google identity when added to a trip** — so once committed, every Location is
@@ -79,3 +83,35 @@ data-loss limitation with no new schema. Manual "Retry" becomes automatic recove
   fields (not just discover), that is a new decision, not assumed here.
 - Time-varying data (weather, live conditions) is **not** enrichment (it isn't a static
   property of a place) and is out of scope for this ADR.
+
+## Amendment (2026-07-12): the discovery contract, reshaped
+
+Decided in the discovery-rebuild wayfinder
+([map #97](https://github.com/Tyler-Reagan/trip-kraken/issues/97); contract locked in
+[#102](https://github.com/Tyler-Reagan/trip-kraken/issues/102), full rationale there).
+Context that fired it: Tabelog was removed (no API, unreliable scrape — #98), and two
+prototype assessments landed — category-based discovery integrates Google (free-text
+queries absorb the category-taxonomy problem; along-route corridor search is native via
+Places-New, #100), while exemplar-anchored ("places like this stop") found no similarity
+primitive in any API and is deferred with users redirected to external platforms (#99).
+
+The `DiscoveryProvider` contract becomes **one search over a scoped query**:
+
+- **Three modes**, not two: `anchored` / `unanchored` / `alongRoute` — along-route
+  (find stops along a leg's corridor) is a first-class mode, not a text-search parameter.
+- The per-mode methods collapse into a single `search(query)` whose **spatial scope** is a
+  discriminated union: `anchor {lat,lng,radius?}` / `none` / `route {polyline}`. Modes
+  differ only in where they look; cross-cutting params (`query`, `limit`, `openNow`) live
+  once. Route scope carries a caller-computed encoded polyline so one corridor is reused
+  across searches on the same leg (routing stays a separate seam, ADR-0018/0019).
+- The `keyword`/`type` split is **shed** for one free-text `query` (#100: category lookup
+  is a free-text problem, not a type filter; UI type chips become query-text shortcuts).
+- `appliesAt(lat, lng)` generalizes to **`applies(scope)`** — one capability gate matching
+  the one method; regional providers decide per scope kind.
+- **The contract promises nothing about relevance.** Providers return candidates; ranking
+  stays caller-side (`scoreAndSort`). The axis-of-similarity question (vibe, heritage-ness)
+  is future ranking/curation work blocked on a signal no API exposes — if along-route
+  detour-ordering ever matters, it arrives as a response *data* field, not a ranking promise.
+
+Everything else in this ADR stands: enrichment single-provider Google-canonical, the common
+`NearbyPlace` shape, COALESCE-style merge, regional applicability gating.

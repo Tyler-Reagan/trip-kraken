@@ -81,10 +81,12 @@ a Location's enrichment is done, pending, or failed.
 _Avoid_: hydration, lookup
 
 **Discovery**:
-Finding new candidate Locations via discovery providers — either *anchored* (near an
-existing Location, e.g. food nearby) or *unanchored* (a text/keyword Places search to seed
-an empty trip). Distinct from Enrichment: Discovery surfaces *new* candidates; Enrichment
-completes *existing* ones.
+Finding new candidate Locations via discovery providers. One free-text search whose
+*scope* varies: *anchored* (near an existing Location, e.g. food nearby), *unanchored*
+(no anchor — seeds an empty trip), or *along-route* (a corridor between two stops).
+Providers return candidates; ranking is the caller's concern, not the provider's.
+Distinct from Enrichment: Discovery surfaces *new* candidates; Enrichment completes
+*existing* ones.
 _Avoid_: nearby search, suggestions
 
 **Rail graph**:
