@@ -1,24 +1,104 @@
 import type { NearbyPlace } from "@/types";
+import { haversineMeters } from "./travelCost";
 
-const NEARBY_BASE   = "https://maps.googleapis.com/maps/api/place/nearbysearch/json";
-const TEXTSEARCH_BASE = "https://maps.googleapis.com/maps/api/place/textsearch/json";
-const DETAILS_BASE  = "https://maps.googleapis.com/maps/api/place/details/json";
+/**
+ * Places API (New) client (migrated off the deprecated legacy endpoints, #102).
+ * Response quirks the code below relies on: zero results come back as an empty
+ * object (no status field); errors arrive as a non-200 with an error envelope.
+ * Place IDs are unchanged between legacy and New, so stored IDs keep working.
+ * No query-shaping: #100's zero-result phrasings no longer reproduce on New
+ * (probed live 2026-07-12), so queries are sent verbatim.
+ */
 
-type PlacesApiResponse = {
-  status: string;
-  error_message?: string;
-  results: Array<{
-    place_id: string;
-    name: string;
-    vicinity?: string;            // Nearby Search
-    formatted_address?: string;   // Text Search
-    geometry: { location: { lat: number; lng: number } };
-    rating?: number;
-    user_ratings_total?: number;
-    types: string[];
-    price_level?: number;
-  }>;
+const PLACES_BASE = "https://places.googleapis.com/v1";
+
+/** Fields every search maps onto NearbyPlace. */
+const SEARCH_FIELD_MASK = [
+  "places.id",
+  "places.displayName",
+  "places.formattedAddress",
+  "places.location",
+  "places.rating",
+  "places.userRatingCount",
+  "places.types",
+  "places.priceLevel",
+].join(",");
+
+type NewPlace = {
+  id: string;
+  displayName?: { text?: string };
+  formattedAddress?: string;
+  location?: { latitude: number; longitude: number };
+  rating?: number;
+  userRatingCount?: number;
+  types?: string[];
+  priceLevel?: string;
+  currentOpeningHours?: { openNow?: boolean };
 };
+
+type SearchResponse = { places?: NewPlace[] };
+
+/** New expresses price as an enum; NearbyPlace keeps the legacy 0–4 scale. */
+const PRICE_LEVELS: Record<string, number> = {
+  PRICE_LEVEL_FREE: 0,
+  PRICE_LEVEL_INEXPENSIVE: 1,
+  PRICE_LEVEL_MODERATE: 2,
+  PRICE_LEVEL_EXPENSIVE: 3,
+  PRICE_LEVEL_VERY_EXPENSIVE: 4,
+};
+
+function stripGenericTypes(types: string[]): string[] {
+  return types.filter((t) => t !== "point_of_interest" && t !== "establishment");
+}
+
+function toNearbyPlace(p: NewPlace): NearbyPlace {
+  return {
+    placeId: p.id,
+    name: p.displayName?.text ?? "",
+    address: p.formattedAddress ?? "",
+    lat: p.location?.latitude ?? null,
+    lng: p.location?.longitude ?? null,
+    rating: p.rating ?? null,
+    reviewCount: p.userRatingCount ?? null,
+    categories: stripGenericTypes(p.types ?? []),
+    priceLevel: p.priceLevel !== undefined ? (PRICE_LEVELS[p.priceLevel] ?? null) : null,
+    distanceMeters: null,
+  };
+}
+
+function requireApiKey(): string {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY is not set");
+  return apiKey;
+}
+
+/** POST a search (`places:searchText` / `places:searchNearby`); throws on API errors. */
+async function postSearch(
+  method: "searchText" | "searchNearby",
+  body: Record<string, unknown>,
+  fieldMask: string = SEARCH_FIELD_MASK
+): Promise<NewPlace[]> {
+  const res = await fetch(`${PLACES_BASE}/places:${method}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": requireApiKey(),
+      "X-Goog-FieldMask": fieldMask,
+    },
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => ({}))) as SearchResponse & {
+    error?: { message?: string };
+  };
+  if (!res.ok) {
+    throw new Error(data.error?.message ?? `Google Places API error: HTTP ${res.status}`);
+  }
+  return data.places ?? [];
+}
+
+function circle(lat: number, lng: number, radius: number) {
+  return { circle: { center: { latitude: lat, longitude: lng }, radius } };
+}
 
 export async function searchNearby(
   lat: number,
@@ -31,87 +111,57 @@ export async function searchNearby(
     openNow?: boolean;
   }
 ): Promise<NearbyPlace[]> {
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY is not set");
+  const radius = Math.min(opts.radius ?? 1000, 50000);
+  const limit = Math.min(opts.limit ?? 20, 20); // New caps at 20 per request (no pagination)
 
-  const params = new URLSearchParams({
-    location: `${lat},${lng}`,
-    radius: String(Math.min(opts.radius ?? 1000, 50000)),
-    key: apiKey,
-  });
-  if (opts.keyword) params.set("keyword", opts.keyword);
-  if (opts.type) params.set("type", opts.type);
-  if (opts.openNow) params.set("opennow", "true");
-
-  const res = await fetch(`${NEARBY_BASE}?${params}`);
-  if (!res.ok) throw new Error(`Google Places API error: HTTP ${res.status}`);
-
-  const data = (await res.json()) as PlacesApiResponse;
-
-  if (data.status === "REQUEST_DENIED") {
-    throw new Error(data.error_message ?? "Google Places API request denied. Check your API key.");
+  // A keyword is a free-text query, which only searchText serves. Its circle is
+  // a bias, not a restriction (legacy restricted hard), so cut off beyond-radius
+  // results in-process to keep the radius meaning what the UI says it means.
+  if (opts.keyword) {
+    const places = await postSearch("searchText", {
+      textQuery: opts.keyword,
+      pageSize: limit,
+      locationBias: circle(lat, lng, radius),
+      ...(opts.type ? { includedType: opts.type } : {}),
+      ...(opts.openNow ? { openNow: true } : {}),
+    });
+    return places
+      .filter(
+        (p) =>
+          !p.location ||
+          haversineMeters({ lat, lng }, { lat: p.location.latitude, lng: p.location.longitude }) <= radius
+      )
+      .map(toNearbyPlace);
   }
-  if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
-    throw new Error(data.error_message ?? `Google Places API error: ${data.status}`);
-  }
 
-  const limit = Math.min(opts.limit ?? 20, 60);
-  return data.results.slice(0, limit).map((r) => ({
-    placeId: r.place_id,
-    name: r.name,
-    address: r.vicinity ?? "",
-    lat: r.geometry.location.lat,
-    lng: r.geometry.location.lng,
-    rating: r.rating ?? null,
-    reviewCount: r.user_ratings_total ?? null,
-    categories: r.types.filter((t) => t !== "point_of_interest" && t !== "establishment"),
-    priceLevel: r.price_level ?? null,
-    distanceMeters: null, // Nearby Search doesn't return distance; use radius for context
-  }));
+  // searchNearby has no openNow filter, so request the flag and filter in-process.
+  const places = await postSearch(
+    "searchNearby",
+    {
+      locationRestriction: circle(lat, lng, radius),
+      maxResultCount: limit,
+      ...(opts.type ? { includedTypes: [opts.type] } : {}),
+    },
+    opts.openNow ? `${SEARCH_FIELD_MASK},places.currentOpeningHours.openNow` : SEARCH_FIELD_MASK
+  );
+  const filtered = opts.openNow ? places.filter((p) => p.currentOpeningHours?.openNow) : places;
+  return filtered.map(toNearbyPlace);
 }
 
 /**
  * Unanchored Places discovery (ADR-0009): a free-text query → a list of candidate
  * places. The list-returning sibling of findPlaceFromText (which returns only the
  * single best match). Used to seed an empty trip (ADR-0010 blank-slate).
- *
- * Text Search returns the same rich fields as Nearby Search (name, address, rating,
- * coordinates), so results map straight onto the NearbyPlace shape with no distance.
  */
 export async function searchText(
   query: string,
   opts: { limit?: number } = {}
 ): Promise<NearbyPlace[]> {
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY is not set");
-
-  const params = new URLSearchParams({ query, key: apiKey });
-  const res = await fetch(`${TEXTSEARCH_BASE}?${params}`);
-  if (!res.ok) throw new Error(`Google Places API error: HTTP ${res.status}`);
-
-  const data = (await res.json()) as PlacesApiResponse;
-
-  if (data.status === "REQUEST_DENIED") {
-    throw new Error(data.error_message ?? "Google Places API request denied. Check your API key.");
-  }
-  if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
-    throw new Error(data.error_message ?? `Google Places API error: ${data.status}`);
-  }
-
-  const limit = Math.min(opts.limit ?? 20, 60);
-  return (data.results ?? []).slice(0, limit).map((r) => ({
-    placeId: r.place_id,
-    name: r.name,
-    // Text Search returns formatted_address; Nearby returns vicinity. Either lands here.
-    address: r.formatted_address ?? r.vicinity ?? "",
-    lat: r.geometry.location.lat,
-    lng: r.geometry.location.lng,
-    rating: r.rating ?? null,
-    reviewCount: r.user_ratings_total ?? null,
-    categories: r.types.filter((t) => t !== "point_of_interest" && t !== "establishment"),
-    priceLevel: r.price_level ?? null,
-    distanceMeters: null, // unanchored — no reference point for distance
-  }));
+  const places = await postSearch("searchText", {
+    textQuery: query,
+    pageSize: Math.min(opts.limit ?? 20, 20),
+  });
+  return places.map(toNearbyPlace);
 }
 
 // ─── Place Details enrichment ────────────────────────────────────────────────
@@ -132,34 +182,20 @@ export type LocationEnrichment = {
 
 type PlaceDetails = Omit<LocationEnrichment, "placeId" | "lat" | "lng">;
 
-type DetailsApiResponse = {
-  status: string;
-  result?: {
-    formatted_address?: string;
-    rating?: number;
-    user_ratings_total?: number;
-    types?: string[];
-    formatted_phone_number?: string;
-    opening_hours?: {
-      periods: Array<{
-        open: { day: number; time: string };
-        close?: { day: number; time: string };
-      }>;
-    };
-  };
+type HoursPoint = { day: number; hour: number; minute: number };
+type HoursPeriod = { open: HoursPoint; close?: HoursPoint };
+
+type DetailsResponse = {
+  formattedAddress?: string;
+  rating?: number;
+  userRatingCount?: number;
+  types?: string[];
+  nationalPhoneNumber?: string;
+  regularOpeningHours?: { periods?: HoursPeriod[] };
 };
 
-type TextSearchApiResponse = {
-  status: string;
-  results: Array<{
-    place_id: string;
-    geometry: { location: { lat: number; lng: number } };
-  }>;
-};
-
-/** Convert "HHMM" from Places API to "HH:MM". */
-function toHHMM(time: string): string {
-  return `${time.slice(0, 2)}:${time.slice(2)}`;
+function toHHMM(p: HoursPoint): string {
+  return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
 }
 
 /**
@@ -167,12 +203,13 @@ function toHHMM(time: string): string {
  * Also derives openTime/closeTime (Monday preferred) for the optimizer.
  */
 function extractWeeklyHours(
-  periods: Array<{ open: { day: number; time: string }; close?: { day: number; time: string } }>
+  periods: HoursPeriod[]
 ): { openTime: string | null; closeTime: string | null; hoursJson: Record<string, { open: string; close: string | null }> | null } {
   if (!periods.length) return { openTime: null, closeTime: null, hoursJson: null };
 
-  // 24/7: single period, day=0, time="0000", no close
-  if (periods.length === 1 && periods[0].open.time === "0000" && !periods[0].close) {
+  // 24/7: single period opening Sunday midnight with no close
+  const first = periods[0];
+  if (periods.length === 1 && first.open.day === 0 && first.open.hour === 0 && first.open.minute === 0 && !first.close) {
     const allDay = { open: "00:00", close: "23:59" };
     const hoursJson = Object.fromEntries([0,1,2,3,4,5,6].map((d) => [String(d), allDay]));
     return { openTime: "00:00", closeTime: "23:59", hoursJson };
@@ -181,8 +218,8 @@ function extractWeeklyHours(
   const hoursJson: Record<string, { open: string; close: string | null }> = {};
   for (const period of periods) {
     hoursJson[String(period.open.day)] = {
-      open: toHHMM(period.open.time),
-      close: period.close ? toHHMM(period.close.time) : null,
+      open: toHHMM(period.open),
+      close: period.close ? toHHMM(period.close) : null,
     };
   }
 
@@ -199,7 +236,7 @@ function extractWeeklyHours(
  * When lat/lng are null, searches by name alone.
  * Pass lat/lng as a geographic bias when you know the approximate area (e.g. the
  * anchor location) — this prevents name collisions for common restaurant names.
- * Returns null on ZERO_RESULTS or any error — never throws.
+ * Returns null on zero results or any error — never throws.
  */
 export async function findPlaceFromText(
   name: string,
@@ -209,20 +246,19 @@ export async function findPlaceFromText(
    *  geocode); use ~5000 when coords are only approximate (e.g. anchor hotel). */
   biasRadius = 1000
 ): Promise<{ placeId: string; lat: number; lng: number } | null> {
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey) return null;
   try {
-    const params = new URLSearchParams({ query: name, key: apiKey });
-    if (lat !== null && lng !== null) {
-      params.set("location", `${lat},${lng}`);
-      params.set("radius", String(biasRadius));
-    }
-    const res = await fetch(`${TEXTSEARCH_BASE}?${params}`);
-    if (!res.ok) return null;
-    const data = (await res.json()) as TextSearchApiResponse;
-    if (data.status !== "OK" || !data.results.length) return null;
-    const r = data.results[0];
-    return { placeId: r.place_id, lat: r.geometry.location.lat, lng: r.geometry.location.lng };
+    const places = await postSearch(
+      "searchText",
+      {
+        textQuery: name,
+        pageSize: 1,
+        ...(lat !== null && lng !== null ? { locationBias: circle(lat, lng, biasRadius) } : {}),
+      },
+      "places.id,places.location"
+    );
+    const r = places[0];
+    if (!r?.location) return null;
+    return { placeId: r.id, lat: r.location.latitude, lng: r.location.longitude };
   } catch {
     return null;
   }
@@ -233,30 +269,25 @@ export async function findPlaceFromText(
  * Returns null on failure — never throws.
  */
 export async function getPlaceDetails(placeId: string): Promise<PlaceDetails | null> {
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey) return null;
   try {
-    const params = new URLSearchParams({
-      place_id: placeId,
-      fields: "formatted_address,rating,user_ratings_total,types,formatted_phone_number,opening_hours",
-      key: apiKey,
+    const res = await fetch(`${PLACES_BASE}/places/${placeId}`, {
+      headers: {
+        "X-Goog-Api-Key": requireApiKey(),
+        "X-Goog-FieldMask":
+          "formattedAddress,rating,userRatingCount,types,nationalPhoneNumber,regularOpeningHours",
+      },
     });
-    const res = await fetch(`${DETAILS_BASE}?${params}`);
     if (!res.ok) return null;
-    const data = (await res.json()) as DetailsApiResponse;
-    if (data.status !== "OK" || !data.result) return null;
-    const r = data.result;
-    const { openTime, closeTime, hoursJson } = r.opening_hours?.periods
-      ? extractWeeklyHours(r.opening_hours.periods)
+    const r = (await res.json()) as DetailsResponse;
+    const { openTime, closeTime, hoursJson } = r.regularOpeningHours?.periods
+      ? extractWeeklyHours(r.regularOpeningHours.periods)
       : { openTime: null, closeTime: null, hoursJson: null };
     return {
-      address: r.formatted_address ?? null,
+      address: r.formattedAddress ?? null,
       rating: r.rating ?? null,
-      reviewCount: r.user_ratings_total ?? null,
-      categories: (r.types ?? []).filter(
-        (t) => t !== "point_of_interest" && t !== "establishment"
-      ),
-      phone: r.formatted_phone_number ?? null,
+      reviewCount: r.userRatingCount ?? null,
+      categories: stripGenericTypes(r.types ?? []),
+      phone: r.nationalPhoneNumber ?? null,
       openTime,
       closeTime,
       hoursJson,
