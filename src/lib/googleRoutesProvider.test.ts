@@ -135,12 +135,13 @@ mockFetch((_url, init) => {
 const polyline = await computeRoutePolyline(P(34.7, 135.5), P(35.0, 135.75), "driving");
 assert.equal(polyline, "abc123~xyz", "encoded polyline returned");
 
-// ── computeRoutePolyline: no route found throws ──
+// ── computeRoutePolyline: no route found returns null (discovery degrades gracefully — the
+//     caller falls back to another mode; only routing fails loudly, ADR-0018) ──
 mockFetch(() => ({ routes: [] }));
-await assert.rejects(
-  () => computeRoutePolyline(P(0, 0), P(0, 0), "walking"),
-  /no route found/,
-  "empty routes throws"
+assert.equal(
+  await computeRoutePolyline(P(0, 0), P(0, 0), "walking"),
+  null,
+  "empty routes returns null"
 );
 
 // ── HTTP failure throws (fail loudly) ──

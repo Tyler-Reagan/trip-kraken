@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { DerivedDay, ScheduledStop, Lodging, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import { dayColorCss, dayTextColor } from "@/lib/dayColors";
-import { GripVertical, Search, Trash2 } from "lucide-react";
+import { GripVertical, Route, Search, Trash2 } from "lucide-react";
 import { dayDropId } from "./ScheduleView";
 
 interface Props {
@@ -133,15 +133,20 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
         {day.checkInWaypoint && <AnchorRow loc={day.checkInWaypoint} role="checkin" date={day.date} />}
         <SortableContext items={day.stops.map((s) => stopDragId(s.placement.id))} strategy={verticalListSortingStrategy}>
           {day.stops.map((stop, idx) => (
-            <StopRow
-              key={stop.placement.id}
-              id={stopDragId(stop.placement.id)}
-              stop={stop}
-              index={idx}
-              dayNumber={day.dayNumber}
-              date={day.date}
-              dayOfWeek={dayOfWeek}
-            />
+            <Fragment key={stop.placement.id}>
+              <StopRow
+                id={stopDragId(stop.placement.id)}
+                stop={stop}
+                index={idx}
+                dayNumber={day.dayNumber}
+                date={day.date}
+                dayOfWeek={dayOfWeek}
+              />
+              {/* Between two consecutive stops: search the corridor between them (#102, chunk 4). */}
+              {idx < day.stops.length - 1 && (
+                <RouteConnector from={stop.location} to={day.stops[idx + 1].location} date={day.date} />
+              )}
+            </Fragment>
           ))}
         </SortableContext>
         {day.endAnchor && <AnchorRow loc={day.endAnchor} role="end" date={day.date} />}
@@ -190,6 +195,27 @@ function AnchorRow({ loc, role, date }: { loc: Lodging; role: "start" | "end" | 
         className="shrink-0 w-7 h-7 flex items-center justify-center rounded text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed hover-reveal transition-all"
       >
         <Search className="w-4 h-4" />
+      </button>
+    </li>
+  );
+}
+
+/** The hover-revealed affordance between two consecutive stops: opens along-route discovery for the
+ *  corridor between them (#102). Rendered only when both ends have coordinates — a corridor can't be
+ *  computed otherwise (the route endpoint would reject it), so there's nothing to offer. */
+function RouteConnector({ from, to, date }: { from: Location; to: Location; date: string }) {
+  const setRouteSearch = useTripStore((s) => s.setRouteSearch);
+  if (from.lat === null || to.lat === null) return null;
+  return (
+    <li className="group flex justify-center py-0.5 select-none">
+      <button
+        onClick={() => setRouteSearch({ from, to, date })}
+        title="Find places along the way between these two stops"
+        aria-label={`Find places along the way from ${from.name} to ${to.name}`}
+        className="hover-reveal flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full text-brand-600 dark:text-brand-400 hover:bg-surface-2 transition-colors"
+      >
+        <Route className="w-3 h-3" />
+        Along the way
       </button>
     </li>
   );

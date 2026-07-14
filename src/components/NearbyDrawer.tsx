@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ChevronDown, ChevronUp, Star, X } from "lucide-react";
+import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { deriveDays, type NearbyPlace } from "@/types";
 import { useTripStore } from "@/store/tripStore";
+import DiscoveryResultList, { PRICE_LABELS } from "./DiscoveryResultList";
 
 type ProviderOption = { id: string; label: string };
-
-const PRICE_LABELS = ["Free", "$", "$$", "$$$", "$$$$"];
 
 const RATING_OPTIONS = [
   { label: "Any",  value: null },
@@ -35,7 +34,6 @@ export default function NearbyDrawer() {
   const searchLocation = useTripStore((s) => s.nearbySearchLocation);
   const searchDate = useTripStore((s) => s.nearbySearchDate);
   const setSearchLocation = useTripStore((s) => s.setNearbySearchLocation);
-  const reload = useTripStore((s) => s.reload);
 
   // The day the search is anchored to: the date it was opened with, else the day this location is
   // placed on. Drives the diversity bonus and the location picker (ADR-0015 — days are derived).
@@ -46,10 +44,6 @@ export default function NearbyDrawer() {
     null;
   const anchorDate = searchDay?.date ?? searchDate ?? null;
   const dayStops = searchDay?.stops ?? [];
-
-  const existingPlaceIds = new Set(
-    (trip?.locations ?? []).map((l) => l.placeId).filter(Boolean) as string[]
-  );
 
   const [results, setResults] = useState<NearbyPlace[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -62,18 +56,8 @@ export default function NearbyDrawer() {
   const [openNow, setOpenNow] = useState(false);
   const [minRating, setMinRating] = useState<number | null>(null);
   const [priceLevels, setPriceLevels] = useState<Set<number>>(new Set());
-  const [addedIds, setAddedIds] = useState<Set<string>>(new Set(existingPlaceIds));
-  const [addingId, setAddingId] = useState<string | null>(null);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Keep addedIds in sync with trip.locations so that removing a location
-  // from the trip (e.g. via the sidebar) clears its "Added" badge here.
-  useEffect(() => {
-    setAddedIds(new Set(
-      (trip?.locations ?? []).map((l) => l.placeId).filter(Boolean) as string[]
-    ));
-  }, [trip?.locations]);
 
   if (!tripId || !trip || !searchLocation) return null;
 
@@ -136,57 +120,6 @@ export default function NearbyDrawer() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [radius, type, keyword, openNow, anchorDate, source, fetchNearby]);
-
-  async function handleAdd(place: NearbyPlace) {
-    setAddingId(place.placeId);
-    try {
-      const res = await fetch(`/api/trips/${tripId}/locations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: place.name,
-          address: place.address,
-          lat: place.lat,
-          lng: place.lng,
-          placeId: place.placeId,
-          rating: place.rating,
-          reviewCount: place.reviewCount,
-          categories: place.categories,
-        }),
-      });
-
-      if (res.status === 409) {
-        // Already in trip — still mark as added
-        setAddedIds((prev) => new Set(prev).add(place.placeId));
-        await reload();
-        return;
-      }
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error ?? "Failed to add location");
-        return;
-      }
-
-      const newLocation = await res.json();
-      setAddedIds((prev) => new Set(prev).add(place.placeId));
-
-      // If the search is anchored to a day, place the new activity on that day (ADR-0015).
-      if (anchorDate && newLocation.id) {
-        await fetch(`/api/trips/${tripId}/placements`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ locationId: newLocation.id, date: anchorDate }),
-        });
-      }
-
-      await reload();
-    } catch {
-      setError("Network error. Could not add location.");
-    } finally {
-      setAddingId(null);
-    }
-  }
 
   // Client-side post-filters (rating and price — not supported as Google API params)
   const filtered = (results ?? []).filter((p) => {
@@ -380,90 +313,13 @@ export default function NearbyDrawer() {
       </div>
 
       {/* Results */}
-      <div className="flex-1 overflow-y-auto">
-        {loading && (
-          <div className="flex items-center justify-center h-32 text-sm text-faint">
-            Loading…
-          </div>
-        )}
-
-        {!loading && error && (
-          <div className="p-4 text-sm text-danger-600 dark:text-danger-400 bg-danger-50 dark:bg-danger-950 m-4 rounded-lg">
-            {error}
-          </div>
-        )}
-
-        {!loading && !error && results !== null && filtered.length === 0 && (
-          <div className="flex items-center justify-center h-32 text-sm text-faint">
-            No results. Try a larger radius or adjust filters.
-          </div>
-        )}
-
-        {!loading && !error && results && filtered.length > 0 && (
-          <ul className="divide-y divide-line">
-            {filtered.map((place) => {
-              const isAdded = addedIds.has(place.placeId);
-              const isAdding = addingId === place.placeId;
-              const displayTypes = place.categories
-                .slice(0, 2)
-                .map((t) => t.replace(/_/g, " "));
-              const distLabel = place.distanceMeters !== null
-                ? place.distanceMeters >= 1000
-                  ? `~${(place.distanceMeters / 1000).toFixed(1)}km`
-                  : `~${place.distanceMeters}m`
-                : null;
-              return (
-                <li key={place.placeId} className="p-4 space-y-1.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="text-sm font-medium text-ink truncate">{place.name}</p>
-                        {place.priceLevel !== null && (
-                          <span className="text-xs text-sub shrink-0">
-                            {PRICE_LABELS[place.priceLevel]}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="text-xs text-faint truncate">{place.address}</p>
-                        {distLabel && (
-                          <span className="text-xs text-brand-500 dark:text-brand-400 shrink-0 font-medium">
-                            {distLabel}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleAdd(place)}
-                      disabled={isAdded || isAdding}
-                      className={`text-xs px-3 py-1.5 rounded-lg font-medium shrink-0 transition-colors
-                        ${isAdded
-                          ? "bg-surface-2 text-faint cursor-default"
-                          : "bg-brand-600 dark:bg-brand-500 text-white hover:bg-brand-700 dark:hover:bg-brand-400 disabled:opacity-50"
-                        }`}
-                    >
-                      {isAdding ? "…" : isAdded ? "Added" : "Add"}
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-sub flex-wrap">
-                    {place.rating !== null && (
-                      <span className="inline-flex items-center gap-0.5">
-                        <Star className="w-3 h-3 fill-current" />
-                        {place.rating}{place.reviewCount !== null ? ` (${place.reviewCount.toLocaleString()})` : ""}
-                      </span>
-                    )}
-                    {displayTypes.map((t) => (
-                      <span key={t} className="bg-surface-2 text-sub px-1.5 py-0.5 rounded capitalize">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
+      <DiscoveryResultList
+        results={results === null ? null : filtered}
+        loading={loading}
+        error={error}
+        anchorDate={anchorDate}
+        emptyHint="No results. Try a larger radius or adjust filters."
+      />
     </div>
   );
 }
