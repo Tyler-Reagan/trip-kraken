@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { Hotel, Map, Star, TrainFront, X } from "lucide-react";
+import { Map, Star, TrainFront } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
-import { isActivity, isLodging, isTransit, type Location, type Lodging } from "@/types";
+import { isActivity, isLodging, isTransit, type Location, type TripWithDetails } from "@/types";
+import { VariantE } from "./LodgingPrototypeVariants";
 
 /**
  * The Manifest (ADR-0015 / ADR-0010) — the trip's inventory of places, grouped by `kind`. It is the
@@ -12,50 +12,22 @@ import { isActivity, isLodging, isTransit, type Location, type Lodging } from "@
  * Inspector (open by clicking a row). The day-by-day plan is the Timeline (separate surface).
  */
 
-function LodgingRow({ lodging }: { lodging: Lodging }) {
-  const saveLodgingDates = useTripStore((s) => s.saveLodgingDates);
-  const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
-  const [checkIn, setCheckIn] = useState(lodging.checkInDate);
-  const [checkOut, setCheckOut] = useState(lodging.checkOutDate);
-  const [error, setError] = useState<string | null>(null);
-
-  async function save(nextIn: string, nextOut: string) {
-    if (!nextIn || !nextOut || nextIn === lodging.checkInDate && nextOut === lodging.checkOutDate) return;
-    const err = await saveLodgingDates(lodging.id, { checkInDate: nextIn, checkOutDate: nextOut });
-    setError(err);
-  }
-
+/**
+ * PROTOTYPE — throwaway, for ticket #113 (Multi-lodging entry & editing UX). The drag-select
+ * strip is under active iteration; see LodgingPrototypeVariants.tsx. The caption below won out
+ * over a color legend (assigned/no-lodging read as intuitive without one) and an opt-in "?" or
+ * first-touch ghost hint (a round of /prototype comparisons, since torn down).
+ */
+function LodgingSectionPrototype({ trip, activities }: { trip: TripWithDetails; activities: Location[] }) {
+  // Excluded activities are kept in the trip but intentionally out of the plan (ADR-0015) — the
+  // lodging dropdown promotes a place *into* the plan, so an excluded one shouldn't be offered.
+  const promotable = activities.filter((a) => !a.excluded);
   return (
-    <div className="card p-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-      <button
-        onClick={() => setInspectedLocationId(lodging.id)}
-        className="font-medium text-sm text-ink hover:text-brand-600 dark:hover:text-brand-400 text-left flex-1 min-w-[8rem] flex items-center gap-1.5"
-      >
-        <Hotel className="w-4 h-4 shrink-0" />
-        <span className="truncate">{lodging.name}</span>
-      </button>
-      <div className="flex items-center gap-1.5 text-sm">
-        <input
-          type="date" value={checkIn}
-          onChange={(e) => { setCheckIn(e.target.value); save(e.target.value, checkOut); }}
-          className="input py-1 text-xs w-[8.5rem]" aria-label="Check-in"
-        />
-        <span className="text-faint">→</span>
-        <input
-          type="date" value={checkOut} min={checkIn || undefined}
-          onChange={(e) => { setCheckOut(e.target.value); save(checkIn, e.target.value); }}
-          className="input py-1 text-xs w-[8.5rem]" aria-label="Check-out"
-        />
-      </div>
-      <button
-        onClick={() => saveLodgingDates(lodging.id, null)}
-        className="text-faint hover:text-danger-500 p-1"
-        title="Remove booking (back to an activity)"
-        aria-label="Remove booking"
-      >
-        <X className="w-4 h-4" />
-      </button>
-      {error && <p className="basis-full text-xs text-danger-600 dark:text-danger-400">{error}</p>}
+    <div className="space-y-2">
+      <p className="text-xs text-faint">
+        Drag across nights to add a stay · drag a block&rsquo;s edge to resize, its middle to move · click to edit or remove
+      </p>
+      <VariantE trip={trip} lodgings={trip.locations.filter(isLodging)} activities={promotable} />
     </div>
   );
 }
@@ -97,51 +69,6 @@ function ActivityRow({ loc }: { loc: Location }) {
   );
 }
 
-/** Inline form to elevate an existing activity into a lodging by giving it dates. */
-function AddLodging({ activities }: { activities: Location[] }) {
-  const saveLodgingDates = useTripStore((s) => s.saveLodgingDates);
-  const [open, setOpen] = useState(false);
-  const [locationId, setLocationId] = useState("");
-  const [checkIn, setCheckIn] = useState("");
-  const [checkOut, setCheckOut] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)} className="text-sm text-brand-600 dark:text-brand-400 hover:underline">
-        + set a place as lodging
-      </button>
-    );
-  }
-
-  async function submit() {
-    if (!locationId || !checkIn || !checkOut) { setError("Pick a place and both dates."); return; }
-    const err = await saveLodgingDates(locationId, { checkInDate: checkIn, checkOutDate: checkOut });
-    if (err) { setError(err); return; }
-    setOpen(false);
-    setLocationId(""); setCheckIn(""); setCheckOut(""); setError(null);
-  }
-
-  return (
-    <div className="card p-3 space-y-2">
-      <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className="input py-1 text-sm">
-        <option value="">Select a place…</option>
-        {activities.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-      </select>
-      <div className="flex items-center gap-1.5 text-sm">
-        <input type="date" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} className="input py-1 text-xs w-[8.5rem]" aria-label="Check-in" />
-        <span className="text-faint">→</span>
-        <input type="date" value={checkOut} min={checkIn || undefined} onChange={(e) => setCheckOut(e.target.value)} className="input py-1 text-xs w-[8.5rem]" aria-label="Check-out" />
-      </div>
-      {error && <p className="text-xs text-danger-600 dark:text-danger-400">{error}</p>}
-      <div className="flex gap-2">
-        <button onClick={submit} className="btn-primary text-xs py-1 px-3">Save</button>
-        <button onClick={() => { setOpen(false); setError(null); }} className="btn-secondary text-xs py-1 px-3">Cancel</button>
-      </div>
-    </div>
-  );
-}
-
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-2">
@@ -176,10 +103,7 @@ export default function Manifest() {
   return (
     <div className="space-y-6">
       <Group title={`Lodging${lodgings.length ? ` · ${lodgings.length}` : ""}`}>
-        <div className="space-y-2">
-          {lodgings.map((l) => <LodgingRow key={l.id} lodging={l} />)}
-          <AddLodging activities={activities} />
-        </div>
+        <LodgingSectionPrototype trip={trip} activities={activities} />
       </Group>
 
       <Group title={`Activities · ${activities.length}${excludedCount ? ` · ${excludedCount} excluded` : ""}`}>
