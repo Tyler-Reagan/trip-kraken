@@ -10,6 +10,7 @@ import OptimizeModal from "./OptimizeModal";
 import LocationInspector from "./LocationInspector";
 import AddLocationModal from "./AddLocationModal";
 import NearbyDrawer from "./NearbyDrawer";
+import AlongRouteDrawer from "./AlongRouteDrawer";
 import Manifest from "./Manifest";
 import ScheduleView from "./ScheduleView";
 import TransitEstimateCaveat from "./TransitEstimateCaveat";
@@ -49,6 +50,7 @@ export default function TripClient({ trip: initial }: Props) {
   const activeSurface = useTripStore((s) => s.activeSurface);
   const selectedDayNumber = useTripStore((s) => s.selectedDayNumber);
   const nearbySearchLocation = useTripStore((s) => s.nearbySearchLocation);
+  const routeSearch = useTripStore((s) => s.routeSearch);
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
   const mapShown = useTripStore((s) => s.mapShown);
   const mapExpanded = useTripStore((s) => s.mapExpanded);
@@ -86,8 +88,9 @@ export default function TripClient({ trip: initial }: Props) {
   // The companion region beside the itinerary shows one thing at a time, by priority:
   // an active Nearby search, else an inspected location, else the map at rest. A panel
   // takes precedence over the map and forces the region open even when the map is hidden.
-  const companion: "nearby" | "inspector" | "map" | null =
+  const companion: "nearby" | "route" | "inspector" | "map" | null =
     nearbySearchLocation ? "nearby"
+    : routeSearch ? "route"
     : inspectedLocationId ? "inspector"
     : mapShown ? "map"
     : null;
@@ -238,6 +241,7 @@ export default function TripClient({ trip: initial }: Props) {
           {companion && (
             <div className="w-full lg:w-[360px] shrink-0 lg:sticky lg:top-6 self-start">
               {companion === "nearby" && <NearbyDrawer />}
+              {companion === "route" && <AlongRouteDrawer />}
               {companion === "inspector" && <LocationInspector />}
               {companion === "map" && <MapView />}
             </div>

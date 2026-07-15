@@ -168,8 +168,13 @@ type PolylineResponse = { routes?: Array<{ polyline?: { encodedPolyline?: string
  * `describeLeg` because along-route discovery needs only the corridor shape, not
  * distance/duration/transit detail, and callers compute it once per leg to reuse
  * across several category searches (routing stays a separate seam, ADR-0018/0019).
+ *
+ * Returns `null` when Google has no route for this leg/mode. Unlike routing (which fails
+ * loudly — ADR-0018 — because a missing cost would corrupt the optimizer), a missing
+ * discovery corridor is an ordinary outcome: the caller falls back to another mode (e.g. a
+ * short urban leg has no transit route but is a walk). Genuine API/HTTP errors still throw.
  */
-export async function computeRoutePolyline(from: Point, to: Point, mode: TravelMode): Promise<string> {
+export async function computeRoutePolyline(from: Point, to: Point, mode: TravelMode): Promise<string | null> {
   const googleMode = GOOGLE_TRAVEL_MODE[mode];
   const res = await fetch(ROUTES_URL, {
     method: "POST",
@@ -189,9 +194,7 @@ export async function computeRoutePolyline(from: Point, to: Point, mode: TravelM
     throw new Error(`Google Routes API error: HTTP ${res.status} ${text}`);
   }
   const data = (await res.json()) as PolylineResponse;
-  const polyline = data.routes?.[0]?.polyline?.encodedPolyline;
-  if (!polyline) throw new Error("Google Routes API: no route found for this leg");
-  return polyline;
+  return data.routes?.[0]?.polyline?.encodedPolyline ?? null;
 }
 
 export const googleRoutesProvider: TravelCostProvider = {

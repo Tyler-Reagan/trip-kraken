@@ -5,6 +5,11 @@ import { reorderPlacements, insertPlacement } from "@/lib/placementOrdering";
 type ActiveSurface = "itinerary" | "places";
 export type ScheduleFilter = number | "unassigned" | null;
 
+/** An along-route discovery search: a free-text query scoped to the corridor between two of the
+ *  trip's stops (#102). Distinct from an anchored `nearbySearchLocation` — they're mutually
+ *  exclusive since both drive the single companion panel. `date` is the day to place adds on. */
+export type RouteSearch = { from: Location; to: Location; date: string | null };
+
 interface TripStore {
   // Data
   trip: TripWithDetails | null;
@@ -19,6 +24,7 @@ interface TripStore {
   inspectedLocationId: string | null;
   nearbySearchLocation: Location | null;
   nearbySearchDate: string | null;
+  routeSearch: RouteSearch | null;
   showOptimize: boolean;
   showAddLocation: boolean;
 
@@ -31,6 +37,7 @@ interface TripStore {
   setHighlightedLocationId: (id: string | null) => void;
   setInspectedLocationId: (id: string | null) => void;
   setNearbySearchLocation: (loc: Location | null, date?: string | null) => void;
+  setRouteSearch: (search: RouteSearch | null) => void;
   setShowOptimize: (v: boolean) => void;
   setShowAddLocation: (v: boolean) => void;
 
@@ -74,6 +81,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   inspectedLocationId: null,
   nearbySearchLocation: null,
   nearbySearchDate: null,
+  routeSearch: null,
   showOptimize: false,
   showAddLocation: false,
   isEnriching: false,
@@ -82,13 +90,16 @@ export const useTripStore = create<TripStore>()((set, get) => ({
 
   setTrip: (trip) => set({ trip, tripId: trip.id }),
   setActiveSurface: (v) =>
-    set({ activeSurface: v, inspectedLocationId: null, nearbySearchLocation: null, mapExpanded: false }),
+    set({ activeSurface: v, inspectedLocationId: null, nearbySearchLocation: null, routeSearch: null, mapExpanded: false }),
   setMapShown: (v) => set({ mapShown: v }),
   setMapExpanded: (v) => set({ mapExpanded: v }),
   setSelectedDayNumber: (n) => set({ selectedDayNumber: n, inspectedLocationId: null }),
   setHighlightedLocationId: (id) => set({ highlightedLocationId: id }),
   setInspectedLocationId: (id) => set({ inspectedLocationId: id }),
-  setNearbySearchLocation: (loc, date) => set({ nearbySearchLocation: loc, nearbySearchDate: date ?? null }),
+  // Anchored and route search share the one companion slot — opening either closes the other.
+  setNearbySearchLocation: (loc, date) =>
+    set({ nearbySearchLocation: loc, nearbySearchDate: date ?? null, routeSearch: loc ? null : get().routeSearch }),
+  setRouteSearch: (search) => set({ routeSearch: search, nearbySearchLocation: search ? null : get().nearbySearchLocation }),
   setShowOptimize: (v) => set({ showOptimize: v }),
   setShowAddLocation: (v) => set({ showAddLocation: v }),
 
