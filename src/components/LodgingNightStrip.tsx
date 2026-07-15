@@ -1,8 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { AlertTriangle, Hotel, MapPin, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AlertTriangle, Hotel, Lightbulb, MapPin, X } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
+import { clusterByMetro, type MetroCluster } from "@/lib/metroCluster";
 import {
   addDaysIso,
   lodgingCoversNight,
@@ -22,9 +24,9 @@ import {
  * common case stays a single row. Pointer events (not separate mouse/touch handlers) drive every
  * gesture, so the same interactions work with a mouse, finger, or pen.
  *
- * `NightStripWizard` previews the post-import assignment flow (#114) against fixture metro data —
- * the real per-cluster detector (#116) has no caller wired up to this component yet (#119's job),
- * so its "Save" is still a stub, not a real mutation.
+ * `NightStripWizard` (#119) runs the post-import assignment flow (#114) against #116's real
+ * per-cluster detector: one step per metro with activities but no covering lodging, each saving
+ * through the same mutations #113's manual add and the booking-confirmation importer already use.
  *
  * Nights = trip dates minus the final date (a checkout-only day has no night slept).
  */
@@ -36,11 +38,6 @@ function nightsOf(trip: TripWithDetails): IsoDate[] {
 
 const fmtNight = (d: IsoDate) =>
   new Date(d + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-
-const MOCK_METROS = [
-  { id: "osaka", name: "Osaka", activityCount: 7, suggestedNights: ["2026-08-10", "2026-08-11", "2026-08-12"] },
-  { id: "tokyo", name: "Tokyo", activityCount: 11, suggestedNights: ["2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"] },
-];
 
 const PALETTE = ["bg-brand-500", "bg-emerald-500", "bg-amber-500", "bg-violet-500", "bg-rose-500"];
 
@@ -79,38 +76,171 @@ function AssignExisting({ activities, onAssign, onCancel }: { activities: Locati
   );
 }
 
-/** Post-import wizard preview: each metro's suggested nights render as a read-only preview bar
- *  (the same visual language as the live strip) with a single name field to confirm — mirroring
- *  "drag once, name once" rather than a typed date form. */
-function NightStripWizard({ onClose }: { onClose: () => void }) {
+/** A metro whose activities have no covering lodging yet — the wizard's per-step unit, straight
+ *  off #116's real detector (no fixture, no re-derived heuristic). */
+type UncoveredMetro = MetroCluster<Location, Lodging>;
+
+// Google's formattedAddress for Japan comes back in two different orderings depending on the
+// place ("<block/chōme>, <ward>, <city>, <postal>, Japan" vs. "Japan, 〒<postal> <city>, <ward>,
+// <block>") — comma-position heuristics (e.g. "second-to-last segment") land on whichever is
+// there, which is a street-block or ward name a user wouldn't recognize on a map about as often as
+// it lands on the city. The postal code is the one token both orderings agree on, so anchor to it
+// instead: the region name always sits immediately beside it, on whichever side isn't the marker.
+const JP_POSTAL_THEN_REGION = /〒\s*\d{3}[-−]\d{4}\s+([^,]+)/;
+const REGION_THEN_JP_POSTAL = /([A-Za-z][A-Za-z\s]*?)\s*,?\s*\d{3}[-−]\d{4}/;
+const REGION_THEN_US_ZIP = /([A-Za-z][A-Za-z\s]*?)\s*,?\s*\d{5}(?:-\d{4})?\b/;
+
+/** A recognizable label for a metro: the prefecture/state-level region read off its first
+ *  activity's formatted address, not a ward or neighborhood name. Falls back to the activity's own
+ *  name if the address doesn't carry a postal code to anchor on. */
+function metroLabel(metro: UncoveredMetro): string {
+  const first = metro.activities[0];
+  const address = first?.address;
+  const fallback = first?.name ?? "this area";
+  if (!address) return fallback;
+  const region =
+    address.match(JP_POSTAL_THEN_REGION)?.[1] ??
+    address.match(REGION_THEN_JP_POSTAL)?.[1] ??
+    address.match(REGION_THEN_US_ZIP)?.[1];
+  return region?.trim() || fallback;
+}
+
+/** Post-import wizard (#114's locked contract, #119): one step per metro lacking lodging, each
+ *  skippable. No new lodging-creation path — "Import & continue" runs the real booking-
+ *  confirmation parser (#57/ADR-0010; a stand-in for whatever richer booking source arrives
+ *  later — a forwarded email, a provider integration) and "Save & continue" runs the same
+ *  `saveLodgingDates` mutation #113's manual add uses, letting the user promote one of the
+ *  places already imported into this metro (never a freshly-typed new place) into the lodging. */
+function NightStripWizard({ metros, onClose }: { metros: UncoveredMetro[]; onClose: () => void }) {
+  const importBooking = useTripStore((s) => s.importBooking);
+  const saveLodgingDates = useTripStore((s) => s.saveLodgingDates);
   const [step, setStep] = useState(0);
-  const [name, setName] = useState(MOCK_METROS[0].name + " hotel");
-  const metro = MOCK_METROS[step];
-  const done = step >= MOCK_METROS.length;
+  const [bookingText, setBookingText] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const [checkInDate, setCheckInDate] = useState("");
+  const [checkOutDate, setCheckOutDate] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const metro = metros[step];
+  const done = step >= metros.length;
+
+  function advance() {
+    setBookingText("");
+    setLocationId("");
+    setCheckInDate("");
+    setCheckOutDate("");
+    setError(null);
+    setStep((s) => s + 1);
+  }
+
+  async function handleImport() {
+    if (!bookingText.trim()) return;
+    setSaving(true);
+    const err = await importBooking(bookingText);
+    setSaving(false);
+    if (err) { setError(err); return; }
+    advance();
+  }
+
+  async function handleManualSave() {
+    if (!locationId) return;
+    // Dates-if-lodging (#114's sole hard rule): a location without both dates is never saved as
+    // lodging — surfaced as a blocking error here rather than silently no-op'ing, since the user
+    // picked a place and clearly meant to assign it.
+    if (!checkInDate || !checkOutDate) { setError("Add both a check-in and check-out date, or skip this city."); return; }
+    setSaving(true);
+    const err = await saveLodgingDates(locationId, { checkInDate, checkOutDate });
+    setSaving(false);
+    if (err) { setError(err); return; }
+    advance();
+  }
 
   return (
-    <ModalShell title="Lodging found in your import" onClose={onClose}>
+    <ModalShell title="Add lodging for your trip" onClose={onClose}>
       {done ? (
-        <p className="text-sm text-sub">All set — mocked save (no real mutation in this preview).</p>
+        <p className="text-sm text-sub">All set — skipped areas stay unassigned and can be added anytime from the night strip above.</p>
       ) : (
         <div className="space-y-3">
+          {metros.length > 1 && (
+            <div className="flex flex-wrap gap-1.5">
+              {metros.map((m, i) => (
+                <span
+                  key={i}
+                  className={`px-2 py-0.5 rounded-full text-xs ${
+                    i === step ? "bg-brand-600 text-white"
+                    : i < step ? "bg-surface-2 text-faint line-through"
+                    : "bg-surface-2 text-sub"
+                  }`}
+                >
+                  {metroLabel(m)}
+                </span>
+              ))}
+            </div>
+          )}
+
           <p className="text-sm text-sub">
             <MapPin className="w-3.5 h-3.5 inline -mt-0.5 mr-1" />
-            {metro.name} · {metro.activityCount} places with no lodging assigned yet
+            No lodging yet near <span className="text-ink font-medium">{metroLabel(metro)}</span> — {metro.activities.length} imported place{metro.activities.length !== 1 ? "s" : ""} there
           </p>
-          <div className="flex gap-0.5">
-            {metro.suggestedNights.map((n) => (
-              <div key={n} className={`h-6 flex-1 rounded-sm ${PALETTE[step % PALETTE.length]} opacity-80`} title={fmtNight(n)} />
-            ))}
+
+          {error && <p className="text-xs text-danger-600 dark:text-danger-400">{error}</p>}
+
+          <div className="space-y-1.5">
+            <label className="text-xs text-faint">Paste a booking confirmation email</label>
+            <textarea
+              value={bookingText}
+              onChange={(e) => setBookingText(e.target.value)}
+              rows={3}
+              className="input text-sm"
+              placeholder={"Property: Shibuya Grand\nCheck-in: Aug 13, 2026\nCheck-out: Aug 17, 2026"}
+            />
+            <p className="text-[11px] text-faint">We&rsquo;ll pull the property name and dates out automatically.</p>
+            <button onClick={handleImport} disabled={saving || !bookingText.trim()} className="btn-primary text-xs py-1.5 px-3 w-full disabled:opacity-40">
+              Import & continue
+            </button>
           </div>
-          <input value={name} onChange={(e) => setName(e.target.value)} className="input py-1.5 text-sm" placeholder="Property name" />
-          <div className="flex gap-2">
-            <button onClick={() => setStep(step + 1)} className="btn-secondary text-xs py-1 px-3">Skip this city</button>
-            <button onClick={() => setStep(step + 1)} className="btn-primary text-xs py-1 px-3">Save & next</button>
+
+          <div className="text-center text-xs text-faint">or</div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs text-faint">Pick one of the places you already imported</label>
+            <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className="input py-1.5 text-sm">
+              <option value="">Select a place…</option>
+              {metro.activities.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            <div className="flex items-center gap-1.5">
+              <input type="date" value={checkInDate} onChange={(e) => setCheckInDate(e.target.value)} className="input py-1 text-xs flex-1" aria-label="Check-in" />
+              <span className="text-faint text-xs">→</span>
+              <input type="date" value={checkOutDate} min={checkInDate} onChange={(e) => setCheckOutDate(e.target.value)} className="input py-1 text-xs flex-1" aria-label="Check-out" />
+            </div>
+            <button onClick={handleManualSave} disabled={saving || !locationId} className="btn-secondary text-xs py-1.5 px-3 w-full disabled:opacity-40">
+              Save & continue
+            </button>
           </div>
+
+          <button onClick={advance} className="text-xs text-faint hover:text-ink underline underline-offset-2 w-full text-center">
+            Skip this area
+          </button>
         </div>
       )}
     </ModalShell>
+  );
+}
+
+/** The soft, non-blocking nudge for a multi-day, single-metro trip with no lodging at all (#114) —
+ *  the case the cluster detector can't see, since a lone metro has nothing to compare itself
+ *  against to look "orphaned." Dismissible, never blocking; nothing here is mandatory. */
+function DurationTip({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div className="card p-3 flex items-start gap-2 text-sm">
+      <Lightbulb className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
+      <p className="flex-1 text-sub">
+        This trip spans multiple days without any lodging — if you're staying somewhere overnight, drag across the nights above to add it.
+      </p>
+      <button onClick={onDismiss} className="tap-target text-faint hover:text-ink shrink-0" aria-label="Dismiss">
+        <X className="w-3.5 h-3.5" />
+      </button>
+    </div>
   );
 }
 
@@ -147,12 +277,39 @@ export function NightStrip({ trip, lodgings, activities }: { trip: TripWithDetai
   const nights = nightsOf(trip);
   const { bars, laneCount } = laneBarsOf(nights, lodgings);
 
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // The real per-cluster detector (#116), same one the optimizer's coverage mask (#118) reads —
+  // no second heuristic for "does this metro have lodging." `activities` here is already the
+  // Manifest's promotable set (not excluded, `kind: activity`).
+  const metros = useMemo(() => clusterByMetro<Location, Lodging>(activities, lodgings), [activities, lodgings]);
+  const uncoveredMetros = useMemo(() => metros.filter((m) => m.lodgings.length === 0 && m.activities.length > 0), [metros]);
+  const isMultiDay = tripDates(trip.startDate, trip.endDate).length > 1;
+  // The single-metro case is invisible to the detector (nothing to compare it against) — call it
+  // out separately rather than folding it into `uncoveredMetros`.
+  const isSingleMetroNoLodging = metros.length === 1 && isMultiDay && lodgings.length === 0;
+
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [durationTipDismissed, setDurationTipDismissed] = useState(false);
   const [select, setSelect] = useState<{ start: number; end: number } | null>(null);
   const [pendingAssign, setPendingAssign] = useState<{ startIdx: number; endIdx: number } | null>(null);
   const [drag, setDrag] = useState<{ lodgingId: string; mode: "resize-start" | "resize-end" | "move"; anchorIdx: number; preview: { startIdx: number; endIdx: number } } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
+
+  // Post-import trigger (#119): ImportForm lands here with `?imported=1`. Runs once per landing —
+  // the ref (not just the query param) survives the router.replace below re-rendering this
+  // component before the param is gone. Nothing fires if every metro already has covering lodging.
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (firedRef.current || searchParams.get("imported") !== "1") return;
+    firedRef.current = true;
+    if (!isSingleMetroNoLodging && uncoveredMetros.length > 0) setWizardOpen(true);
+    const params = new URLSearchParams(searchParams);
+    params.delete("imported");
+    router.replace(params.size > 0 ? `?${params.toString()}` : window.location.pathname, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function idxFromClientX(x: number) {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -326,10 +483,16 @@ export function NightStrip({ trip, lodgings, activities }: { trip: TripWithDetai
         );
       })()}
 
-      <button onClick={() => setWizardOpen(true)} className="text-xs text-faint hover:text-brand-600 dark:hover:text-brand-400 underline underline-offset-2">
-        Preview: post-import wizard →
-      </button>
-      {wizardOpen && <NightStripWizard onClose={() => setWizardOpen(false)} />}
+      {isSingleMetroNoLodging && !durationTipDismissed && (
+        <DurationTip onDismiss={() => setDurationTipDismissed(true)} />
+      )}
+
+      {uncoveredMetros.length > 0 && (
+        <button onClick={() => setWizardOpen(true)} className="text-xs text-faint hover:text-brand-600 dark:hover:text-brand-400 underline underline-offset-2">
+          Assign lodging for {uncoveredMetros.length} {uncoveredMetros.length === 1 ? "city" : "cities"} →
+        </button>
+      )}
+      {wizardOpen && <NightStripWizard metros={uncoveredMetros} onClose={() => setWizardOpen(false)} />}
     </div>
   );
 }
