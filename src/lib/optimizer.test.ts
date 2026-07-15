@@ -35,10 +35,10 @@ async function main() {
 // ── Pure solver ──────────────────────────────────────────────────────────────
 
 // Empty input → empty plan.
-assert.deepEqual(await optimizeItinerary([], 3), [], "no locations → no plan");
+assert.deepEqual(await optimizeItinerary([], 3), { days: [], unplaced: [] }, "no locations → no plan");
 
 // Trip-edge routing: Day 1 runs arrival → … → departure; anchors (lodging + edges) are never stops.
-const edgePlan = await optimizeItinerary(
+const { days: edgePlan } = await optimizeItinerary(
   [
     { id: "ap", lat: 35.0, lng: 139.0 }, // arrival (one end)
     { id: "dp", lat: 35.9, lng: 139.9 }, // departure (other end)
@@ -58,7 +58,7 @@ assert.deepEqual(day1, ["s1", "s2"], "stops ordered arrival → … → departur
 
 // Travel-day routing (ADR-0005): a hotel-change day routes from where you woke (A) toward where you
 // sleep (B). Lodging A night 1, lodging B night 2 (far apart); two stops on the leg between them.
-const travelPlan = await optimizeItinerary(
+const { days: travelPlan } = await optimizeItinerary(
   [
     { id: "la", lat: 35.0, lng: 139.0 }, // lodging A (night 1)
     { id: "lb", lat: 35.0, lng: 140.0 }, // lodging B (night 2)
@@ -77,7 +77,7 @@ assert.ok(!["la", "lb"].some((id) => travelDay.includes(id)), "lodgings are not 
 assert.deepEqual(travelDay, ["m1", "m2"], "travel day routes woke A → … → sleep B");
 
 // Clustering: two tight clusters far apart over 2 days land on different days.
-const clusterPlan = await optimizeItinerary(
+const { days: clusterPlan } = await optimizeItinerary(
   [
     { id: "w1", lat: 35.0, lng: 139.0 },
     { id: "w2", lat: 35.01, lng: 139.01 },
@@ -117,13 +117,15 @@ assert.deepEqual(clean.feasibilityViolations, [], "a feasible day reports no vio
 // from the day's actual start anchor (travel time from the lodging, plus the lodging's own
 // assumed visit time), not assume arrival at dayStartMins with zero travel cost — otherwise a stop
 // only reachable late because of a long transfer from the lodging is missed entirely. Lodging
-// covers night 1 only, so Day 2's start anchor is that lodging (~90km / ~4.5h walking from the
-// far stop); Day 2's stop closes well before that travel time would land you there.
+// covers night 1 only, so Day 2's start anchor is that lodging (~45km / ~2.3h walking from the
+// far stop); Day 2's stop closes well before that travel time would land you there. Kept inside
+// the lodging's metro-coverage radius (ADR-0020, #118) — far enough to miss the window on travel
+// time alone, not so far it becomes an orphaned-metro unplaced case instead.
 const anchorTravel = await solve({
   locations: [
     { id: "lo", lat: 35.0, lng: 139.0 },
     { id: "s_near", lat: 35.0, lng: 139.01 }, // Day 1, no window — never a source of violations
-    { id: "s_far", lat: 35.0, lng: 140.0, openTime: "09:00", closeTime: "11:00" }, // Day 2
+    { id: "s_far", lat: 35.0, lng: 139.5, openTime: "09:00", closeTime: "11:00" }, // Day 2
   ],
   numDays: 2,
   stays: [{ lodgingId: "lo", startNight: 1, endNight: 1 }],
@@ -139,7 +141,7 @@ assert.equal(anchorTravel.feasibilityViolations[0].locationId, "s_far");
 // Regression (crash-bug fix, review finding): a not-yet-geocoded lodging (lat/lng default to
 // (0,0)) must never be handed to sequencing as an anchor — it's excluded from the distance
 // lookup, so using it as a dist.km/mins key would throw. Falls back to no anchor instead.
-const ungeocodedLodgingPlan = await optimizeItinerary(
+const { days: ungeocodedLodgingPlan, unplaced: ungeocodedUnplaced } = await optimizeItinerary(
   [
     { id: "lo", lat: 0, lng: 0 }, // lodging, not yet geocoded
     { id: "s1", lat: 35.0, lng: 139.0 },
@@ -148,6 +150,7 @@ const ungeocodedLodgingPlan = await optimizeItinerary(
   1,
   [{ lodgingId: "lo", startNight: 1, endNight: 1 }]
 );
+assert.deepEqual(ungeocodedUnplaced, [], "no lodging in the run is geocoded → masking stays inactive");
 assert.deepEqual(
   ungeocodedLodgingPlan[0].locationIds.slice().sort(),
   ["s1", "s2"],
@@ -191,6 +194,63 @@ await solve({
   provider: countingProvider,
 });
 assert.equal(costMatrixCalls, 1, "solve() fetches costMatrix exactly once per call");
+
+// ── Coverage masking (ADR-0020, #118) ─────────────────────────────────────────
+
+// A bedless metro (activities with no covering lodging within METRO_CLUSTER_RADIUS_METERS) can't
+// be placed at all: its activities come back `unplaced` with a reason, never crammed onto a day.
+const { days: bedlessDays, unplaced: bedlessUnplaced } = await optimizeItinerary(
+  [
+    { id: "hotelOsaka", lat: 34.6937, lng: 135.5023 },
+    { id: "osaka1", lat: 34.7, lng: 135.51 },
+    { id: "osaka2", lat: 34.69, lng: 135.5 },
+    { id: "tokyo1", lat: 35.6762, lng: 139.6503 }, // ~400km from the only lodging — orphaned metro
+    { id: "tokyo2", lat: 35.68, lng: 139.66 },
+  ],
+  3,
+  [{ lodgingId: "hotelOsaka", startNight: 1, endNight: 3 }]
+);
+assert.deepEqual(
+  bedlessUnplaced.map((u) => u.locationId).sort(),
+  ["tokyo1", "tokyo2"],
+  "the Tokyo activities are unplaced — no lodging covers that metro"
+);
+assert.ok(
+  bedlessDays.every((d) => !d.locationIds.includes("tokyo1") && !d.locationIds.includes("tokyo2")),
+  "unplaced activities never receive a day assignment"
+);
+assert.deepEqual(
+  new Set(bedlessDays.flatMap((d) => d.locationIds)),
+  new Set(["osaka1", "osaka2"]),
+  "the covered metro's activities are placed as usual"
+);
+
+// A multi-lodging trip (Tokyo nights 1-3, Osaka nights 4-6) scopes each metro's activities to its
+// own eligible-day mask: a Tokyo activity can land on the travel day (4) but never on a
+// pure-Osaka day, and vice versa. No activity here is unplaced — both metros have a bed.
+const { days: multiDays, unplaced: multiUnplaced } = await optimizeItinerary(
+  [
+    { id: "hotelTokyo", lat: 35.6762, lng: 139.6503 },
+    { id: "hotelOsaka", lat: 34.6937, lng: 135.5023 },
+    { id: "t1", lat: 35.68, lng: 139.66 },
+    { id: "t2", lat: 35.67, lng: 139.64 },
+    { id: "o1", lat: 34.7, lng: 135.51 },
+    { id: "o2", lat: 34.69, lng: 135.5 },
+  ],
+  6,
+  [
+    { lodgingId: "hotelTokyo", startNight: 1, endNight: 3 },
+    { lodgingId: "hotelOsaka", startNight: 4, endNight: 6 },
+  ]
+);
+assert.deepEqual(multiUnplaced, [], "both metros have a covering lodging — nothing is unplaced");
+const dayNumberOfPlan = (id: string) => multiDays.find((p) => p.locationIds.includes(id))!.dayNumber;
+for (const t of ["t1", "t2"]) {
+  assert.ok([1, 2, 3, 4].includes(dayNumberOfPlan(t)), `${t} lands within Tokyo's eligible days (1-4)`);
+}
+for (const o of ["o1", "o2"]) {
+  assert.ok([4, 5, 6].includes(dayNumberOfPlan(o)), `${o} lands within Osaka's eligible days (4-6)`);
+}
 
 // ── optimizeTrip orchestrator (over a temp DB) ────────────────────────────────
 

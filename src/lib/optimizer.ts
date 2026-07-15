@@ -30,6 +30,14 @@
  * clustering's centroid distance stays on its own local, synchronous math (a centroid is a synthetic
  * point, not a real place a travel-cost provider has any business being asked about), and once the
  * matrix is fetched, sequencing itself reads from it synchronously — only `optimizeItinerary` awaits.
+ *
+ * Multi-lodging coverage masking (ADR-0020, #118): before Phase 1, activities are geo-clustered
+ * into metros (`metroCluster.ts`, #116) and each metro is matched to its covering lodging(s), which
+ * derive a per-activity *eligible-day mask* — the days k-means may assign that activity to. A metro
+ * with no covering lodging can't be placed at all; its activities surface as `unplaced` instead of
+ * being crammed onto an arbitrary day. Masking is inactive when no lodging in the run has real
+ * coordinates — nothing to derive coverage from, so single/no-lodging trips behave exactly as
+ * before (the degenerate one-metro-all-days-eligible case).
  */
 
 import {
@@ -47,6 +55,7 @@ import {
   type TravelMode,
   type TravelCostProvider,
 } from "@/lib/travelCost";
+import { clusterByMetro } from "@/lib/metroCluster";
 
 // No per-location travel-mode data exists yet; every sequencing query uses one mode until that
 // changes (a category-A quality improvement, docs/optimizer-rebuild.md — not this slice).
@@ -89,6 +98,20 @@ export interface DayPlan {
   startAnchor: LocationInput | null;
 }
 
+/** An activity that got no `Placement` because its metro has no covering lodging (ADR-0020, #118)
+ * — a hard coverage violation, distinct from ADR-0017's `feasibilityViolations` (which are
+ * arrangement problems on *placed* stops, and carry a `dayNumber`; a coverage gap has neither —
+ * add a bed and it places, with no day of its own to have violated). */
+export interface Unplaced {
+  locationId: string;
+  reason: string;
+}
+
+export interface OptimizeItineraryResult {
+  days: DayPlan[];
+  unplaced: Unplaced[];
+}
+
 export async function optimizeItinerary(
   locations: LocationInput[],
   numDays: number,
@@ -108,8 +131,8 @@ export async function optimizeItinerary(
    * optimize run costs one costMatrix round trip, not two (#82). Undefined (the common/test-only
    * case) falls back to fetching it here. */
   precomputedDist?: DistanceLookup
-): Promise<DayPlan[]> {
-  if (locations.length === 0) return [];
+): Promise<OptimizeItineraryResult> {
+  if (locations.length === 0) return { days: [], unplaced: [] };
 
   const days = numDays > 0 ? numDays : 1;
   const byId = new Map(locations.map((l) => [l.id, l]));
@@ -164,25 +187,80 @@ export async function optimizeItinerary(
   const valid = pool.filter(hasValidCoords);
   const invalid = pool.filter((l) => !hasValidCoords(l));
 
+  // Coverage masking (ADR-0020, #118): geo-cluster `valid` into metros (#116) and match each to
+  // its covering lodging(s); an activity's mask is the union of its metro's lodging(s)' eligible
+  // days (§2/§3 of #115's resolution). An orphaned metro (no covering lodging) can't be placed —
+  // its activities go to `unplaced` and never reach k-means. Only lodgings with real coordinates
+  // count — an ungeocoded one can't establish geographic coverage (same convention as the anchor
+  // resolution above), so a trip with no *geocoded* lodging skips masking entirely: `placeable`
+  // stays `valid` and every day is eligible for everyone, exactly today's behavior.
+  const lodgingPoints = [...new Map(stays.map((s) => [s.lodgingId, byId.get(s.lodgingId)])).values()].filter(
+    (l): l is LocationInput => !!l && hasValidCoords(l)
+  );
+
+  const unplaced: Unplaced[] = [];
+  let placeable = valid;
+  let masks: Map<string, Set<number>> | undefined;
+
+  if (lodgingPoints.length > 0) {
+    // eligibleDays(L) = { d : lodgingOnNight(d) == L OR lodgingOnNight(d-1) == L }, which for one
+    // contiguous stay collapses to the single clipped range [startNight, endNight+1] — no need to
+    // scan every day against lodgingOnNight.
+    const eligibleDaysOf = (lodgingId: string): Set<number> => {
+      const stay = stays.find((s) => s.lodgingId === lodgingId)!;
+      const eligible = new Set<number>();
+      for (let d = Math.max(1, stay.startNight); d <= Math.min(days, stay.endNight + 1); d++) eligible.add(d);
+      return eligible;
+    };
+
+    masks = new Map();
+    for (const metro of clusterByMetro(valid, lodgingPoints)) {
+      if (metro.lodgings.length === 0) {
+        for (const a of metro.activities) {
+          unplaced.push({ locationId: a.id, reason: "No lodging covers this area of the trip." });
+        }
+        continue;
+      }
+      const mask = new Set<number>();
+      for (const l of metro.lodgings) for (const d of eligibleDaysOf(l.id)) mask.add(d);
+      for (const a of metro.activities) masks.set(a.id, mask);
+    }
+    placeable = valid.filter((l) => masks!.has(l.id));
+  }
+
   // One upfront batch fetch (ADR-0004/O2) covering every point sequencing could ever need this run
   // (stops + all lodging/edge anchors) — every haversine/travel query below reads it synchronously.
   // Reuses the caller's lookup when one is passed in (#82) instead of fetching a second costMatrix.
   const validForDist = locations.filter(hasValidCoords);
   const dist = precomputedDist ?? (await buildDistanceLookup(provider, validForDist, mode, { departureTime }));
 
-  // Fewer locations than days: one per day, anchored at that day's lodging.
-  if (valid.length <= days) {
+  // Fewer locations than days: one per day, anchored at that day's lodging. Greedily prefers each
+  // location's own eligible days (when masked) over plain positional order, so a coverage mask is
+  // honored even in this small-N path; with no mask this reduces to the original positional fill.
+  if (placeable.length <= days) {
+    const usedDays = new Set<number>();
+    const dayOf = new Map<string, number>();
+    for (const loc of placeable) {
+      const mask = masks?.get(loc.id);
+      const preferred = mask ? [...mask].find((d) => !usedDays.has(d - 1)) : undefined;
+      const day = preferred != null ? preferred - 1 : Array.from({ length: days }, (_, d) => d).find((d) => !usedDays.has(d))!;
+      usedDays.add(day);
+      dayOf.set(loc.id, day);
+    }
+
     const plans: DayPlan[] = [];
     for (let d = 0; d < days; d++) {
-      const ordered = sequenceDay(valid[d] ? [valid[d]] : [], seqStart[d] ?? undefined, dayStartMins, dist, seqEnd[d] ?? undefined);
+      const loc = placeable.find((l) => dayOf.get(l.id) === d) ?? null;
+      const ordered = sequenceDay(loc ? [loc] : [], seqStart[d] ?? undefined, dayStartMins, dist, seqEnd[d] ?? undefined);
       plans.push({ dayNumber: d + 1, locationIds: ordered.map((l) => l.id), startAnchor: seqStart[d] ?? null });
     }
     if (invalid.length > 0) plans[plans.length - 1].locationIds.push(...invalid.map((l) => l.id));
-    return plans;
+    return { days: plans, unplaced };
   }
 
-  // Phase 1: k-means clustering of stops, centroids tethered toward each lodging.
-  const clusters = kMeans(valid, days, dayAnchor, dayBudgetMinutes);
+  // Phase 1: k-means clustering of stops, centroids tethered toward each lodging and (when
+  // masked) restricted to each activity's eligible days.
+  const clusters = kMeans(placeable, days, dayAnchor, dayBudgetMinutes, masks);
 
   // Phase 2: per day, sequence its stops between the day's woke/sleep anchors.
   const plans: DayPlan[] = clusters.map((cluster, d) => {
@@ -195,7 +273,7 @@ export async function optimizeItinerary(
     plans[i % plans.length].locationIds.push(loc.id);
   });
 
-  return plans;
+  return { days: plans, unplaced };
 }
 
 /**
@@ -280,7 +358,12 @@ function kMeans(
   locations: LocationInput[],
   k: number,
   anchors: (LocationInput | null)[],
-  dayBudgetMinutes?: number
+  dayBudgetMinutes?: number,
+  /** Per-activity eligible-day masks (ADR-0020, #118), 1-based day numbers. A location absent from
+   * the map (or `undefined` altogether, the no-lodging-in-run case) is unrestricted — every day is
+   * a candidate, exactly the pre-masking behavior. Every masked location's mask is guaranteed
+   * non-empty by the caller (an empty mask means "unplaced," never "clustered anyway"). */
+  masks?: Map<string, Set<number>>
 ): LocationInput[][] {
   const centroids = seedCentroids(locations, k, anchors);
   let assignments = new Array<number>(locations.length).fill(0);
@@ -294,7 +377,7 @@ function kMeans(
       : undefined;
 
     const newAssignments = locations.map((loc) =>
-      nearestCentroidIndex(loc, centroids, dayDurations, dayBudgetMinutes)
+      nearestCentroidIndex(loc, centroids, dayDurations, dayBudgetMinutes, masks?.get(loc.id))
     );
 
     const changed = newAssignments.some((a, i) => a !== assignments[i]);
@@ -361,11 +444,15 @@ function nearestCentroidIndex(
   loc: LocationInput,
   centroids: Centroid[],
   dayDurations?: number[],
-  dayBudgetMinutes?: number
+  dayBudgetMinutes?: number,
+  /** This activity's eligible-day mask (ADR-0020, #118), 1-based — `undefined` means unrestricted. */
+  mask?: Set<number>
 ): number {
   let best = 0;
   let bestCost = Infinity;
   centroids.forEach((c, i) => {
+    if (mask && !mask.has(i + 1)) return; // day i+1 isn't one this activity may be assigned to
+
     let cost = haversineKm(loc, c);
 
     // Feasibility penalty (ADR-0001 #1) — geographic proximity stays dominant; this nudges stops

@@ -83,20 +83,35 @@ function scattered(center: { lat: number; lng: number }, count: number): Activit
 
   assert.equal(clusters.length, 2);
   for (const c of clusters) {
-    assert.ok(c.lodging, "every cluster here has a covering lodging within the metro radius");
+    assert.equal(c.lodgings.length, 1, "every cluster here has exactly one covering lodging");
   }
   const osakaCluster = clusters.find((c) => c.activities[0].lat! < 35)!;
-  assert.equal(osakaCluster.lodging!.id, osakaLodging.id, "cluster matched to the lodging in its own metro");
+  assert.equal(osakaCluster.lodgings[0].id, osakaLodging.id, "cluster matched to the lodging in its own metro");
 }
 
-// ── No covering lodging → null, not a false match to a distant one ─────────
+// ── Multiple lodgings covering the same metro all match (union, not "the" lodging) ──
+
+{
+  const hotelA = lodging(OSAKA.lat, OSAKA.lng);
+  const hotelB = lodging(OSAKA.lat + 0.02, OSAKA.lng + 0.02); // a mid-stay hotel change, same metro
+  const clusters = clusterByMetro(scattered(OSAKA, 5), [hotelA, hotelB]);
+
+  assert.equal(clusters.length, 1);
+  assert.deepEqual(
+    clusters[0].lodgings.map((l) => l.id).sort(),
+    [hotelA.id, hotelB.id].sort(),
+    "both lodgings in the same metro match, not just the nearest one"
+  );
+}
+
+// ── No covering lodging → empty, not a false match to a distant one ────────
 
 {
   const farLodging = lodging(TOKYO.lat, TOKYO.lng);
   const clusters = clusterByMetro(scattered(OSAKA, 4), [farLodging]);
 
   assert.equal(clusters.length, 1);
-  assert.equal(clusters[0].lodging, null, "a lodging outside the metro radius is not a match");
+  assert.deepEqual(clusters[0].lodgings, [], "a lodging outside the metro radius is not a match");
 }
 
 // ── Activities without real coordinates are excluded, not clustered as (0,0) ─
