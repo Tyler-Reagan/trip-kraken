@@ -111,10 +111,16 @@ function metroLabel(metro: UncoveredMetro): string {
  *  later — a forwarded email, a provider integration) and "Save & continue" runs the same
  *  `saveLodgingDates` mutation #113's manual add uses, letting the user promote one of the
  *  places already imported into this metro (never a freshly-typed new place) into the lodging. */
+/** Whether each prior step ended in an assigned lodging or a skip — tracked purely so the
+ *  closing screen can recap what happened instead of closing silently (see the chip row itself,
+ *  below, for why a silent "all set" wasn't enough of a signal on its own). */
+type StepOutcome = "assigned" | "skipped";
+
 function NightStripWizard({ metros, onClose }: { metros: UncoveredMetro[]; onClose: () => void }) {
   const importBooking = useTripStore((s) => s.importBooking);
   const saveLodgingDates = useTripStore((s) => s.saveLodgingDates);
   const [step, setStep] = useState(0);
+  const [outcomes, setOutcomes] = useState<StepOutcome[]>([]);
   const [bookingText, setBookingText] = useState("");
   const [locationId, setLocationId] = useState("");
   const [checkInDate, setCheckInDate] = useState("");
@@ -124,12 +130,13 @@ function NightStripWizard({ metros, onClose }: { metros: UncoveredMetro[]; onClo
   const metro = metros[step];
   const done = step >= metros.length;
 
-  function advance() {
+  function advance(outcome: StepOutcome) {
     setBookingText("");
     setLocationId("");
     setCheckInDate("");
     setCheckOutDate("");
     setError(null);
+    setOutcomes((o) => [...o, outcome]);
     setStep((s) => s + 1);
   }
 
@@ -139,7 +146,7 @@ function NightStripWizard({ metros, onClose }: { metros: UncoveredMetro[]; onClo
     const err = await importBooking(bookingText);
     setSaving(false);
     if (err) { setError(err); return; }
-    advance();
+    advance("assigned");
   }
 
   async function handleManualSave() {
@@ -152,27 +159,48 @@ function NightStripWizard({ metros, onClose }: { metros: UncoveredMetro[]; onClo
     const err = await saveLodgingDates(locationId, { checkInDate, checkOutDate });
     setSaving(false);
     if (err) { setError(err); return; }
-    advance();
+    advance("assigned");
   }
 
   return (
     <ModalShell title="Add lodging for your trip" onClose={onClose}>
       {done ? (
-        <p className="text-sm text-sub">All set — skipped areas stay unassigned and can be added anytime from the night strip above.</p>
+        <div className="space-y-3">
+          <ul className="space-y-1.5">
+            {metros.map((m, i) => {
+              const assigned = outcomes[i] === "assigned";
+              return (
+                <li key={i} className="flex items-start gap-2 text-sm">
+                  <span className={`w-3.5 shrink-0 mt-0.5 text-center ${assigned ? "text-brand-600 dark:text-brand-400" : "text-faint"}`}>
+                    {assigned ? "✓" : "–"}
+                  </span>
+                  <span className={assigned ? "text-ink" : "text-sub"}>
+                    <span className="font-medium">{metroLabel(m)}</span>
+                    {assigned
+                      ? " — lodging added"
+                      : ` — skipped, ${m.activities.length} place${m.activities.length !== 1 ? "s" : ""} still unassigned`}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-sm text-sub">Skipped areas stay unassigned and can be added anytime from the night strip above.</p>
+        </div>
       ) : (
         <div className="space-y-3">
           {metros.length > 1 && (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-2">
               {metros.map((m, i) => (
                 <span
                   key={i}
-                  className={`px-2 py-0.5 rounded-full text-xs ${
-                    i === step ? "bg-brand-600 text-white"
-                    : i < step ? "bg-surface-2 text-faint line-through"
-                    : "bg-surface-2 text-sub"
+                  className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all ${
+                    i === step ? "bg-brand-600 text-white text-sm font-medium ring-2 ring-brand-500/30 scale-105"
+                    : i < step ? "bg-surface-2 text-faint text-xs line-through"
+                    : "bg-surface-2 text-sub text-xs border border-line-strong"
                   }`}
                 >
                   {metroLabel(m)}
+                  <span className={`text-numeral ${i === step ? "text-[11px]" : "text-[10px]"} opacity-90`}>{m.activities.length}</span>
                 </span>
               ))}
             </div>
@@ -218,7 +246,7 @@ function NightStripWizard({ metros, onClose }: { metros: UncoveredMetro[]; onClo
             </button>
           </div>
 
-          <button onClick={advance} className="text-xs text-faint hover:text-ink underline underline-offset-2 w-full text-center">
+          <button onClick={() => advance("skipped")} className="text-xs text-faint hover:text-ink underline underline-offset-2 w-full text-center">
             Skip this area
           </button>
         </div>
