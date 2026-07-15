@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { DuplicateTripPrompt, type DuplicateTrip } from "./DuplicateTripPrompt";
 
 export default function NewTripForm() {
   const router = useRouter();
@@ -10,24 +11,38 @@ export default function NewTripForm() {
   const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the server finds an existing trip with this same name (#119 follow-up) — the form
+  // parks here instead of silently creating a second indistinguishable trip.
+  const [duplicate, setDuplicate] = useState<{ existingTrips: DuplicateTrip[]; suggestedName: string } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function clearDuplicate() {
+    setDuplicate(null);
+  }
+
+  async function submitCreate(overrides?: { onDuplicate?: "rename" | "overwrite"; replaceTripId?: string; name?: string }) {
     setError(null);
-    if (!startDate || !endDate || startDate > endDate) {
-      setError("Pick a start and end date (start on or before end).");
-      return;
-    }
     setLoading(true);
-
     try {
       const res = await fetch("/api/trips", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() || undefined, startDate, endDate }),
+        body: JSON.stringify({
+          name: (overrides?.name ?? name).trim() || undefined,
+          startDate,
+          endDate,
+          ...(overrides?.onDuplicate ? { onDuplicate: overrides.onDuplicate } : {}),
+          ...(overrides?.replaceTripId ? { replaceTripId: overrides.replaceTripId } : {}),
+        }),
       });
-
       const data = await res.json();
+
+      if (res.status === 409 && data.duplicate) {
+        setDuplicate({ existingTrips: data.existingTrips, suggestedName: data.suggestedName });
+        setRenameValue(data.suggestedName);
+        setLoading(false);
+        return;
+      }
       if (!res.ok) {
         setError(data.error ?? "Something went wrong.");
         setLoading(false);
@@ -40,6 +55,26 @@ export default function NewTripForm() {
       setError("Network error. Please try again.");
       setLoading(false);
     }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!startDate || !endDate || startDate > endDate) {
+      setError("Pick a start and end date (start on or before end).");
+      return;
+    }
+    await submitCreate();
+  }
+
+  function handleCreateRenamed() {
+    submitCreate({ onDuplicate: "rename", name: renameValue });
+  }
+
+  function handleOverwrite() {
+    if (!duplicate) return;
+    const mostRecent = duplicate.existingTrips[0];
+    submitCreate({ onDuplicate: "overwrite", replaceTripId: mostRecent.id, name: name.trim() || mostRecent.name });
   }
 
   return (
@@ -62,7 +97,7 @@ export default function NewTripForm() {
             type="text"
             placeholder="Tokyo week"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => { setName(e.target.value); clearDuplicate(); }}
             className="input"
           />
         </div>
@@ -72,13 +107,13 @@ export default function NewTripForm() {
             <label htmlFor="trip-start" className="text-sm font-medium text-ink">
               Start date
             </label>
-            <input id="trip-start" type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className="input" />
+            <input id="trip-start" type="date" required value={startDate} onChange={(e) => { setStartDate(e.target.value); clearDuplicate(); }} className="input" />
           </div>
           <div className="space-y-1.5">
             <label htmlFor="trip-end" className="text-sm font-medium text-ink">
               End date
             </label>
-            <input id="trip-end" type="date" required value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} className="input" />
+            <input id="trip-end" type="date" required value={endDate} min={startDate || undefined} onChange={(e) => { setEndDate(e.target.value); clearDuplicate(); }} className="input" />
           </div>
         </div>
 
@@ -88,9 +123,22 @@ export default function NewTripForm() {
           </p>
         )}
 
-        <button type="submit" disabled={loading} className="btn-primary w-full">
-          {loading ? "Creating…" : "Create trip"}
-        </button>
+        {duplicate ? (
+          <DuplicateTripPrompt
+            existingTrips={duplicate.existingTrips}
+            renameValue={renameValue}
+            onRenameChange={setRenameValue}
+            confirmLabel="Create"
+            onConfirmRenamed={handleCreateRenamed}
+            onOverwrite={handleOverwrite}
+            onCancel={clearDuplicate}
+            loading={loading}
+          />
+        ) : (
+          <button type="submit" disabled={loading} className="btn-primary w-full">
+            {loading ? "Creating…" : "Create trip"}
+          </button>
+        )}
       </form>
     </div>
   );

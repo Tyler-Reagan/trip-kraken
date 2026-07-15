@@ -1,18 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createTripWithLocations } from "@/lib/db";
+import { createTripWithLocations, deleteTrip, checkTripNameCollision } from "@/lib/db";
 import { extractMid, fetchKml, extractKmlDocumentName } from "@/lib/myMaps";
 import { parseKml } from "@/lib/parsers/kml";
 import { enqueueLocationEnrichment } from "@/lib/enrichmentQueue";
 
 export async function POST(req: NextRequest) {
-  let body: { url?: string; name?: string; startDate?: string; endDate?: string };
+  let body: {
+    url?: string;
+    name?: string;
+    startDate?: string;
+    endDate?: string;
+    onDuplicate?: "rename" | "overwrite";
+    replaceTripId?: string;
+  };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { url, name, startDate, endDate } = body;
+  const { url, name, startDate, endDate, onDuplicate, replaceTripId } = body;
   if (!url || typeof url !== "string") {
     return NextResponse.json({ error: "url is required" }, { status: 400 });
   }
@@ -65,6 +72,18 @@ export async function POST(req: NextRequest) {
     name?.trim() ||
     extractKmlDocumentName(kmlText) ||
     `Trip – ${new Date().toLocaleDateString()}`;
+
+  // Guards on `name`, the field a person actually reads on the homepage — not `Trip.id` (a random
+  // UUID that never collides) and not the map's `mid` (too narrow: it missed the ordinary case of
+  // two unrelated imports, or a blank-trip and an import, landing on the same name). Skipped once
+  // the client has already chosen how to proceed (`onDuplicate` set).
+  if (!onDuplicate) {
+    const collision = checkTripNameCollision(tripName);
+    if (collision) return NextResponse.json(collision, { status: 409 });
+  }
+  if (onDuplicate === "overwrite" && replaceTripId) {
+    deleteTrip(replaceTripId);
+  }
 
   const trip = createTripWithLocations({
     name: tripName,

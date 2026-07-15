@@ -7,6 +7,7 @@ import type { LocationEnrichment } from "@/lib/places";
 import type { ParsedBooking } from "@/lib/bookingImport";
 import type { TravelMode } from "@/lib/travelCost";
 import { reorderPlacements, insertPlacement } from "@/lib/placementOrdering";
+import { dedupeName } from "@/lib/dedupeName";
 
 /**
  * Repository layer (ADR-0008, reshaped by ADR-0015). The schema lives in ./schema.ts and is applied
@@ -145,6 +146,30 @@ export function getDayCategories(tripId: string, date: IsoDate): string[] {
 }
 
 // ─── Trip mutations ─────────────────────────────────────────────────────────
+
+export interface TripNameCollision {
+  duplicate: true;
+  existingTrips: { id: string; name: string; createdAt: Date; locationCount: number }[];
+  suggestedName: string;
+}
+
+/**
+ * Guards trip creation against silently producing indistinguishable trips. `Trip.id` is a random
+ * UUID — it never collides, so it was never actually the identity a duplicate check should key
+ * off. `name` is the one field a person actually reads on the homepage, so that's the collision
+ * that matters (whether the create came from a blank-trip form or a My Maps re-import); this check
+ * is shared by both call sites rather than each re-deriving its own notion of "the same trip."
+ */
+export function checkTripNameCollision(name: string): TripNameCollision | null {
+  const trips = listTrips();
+  const matches = trips.filter((t) => t.name === name);
+  if (matches.length === 0) return null;
+  return {
+    duplicate: true,
+    existingTrips: matches.map((t) => ({ id: t.id, name: t.name, createdAt: t.createdAt, locationCount: t._count.locations })),
+    suggestedName: dedupeName(name, trips.map((t) => t.name)),
+  };
+}
 
 export function createTripWithLocations(data: {
   name: string;
