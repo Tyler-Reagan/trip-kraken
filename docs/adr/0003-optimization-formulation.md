@@ -4,7 +4,9 @@
 - **Date:** 2026-06-23
 - **Supersedes:** —
 - **Superseded by:** —
-- **Amended by:** ADR-0015 (inputs are constraint fields; output is `Placement`s; locks removed)
+- **Amended by:** ADR-0015 (inputs are constraint fields; output is `Placement`s; locks removed),
+  ADR-0020 (default solver's clustering gains lodging-derived per-activity eligible-day masks + a
+  per-cluster coverage check + an `unplaced` output)
 - **Constrained by:** ADR-0001 (objective), ADR-0005 (topology), ADR-0006 (locks)
 - **Depends on:** ADR-0004 (travel cost)
 

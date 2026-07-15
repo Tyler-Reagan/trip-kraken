@@ -28,6 +28,7 @@ import {
   type StayPlan,
   type EdgeAnchors,
   type DayPlan,
+  type Unplaced,
 } from "@/lib/optimizer";
 import { windowPenaltyKm, dayBudgetPenaltyKm, DEFAULT_VISIT_MINS } from "@/lib/objective";
 import {
@@ -73,6 +74,10 @@ export interface FeasibilityViolation {
 export interface Itinerary {
   days: DayPlan[];
   feasibilityViolations: FeasibilityViolation[];
+  /** ADR-0020 (#118): activities whose metro has no covering lodging, so the masked clustering
+   * gave them no day to land on — a coverage violation, not an arrangement one. Plumbing only, like
+   * `feasibilityViolations` — nothing acts on it yet; it exists so a caller can. */
+  unplaced: Unplaced[];
 }
 
 export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
@@ -98,7 +103,7 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
   const validForDist = locations.filter(hasValidCoords);
   const dist = await buildDistanceLookup(provider, validForDist, mode, { departureTime });
 
-  const days = await optimizeItinerary(
+  const { days, unplaced } = await optimizeItinerary(
     locations,
     numDays,
     stays,
@@ -117,7 +122,7 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
     evaluateDayFeasibility(d, byId, dist.mins, dayStartMins, dayBudgetMinutes)
   );
 
-  return { days, feasibilityViolations };
+  return { days, feasibilityViolations, unplaced };
 }
 
 function evaluateDayFeasibility(

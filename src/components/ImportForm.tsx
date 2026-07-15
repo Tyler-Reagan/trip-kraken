@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { DuplicateTripPrompt, type DuplicateTrip } from "./DuplicateTripPrompt";
 
 export default function ImportForm() {
   const router = useRouter();
@@ -11,6 +12,53 @@ export default function ImportForm() {
   const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the server recognizes `url`'s map ID from an earlier import (#119 follow-up) — the
+  // form parks here instead of silently creating another near-duplicate trip.
+  const [duplicate, setDuplicate] = useState<{ existingTrips: DuplicateTrip[]; suggestedName: string } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  function clearDuplicate() {
+    setDuplicate(null);
+  }
+
+  async function submitImport(overrides?: { onDuplicate?: "rename" | "overwrite"; replaceTripId?: string; name?: string }) {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: url.trim(),
+          name: (overrides?.name ?? name).trim() || undefined,
+          startDate,
+          endDate,
+          ...(overrides?.onDuplicate ? { onDuplicate: overrides.onDuplicate } : {}),
+          ...(overrides?.replaceTripId ? { replaceTripId: overrides.replaceTripId } : {}),
+        }),
+      });
+      const data = await res.json();
+
+      if (res.status === 409 && data.duplicate) {
+        setDuplicate({ existingTrips: data.existingTrips, suggestedName: data.suggestedName });
+        setRenameValue(data.suggestedName);
+        setLoading(false);
+        return;
+      }
+      if (!res.ok) {
+        setError(data.error ?? "Something went wrong.");
+        setLoading(false);
+        return;
+      }
+
+      // `imported=1` lets the trip view trigger the post-import lodging wizard once (#119); it
+      // strips the param off the URL itself after firing.
+      router.push(`/trips/${data.id}?imported=1`);
+    } catch {
+      setError("Network error. Please try again.");
+      setLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -19,28 +67,17 @@ export default function ImportForm() {
       setError("Pick a start and end date (start on or before end).");
       return;
     }
-    setLoading(true);
+    await submitImport();
+  }
 
-    try {
-      const res = await fetch("/api/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim(), name: name.trim() || undefined, startDate, endDate }),
-      });
+  function handleImportRenamed() {
+    submitImport({ onDuplicate: "rename", name: renameValue });
+  }
 
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Something went wrong.");
-        setLoading(false);
-        return;
-      }
-
-      // Lodging is set in the trip view via the Stay editor (ADR-0005).
-      router.push(`/trips/${data.id}`);
-    } catch {
-      setError("Network error. Please try again.");
-      setLoading(false);
-    }
+  function handleOverwrite() {
+    if (!duplicate) return;
+    const mostRecent = duplicate.existingTrips[0];
+    submitImport({ onDuplicate: "overwrite", replaceTripId: mostRecent.id, name: name.trim() || mostRecent.name });
   }
 
   return (
@@ -63,7 +100,7 @@ export default function ImportForm() {
             required
             placeholder="https://www.google.com/maps/d/viewer?mid=..."
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => { setUrl(e.target.value); clearDuplicate(); }}
             className="input"
           />
         </div>
@@ -78,7 +115,7 @@ export default function ImportForm() {
             type="text"
             placeholder="Tokyo week"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => { setName(e.target.value); clearDuplicate(); }}
             className="input"
           />
         </div>
@@ -88,13 +125,13 @@ export default function ImportForm() {
             <label htmlFor="import-start" className="text-sm font-medium text-ink">
               Start date
             </label>
-            <input id="import-start" type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className="input" />
+            <input id="import-start" type="date" required value={startDate} onChange={(e) => { setStartDate(e.target.value); clearDuplicate(); }} className="input" />
           </div>
           <div className="space-y-1.5">
             <label htmlFor="import-end" className="text-sm font-medium text-ink">
               End date
             </label>
-            <input id="import-end" type="date" required value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} className="input" />
+            <input id="import-end" type="date" required value={endDate} min={startDate || undefined} onChange={(e) => { setEndDate(e.target.value); clearDuplicate(); }} className="input" />
           </div>
         </div>
 
@@ -120,20 +157,33 @@ export default function ImportForm() {
           </p>
         )}
 
-        <button
-          type="submit"
-          disabled={loading || !url.trim()}
-          className="btn-primary w-full"
-        >
-          {loading ? (
-            <span className="flex items-center justify-center gap-2">
-              <Spinner />
-              Importing…
-            </span>
-          ) : (
-            "Import map"
-          )}
-        </button>
+        {duplicate ? (
+          <DuplicateTripPrompt
+            existingTrips={duplicate.existingTrips}
+            renameValue={renameValue}
+            onRenameChange={setRenameValue}
+            confirmLabel="Import"
+            onConfirmRenamed={handleImportRenamed}
+            onOverwrite={handleOverwrite}
+            onCancel={clearDuplicate}
+            loading={loading}
+          />
+        ) : (
+          <button
+            type="submit"
+            disabled={loading || !url.trim()}
+            className="btn-primary w-full"
+          >
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <Spinner />
+                Importing…
+              </span>
+            ) : (
+              "Import map"
+            )}
+          </button>
+        )}
       </form>
     </div>
   );

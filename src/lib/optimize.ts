@@ -8,7 +8,7 @@
 
 import { getTripWithDetails, setPlacements } from "@/lib/db";
 import { solve, type FeasibilityViolation } from "@/lib/solver";
-import type { LocationInput, StayPlan } from "@/lib/optimizer";
+import type { LocationInput, StayPlan, Unplaced } from "@/lib/optimizer";
 import { hasValidCoords } from "@/lib/travelCost";
 import { selectTravelCostProvider } from "@/lib/travelCostRegistry";
 import { resolvePrimaryMode } from "@/lib/travelMode";
@@ -24,6 +24,10 @@ export type OptimizeResult = {
   /** ADR-0017: which stops/days the solved itinerary still violates, if any. Plumbing only —
    * nothing acts on this yet; it exists so a caller (the API route, eventually a UI) can. */
   feasibilityViolations: FeasibilityViolation[];
+  /** ADR-0020 (#118): activities left with no `Placement` because their metro has no covering
+   * lodging. Plumbing only, like `feasibilityViolations` — the existing Unassigned tray already
+   * shows these (no Placement = unassigned); a future ticket (#120) surfaces the `reason`. */
+  unplaced: Unplaced[];
 };
 
 function toInput(l: Location): LocationInput {
@@ -87,5 +91,9 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
     }))
   );
 
-  return { trip: setPlacements(tripId, placements), feasibilityViolations: itinerary.feasibilityViolations };
+  return {
+    trip: setPlacements(tripId, placements),
+    feasibilityViolations: itinerary.feasibilityViolations,
+    unplaced: itinerary.unplaced,
+  };
 }

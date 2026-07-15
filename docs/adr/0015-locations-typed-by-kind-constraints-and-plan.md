@@ -5,6 +5,8 @@
 - **Supersedes:** ADR-0006 (lock-and-fill), ADR-0014 (Stay entity + reference-derived roles)
 - **Superseded by:** —
 - **Amends:** ADR-0002 (Location gains `kind`), ADR-0003 (constraint-field inputs, `Placement` output, no locks), ADR-0005 (arrival/departure fold into Transit; edges derived), ADR-0008 (schema reshaped), ADR-0010 (Manifest by kind)
+- **Amended by:** ADR-0020 (concrete optimizer consumption of the multi-lodging model: per-activity
+  eligible-day masks, per-cluster coverage, `unplaced`)
 - **Constrained by:** ADR-0001 (intent ranks above optimality)
 
 ## Context
