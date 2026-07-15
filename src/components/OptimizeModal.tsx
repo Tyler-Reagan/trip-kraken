@@ -23,8 +23,8 @@ export default function OptimizeModal() {
       // knobs are chosen here. Re-optimize replaces the plan wholesale.
       await optimize({ dayBudgetHours });
       setShowOptimize(false);
-    } catch {
-      setError("Network error. Please try again.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }

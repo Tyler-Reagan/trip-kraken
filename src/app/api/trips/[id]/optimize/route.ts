@@ -17,9 +17,17 @@ export async function POST(
   const body = await req.json().catch(() => ({}));
   const { dayBudgetHours } = body ?? {};
 
-  const { trip, feasibilityViolations } = await optimizeTrip(tripId, {
-    ...(typeof dayBudgetHours === "number" && dayBudgetHours > 0 ? { dayBudgetHours } : {}),
-  });
-  // feasibilityViolations (ADR-0017) rides along on the response; no UI reads it yet.
-  return NextResponse.json({ ...trip, feasibilityViolations });
+  try {
+    const { trip, feasibilityViolations } = await optimizeTrip(tripId, {
+      ...(typeof dayBudgetHours === "number" && dayBudgetHours > 0 ? { dayBudgetHours } : {}),
+    });
+    // feasibilityViolations (ADR-0017) rides along on the response; no UI reads it yet.
+    return NextResponse.json({ ...trip, feasibilityViolations });
+  } catch (err) {
+    // A selected provider's error propagates by design (ADR-0018 §4) — e.g. a missing ingested
+    // transit graph. Return it as a structured 500 so the client can surface a real message
+    // instead of an opaque failure the UI would otherwise swallow.
+    const message = err instanceof Error ? err.message : "Optimization failed";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
