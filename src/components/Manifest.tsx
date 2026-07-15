@@ -3,7 +3,7 @@
 import { Map, Star, TrainFront } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 import { isActivity, isLodging, isTransit, type Location, type TripWithDetails } from "@/types";
-import { VariantE } from "./LodgingPrototypeVariants";
+import { NightStrip } from "./LodgingNightStrip";
 
 /**
  * The Manifest (ADR-0015 / ADR-0010) — the trip's inventory of places, grouped by `kind`. It is the
@@ -13,12 +13,11 @@ import { VariantE } from "./LodgingPrototypeVariants";
  */
 
 /**
- * PROTOTYPE — throwaway, for ticket #113 (Multi-lodging entry & editing UX). The drag-select
- * strip is under active iteration; see LodgingPrototypeVariants.tsx. The caption below won out
- * over a color legend (assigned/no-lodging read as intuitive without one) and an opt-in "?" or
- * first-touch ghost hint (a round of /prototype comparisons, since torn down).
+ * Lodging section (#113): the drag-select night strip, captioned rather than legended — a color
+ * legend and an opt-in "?"/first-touch ghost hint both lost out in `/prototype` comparisons (since
+ * torn down) to this one-line gesture caption, which read as intuitive without extra chrome.
  */
-function LodgingSectionPrototype({ trip, activities }: { trip: TripWithDetails; activities: Location[] }) {
+function LodgingSection({ trip, activities }: { trip: TripWithDetails; activities: Location[] }) {
   // Excluded activities are kept in the trip but intentionally out of the plan (ADR-0015) — the
   // lodging dropdown promotes a place *into* the plan, so an excluded one shouldn't be offered.
   const promotable = activities.filter((a) => !a.excluded);
@@ -27,7 +26,7 @@ function LodgingSectionPrototype({ trip, activities }: { trip: TripWithDetails; 
       <p className="text-xs text-faint">
         Drag across nights to add a stay · drag a block&rsquo;s edge to resize, its middle to move · click to edit or remove
       </p>
-      <VariantE trip={trip} lodgings={trip.locations.filter(isLodging)} activities={promotable} />
+      <NightStrip trip={trip} lodgings={trip.locations.filter(isLodging)} activities={promotable} />
     </div>
   );
 }
@@ -103,7 +102,7 @@ export default function Manifest() {
   return (
     <div className="space-y-6">
       <Group title={`Lodging${lodgings.length ? ` · ${lodgings.length}` : ""}`}>
-        <LodgingSectionPrototype trip={trip} activities={activities} />
+        <LodgingSection trip={trip} activities={activities} />
       </Group>
 
       <Group title={`Activities · ${activities.length}${excludedCount ? ` · ${excludedCount} excluded` : ""}`}>

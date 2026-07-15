@@ -14,15 +14,19 @@ import {
 } from "@/types";
 
 /**
- * PROTOTYPE — throwaway, for ticket #113 (Multi-lodging entry & editing UX). Was five structural
- * variants of the Manifest's Lodging section, compared via `?variant=`; A/B/C/D were torn down
- * once the drag-select night strip (this file's Variant E) won, and iteration continues on E
- * alone. It also previews the post-import assignment wizard (folded in from #114) via a "Preview"
- * trigger, using MOCK_METROS fixture data since the #115/#110 per-cluster detector isn't built
- * yet — the wizard's save is a stub, not a real mutation.
+ * The night strip (#113): a flat, unlabeled row of the trip's nights — one lodging is just a
+ * one-lane bar, no threshold-swap to a different layout when a second is added. Drag across empty
+ * nights to assign a span in one gesture; drag a bar's edge to resize, its body to move; a
+ * body-drag that never actually moved is a plain tap/click, which opens the precise edit panel
+ * instead. Overlapping bars stack into extra thin lanes only when they actually occur, so the
+ * common case stays a single row. Pointer events (not separate mouse/touch handlers) drive every
+ * gesture, so the same interactions work with a mouse, finger, or pen.
  *
- * Nights = trip dates minus the final date (a checkout-only day has no night slept). A
- * simplification for this prototype, not a claim about final domain logic.
+ * `NightStripWizard` previews the post-import assignment flow (#114) against fixture metro data —
+ * the real per-cluster detector (#116) has no caller wired up to this component yet (#119's job),
+ * so its "Save" is still a stub, not a real mutation.
+ *
+ * Nights = trip dates minus the final date (a checkout-only day has no night slept).
  */
 
 function nightsOf(trip: TripWithDetails): IsoDate[] {
@@ -60,7 +64,7 @@ function ModalShell({ title, onClose, children }: { title: string; onClose: () =
   );
 }
 
-/** A single select — no typed dates, since the calendar drag already fixed the range. */
+/** A single select — no typed dates, since the drag-select already fixed the range. */
 function AssignExisting({ activities, onAssign, onCancel }: { activities: Location[]; onAssign: (id: string) => void; onCancel: () => void }) {
   const [locationId, setLocationId] = useState("");
   return (
@@ -78,7 +82,7 @@ function AssignExisting({ activities, onAssign, onCancel }: { activities: Locati
 /** Post-import wizard preview: each metro's suggested nights render as a read-only preview bar
  *  (the same visual language as the live strip) with a single name field to confirm — mirroring
  *  "drag once, name once" rather than a typed date form. */
-function StripWizard({ onClose }: { onClose: () => void }) {
+function NightStripWizard({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState(MOCK_METROS[0].name + " hotel");
   const metro = MOCK_METROS[step];
@@ -87,7 +91,7 @@ function StripWizard({ onClose }: { onClose: () => void }) {
   return (
     <ModalShell title="Lodging found in your import" onClose={onClose}>
       {done ? (
-        <p className="text-sm text-sub">All set — mocked save (no real mutation in this prototype).</p>
+        <p className="text-sm text-sub">All set — mocked save (no real mutation in this preview).</p>
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-sub">
@@ -110,15 +114,6 @@ function StripWizard({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Variant E — Night strip, drag-select: a flat, unlabeled strip (one lodging is
-// just a one-lane bar, no threshold-swap to a different layout when a second is
-// added). Drag across empty nights to assign a span in one gesture; drag a
-// bar's edge to resize, its body to move — no typed date fields at all except
-// as a fallback in the edit panel. Overlapping bars stack into extra thin lanes
-// only when they actually occur, so the common case stays a single row.
-// ─────────────────────────────────────────────────────────────────────────────
-
 const STRIP_LANE_H = 26; // px per lane — thin and unlabeled, on purpose
 
 type LaneBar = { lodging: Lodging; startIdx: number; endIdx: number; lane: number };
@@ -139,14 +134,14 @@ function laneBarsOf(nights: IsoDate[], lodgings: Lodging[]): { bars: LaneBar[]; 
 
 /** Thin canvas-colored seams at each night boundary, so a multi-night bar still reads as
  *  distinct day-blocks rather than one fused rectangle — without giving up the single spanning
- *  div startBarDrag's pointer math relies on. */
+ *  div the drag math relies on. */
 function daySeams(nightCount: number): string | undefined {
   if (nightCount <= 1) return undefined;
   const step = 100 / nightCount;
   return `repeating-linear-gradient(to right, transparent 0, transparent calc(${step}% - 1px), var(--canvas) calc(${step}% - 1px), var(--canvas) ${step}%)`;
 }
 
-export function VariantE({ trip, lodgings, activities }: { trip: TripWithDetails; lodgings: Lodging[]; activities: Location[] }) {
+export function NightStrip({ trip, lodgings, activities }: { trip: TripWithDetails; lodgings: Lodging[]; activities: Location[] }) {
   const saveLodgingDates = useTripStore((s) => s.saveLodgingDates);
   const containerRef = useRef<HTMLDivElement>(null);
   const nights = nightsOf(trip);
@@ -165,22 +160,32 @@ export function VariantE({ trip, lodgings, activities }: { trip: TripWithDetails
     return Math.min(nights.length - 1, Math.max(0, Math.floor(((x - rect.left) / rect.width) * nights.length)));
   }
 
-  function startSelect(i: number) {
+  // Pointer events (not mouse/touch handlers separately) so drag-select, resize, move, and
+  // click-to-edit all work identically with a mouse, a finger, or a pen.
+  function startSelect(i: number, e: React.PointerEvent) {
+    const pointerId = e.pointerId;
     setSelect({ start: i, end: i });
-    const onMove = (e: MouseEvent) => setSelect((s) => (s ? { ...s, end: idxFromClientX(e.clientX) } : s));
-    const onUp = (e: MouseEvent) => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      const end = idxFromClientX(e.clientX);
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      setSelect((s) => (s ? { ...s, end: idxFromClientX(ev.clientX) } : s));
+    };
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      const end = idxFromClientX(ev.clientX);
       setPendingAssign({ startIdx: Math.min(i, end), endIdx: Math.max(i, end) });
       setSelect(null);
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
   }
 
-  function startBarDrag(bar: LaneBar, mode: "resize-start" | "resize-end" | "move", e: React.MouseEvent) {
+  function startBarDrag(bar: LaneBar, mode: "resize-start" | "resize-end" | "move", e: React.PointerEvent) {
     e.stopPropagation();
+    const pointerId = e.pointerId;
     const anchorIdx = idxFromClientX(e.clientX);
     // previewRef carries the live range so `onUp` can call saveLodgingDates directly, outside
     // any setState updater (calling it from inside one trips React's "cannot update a component
@@ -188,7 +193,8 @@ export function VariantE({ trip, lodgings, activities }: { trip: TripWithDetails
     const previewRef = { current: { startIdx: bar.startIdx, endIdx: bar.endIdx } };
     setDrag({ lodgingId: bar.lodging.id, mode, anchorIdx, preview: previewRef.current });
 
-    const onMove = (ev: MouseEvent) => {
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
       const i = idxFromClientX(ev.clientX);
       let next = previewRef.current;
       if (mode === "resize-start") next = { startIdx: Math.min(i, bar.endIdx), endIdx: bar.endIdx };
@@ -202,19 +208,22 @@ export function VariantE({ trip, lodgings, activities }: { trip: TripWithDetails
       previewRef.current = next;
       setDrag((d) => (d ? { ...d, preview: next } : d));
     };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
       const { startIdx, endIdx } = previewRef.current;
       const unchanged = startIdx === bar.startIdx && endIdx === bar.endIdx;
-      // A "move" that never actually moved is a plain click on the block — open the edit panel
-      // (precise dates + remove) instead of writing a no-op save.
+      // A "move" that never actually moved is a plain tap/click on the block — open the edit
+      // panel (precise dates + remove) instead of writing a no-op save.
       if (mode === "move" && unchanged) setEditing(bar.lodging.id);
       else saveLodgingDates(bar.lodging.id, { checkInDate: nights[startIdx], checkOutDate: addDaysIso(nights[endIdx], 1) });
       setDrag(null);
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
   }
 
   const selectRange = select ? { startIdx: Math.min(select.start, select.end), endIdx: Math.max(select.start, select.end) } : null;
@@ -227,9 +236,9 @@ export function VariantE({ trip, lodgings, activities }: { trip: TripWithDetails
         {nights.map((date, i) => (
           <button
             key={date}
-            onMouseDown={() => startSelect(i)}
+            onPointerDown={(e) => startSelect(i, e)}
             title={fmtNight(date)}
-            className="absolute top-0 h-full cursor-crosshair"
+            className="absolute top-0 h-full cursor-crosshair touch-none"
             style={{ left: pct(i), width: `${100 / nights.length}%` }}
           >
             {!bars.some((b) => i >= b.startIdx && i <= b.endIdx) && (
@@ -264,11 +273,11 @@ export function VariantE({ trip, lodgings, activities }: { trip: TripWithDetails
                   ${isHovered ? "opacity-100 ring-2 ring-ink/40 dark:ring-white/40" : "opacity-80"} flex ${overlapping ? "ring-2 ring-danger-500" : ""}`}
                 style={{ height: STRIP_LANE_H - 2, backgroundImage: daySeams(live.endIdx - live.startIdx + 1) }}
               >
-                <div onMouseDown={(e) => startBarDrag(bar, "resize-start", e)} className="w-2 h-full cursor-ew-resize shrink-0" />
-                <div onMouseDown={(e) => startBarDrag(bar, "move", e)} className="flex-1 h-full cursor-grab relative">
+                <div onPointerDown={(e) => startBarDrag(bar, "resize-start", e)} className="w-2 h-full cursor-ew-resize touch-none shrink-0" />
+                <div onPointerDown={(e) => startBarDrag(bar, "move", e)} className="flex-1 h-full cursor-grab touch-none relative">
                   {overlapping && <AlertTriangle className="w-3 h-3 text-white absolute inset-0 m-auto" />}
                 </div>
-                <div onMouseDown={(e) => startBarDrag(bar, "resize-end", e)} className="w-2 h-full cursor-ew-resize shrink-0" />
+                <div onPointerDown={(e) => startBarDrag(bar, "resize-end", e)} className="w-2 h-full cursor-ew-resize touch-none shrink-0" />
               </div>
             </div>
           );
@@ -320,7 +329,7 @@ export function VariantE({ trip, lodgings, activities }: { trip: TripWithDetails
       <button onClick={() => setWizardOpen(true)} className="text-xs text-faint hover:text-brand-600 dark:hover:text-brand-400 underline underline-offset-2">
         Preview: post-import wizard →
       </button>
-      {wizardOpen && <StripWizard onClose={() => setWizardOpen(false)} />}
+      {wizardOpen && <NightStripWizard onClose={() => setWizardOpen(false)} />}
     </div>
   );
 }
