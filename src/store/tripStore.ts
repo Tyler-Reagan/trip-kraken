@@ -125,11 +125,18 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   optimize: async (opts) => {
     const tripId = get().tripId;
     if (!tripId) return;
-    await fetch(`/api/trips/${tripId}/optimize`, {
+    // fetch only rejects on a network failure — an HTTP 500 (e.g. a missing transit graph, which
+    // fails loudly by design) resolves with ok: false. Throw on it so callers surface the error
+    // instead of silently reloading an unchanged plan.
+    const res = await fetch(`/api/trips/${tripId}/optimize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(opts ?? {}),
     });
+    if (!res.ok) {
+      const message = await res.json().then((b) => b?.error).catch(() => null);
+      throw new Error(message || `Optimize failed (${res.status})`);
+    }
     await get().reload();
   },
 
