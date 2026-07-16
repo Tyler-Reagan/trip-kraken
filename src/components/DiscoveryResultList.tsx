@@ -14,6 +14,9 @@ interface Props {
   error: string | null;
   /** The day added activities are placed on (ADR-0015); null leaves them unscheduled. */
   anchorDate: string | null;
+  /** Placement order to insert an added activity at (e.g. between an along-route search's two
+   *  anchor stops, #131); omitted appends to the end of `anchorDate`, as before. */
+  insertOrder?: number;
   /** Message shown when a completed search returns nothing. */
   emptyHint?: string;
 }
@@ -24,7 +27,7 @@ interface Props {
  * "Add to trip" flow (ADR-0009 — providers differ, the result shape and add path don't);
  * only the controls that produce `results` differ, so those stay in each drawer.
  */
-export default function DiscoveryResultList({ results, loading, error, anchorDate, emptyHint }: Props) {
+export default function DiscoveryResultList({ results, loading, error, anchorDate, insertOrder, emptyHint }: Props) {
   const tripId = useTripStore((s) => s.tripId);
   const trip = useTripStore((s) => s.trip);
   const reload = useTripStore((s) => s.reload);
@@ -78,11 +81,16 @@ export default function DiscoveryResultList({ results, loading, error, anchorDat
       setAddedIds((prev) => new Set(prev).add(place.placeId));
 
       // If the search is anchored to a day, place the new activity on that day (ADR-0015).
+      // An along-route search additionally knows where in the day it belongs (#131).
       if (anchorDate && newLocation.id) {
         await fetch(`/api/trips/${tripId}/placements`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ locationId: newLocation.id, date: anchorDate }),
+          body: JSON.stringify({
+            locationId: newLocation.id,
+            date: anchorDate,
+            ...(insertOrder !== undefined ? { order: insertOrder } : {}),
+          }),
         });
       }
 

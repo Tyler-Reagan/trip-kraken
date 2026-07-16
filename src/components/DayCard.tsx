@@ -130,7 +130,15 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
       {/* Stops list, between the day's projected lodging bookends */}
       <ol className="space-y-1">
         {day.startAnchor && <AnchorRow loc={day.startAnchor} role="start" date={day.date} />}
+        {/* Lodging anchors are valid "along the way" edge endpoints too (#129) — only skip the
+            connector when there's no non-lodging stop on the other side to search a corridor to. */}
+        {day.startAnchor && !day.checkInWaypoint && day.stops.length > 0 && (
+          <RouteConnector from={day.startAnchor} to={day.stops[0].location} date={day.date} />
+        )}
         {day.checkInWaypoint && <AnchorRow loc={day.checkInWaypoint} role="checkin" date={day.date} />}
+        {day.checkInWaypoint && day.stops.length > 0 && (
+          <RouteConnector from={day.checkInWaypoint} to={day.stops[0].location} date={day.date} />
+        )}
         <SortableContext items={day.stops.map((s) => stopDragId(s.placement.id))} strategy={verticalListSortingStrategy}>
           {day.stops.map((stop, idx) => (
             <Fragment key={stop.placement.id}>
@@ -149,6 +157,9 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
             </Fragment>
           ))}
         </SortableContext>
+        {day.endAnchor && day.stops.length > 0 && (
+          <RouteConnector from={day.stops[day.stops.length - 1].location} to={day.endAnchor} date={day.date} />
+        )}
         {day.endAnchor && <AnchorRow loc={day.endAnchor} role="end" date={day.date} />}
       </ol>
       <div

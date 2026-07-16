@@ -32,6 +32,7 @@ function parseTrip(r: typeof trip.$inferSelect) {
     endDate: r.endDate,
     dayLabels: r.dayLabels ?? null,
     allowedModes: r.allowedModes ?? null,
+    transitCaveatDismissed: r.transitCaveatDismissed,
     createdAt: new Date(r.createdAt),
     updatedAt: new Date(r.updatedAt),
   };
@@ -230,6 +231,7 @@ export function updateTrip(
     endDate?: IsoDate;
     dayLabels?: Record<string, string> | null;
     allowedModes?: TravelMode[] | null;
+    transitCaveatDismissed?: boolean;
   }
 ): TripWithDetails {
   getDrizzle()
@@ -240,6 +242,7 @@ export function updateTrip(
       ...(fields.endDate !== undefined ? { endDate: fields.endDate } : {}),
       ...(fields.dayLabels !== undefined ? { dayLabels: fields.dayLabels } : {}),
       ...(fields.allowedModes !== undefined ? { allowedModes: fields.allowedModes } : {}),
+      ...(fields.transitCaveatDismissed !== undefined ? { transitCaveatDismissed: fields.transitCaveatDismissed } : {}),
       updatedAt: sql`(datetime('now'))`,
     })
     .where(eq(trip.id, id))

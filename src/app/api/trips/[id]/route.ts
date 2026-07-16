@@ -17,13 +17,14 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const body = await req.json();
-  const { name, startDate, endDate, dayLabels } = body;
+  const { name, startDate, endDate, dayLabels, transitCaveatDismissed } = body;
 
   const trip = updateTrip(id, {
     ...(name !== undefined ? { name } : {}),
     ...(startDate !== undefined ? { startDate } : {}),
     ...(endDate !== undefined ? { endDate } : {}),
     ...(dayLabels !== undefined ? { dayLabels } : {}),
+    ...(transitCaveatDismissed !== undefined ? { transitCaveatDismissed } : {}),
   });
   return NextResponse.json(trip);
 }
