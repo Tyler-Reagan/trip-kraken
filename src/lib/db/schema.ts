@@ -37,6 +37,9 @@ export const trip = sqliteTable("Trip", {
   // treats an unset Trip as the default set (which includes transit), so there is no meaningful
   // "unset" state to distinguish at the schema level.
   allowedModes: text("allowedModes", { mode: "json" }).$type<TravelMode[]>(),
+  // Whether the user has dismissed ADR-0019's estimated-transit-timing caveat (#130) — persisted
+  // so it stays dismissed across reloads instead of reappearing on every page mount.
+  transitCaveatDismissed: integer("transitCaveatDismissed", { mode: "boolean" }).notNull().default(false),
   createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
   updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
 });

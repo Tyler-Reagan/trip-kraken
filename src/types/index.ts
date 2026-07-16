@@ -85,6 +85,7 @@ export type TripWithDetails = {
   endDate: IsoDate;
   dayLabels: Record<IsoDate, string> | null; // a day's optional label; days are not an entity
   allowedModes: TravelMode[] | null; // ADR-0019 §mode; unset resolves to the default set (transit included)
+  transitCaveatDismissed: boolean; // whether the estimated-transit-timing caveat (#130) has been dismissed
   createdAt: Date;
   updatedAt: Date;
   locations: Location[];

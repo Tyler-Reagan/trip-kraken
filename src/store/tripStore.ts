@@ -56,6 +56,7 @@ interface TripStore {
     dates: { checkInDate: string; checkOutDate: string } | null
   ) => Promise<string | null>;
   setDayLabel: (date: string, label: string | null) => Promise<void>;
+  setTransitCaveatDismissed: (v: boolean) => Promise<void>;
   importBooking: (text: string) => Promise<string | null>;
   enrich: () => Promise<void>;
 
@@ -245,6 +246,19 @@ export const useTripStore = create<TripStore>()((set, get) => ({
       body: JSON.stringify({ date, label }),
     });
     await get().reload();
+  },
+
+  // Optimistic — a dismissed banner should disappear immediately, not wait on a round trip.
+  setTransitCaveatDismissed: async (v) => {
+    const tripId = get().tripId;
+    const t = get().trip;
+    if (!tripId || !t) return;
+    set({ trip: { ...t, transitCaveatDismissed: v } });
+    await fetch(`/api/trips/${tripId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transitCaveatDismissed: v }),
+    });
   },
 
   importBooking: async (text) => {

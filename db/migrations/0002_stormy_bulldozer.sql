@@ -1,0 +1,1 @@
+ALTER TABLE `Trip` ADD `transitCaveatDismissed` integer DEFAULT false NOT NULL;
