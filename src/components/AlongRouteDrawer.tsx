@@ -86,6 +86,14 @@ export default function AlongRouteDrawer() {
 
   if (!tripId || !trip || !routeSearch) return null;
 
+  // Insert the add between the two anchor stops the corridor search was scoped to, rather than
+  // appending it to the day (#131). `from` may be a lodging anchor with no placement of its own
+  // (ADR-0015) — in that case there's nothing at/before it to offset from, so the formula below
+  // naturally lands on 0, the day's first slot.
+  const insertOrder = routeSearch.date
+    ? (trip.placements.find((p) => p.locationId === routeSearch.from.id && p.date === routeSearch.date)?.order ?? -1) + 1
+    : undefined;
+
   // Client-side post-filters (rating and price — not supported as Google API params)
   const filtered = (results ?? []).filter((p) => {
     if (minRating !== null && (p.rating === null || p.rating < minRating)) return false;
@@ -232,6 +240,7 @@ export default function AlongRouteDrawer() {
           loading={loading}
           error={error}
           anchorDate={routeSearch.date}
+          insertOrder={insertOrder}
           emptyHint="Nothing along this leg. Try a different search or adjust filters."
         />
       )}

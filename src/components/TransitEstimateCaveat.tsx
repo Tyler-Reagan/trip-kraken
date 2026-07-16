@@ -1,6 +1,6 @@
 "use client";
 
-import { Info } from "lucide-react";
+import { Info, X } from "lucide-react";
 
 /**
  * ADR-0019's accepted v1 limitation, surfaced to the user (#88): a transit Leg's timing is a
@@ -8,17 +8,20 @@ import { Info } from "lucide-react";
  * A Day with generous timing is unaffected; a Day resting on a tight last-train connection could
  * be called feasible when the real timetable disagrees — the one place the plan could be
  * optimistic, so it's stated plainly rather than left implicit (mirrors ADR-0017's "degrade
- * visibly, don't hide it").
+ * visibly, don't hide it"). Dismissible, never blocking (#130).
  */
-export default function TransitEstimateCaveat() {
+export default function TransitEstimateCaveat({ onDismiss }: { onDismiss: () => void }) {
   return (
     <div className="card border-amber-200 dark:border-amber-800 px-4 py-3 flex gap-2.5 items-start">
       <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" aria-hidden />
-      <p className="text-sm text-sub">
+      <p className="flex-1 text-sm text-sub">
         <span className="font-medium text-ink">Transit timing is estimated.</span>{" "}
         Travel times use typical line speeds and a flat transfer allowance, not real timetables —
         it doesn&rsquo;t yet account for exact schedules or last trains.
       </p>
+      <button onClick={onDismiss} className="tap-target text-faint hover:text-ink shrink-0" aria-label="Dismiss">
+        <X className="w-3.5 h-3.5" />
+      </button>
     </div>
   );
 }

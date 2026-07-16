@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { deriveDays, numDaysOf, type TripWithDetails } from "@/types";
 import { useTripStore } from "@/store/tripStore";
@@ -27,6 +27,7 @@ const fmt = (d: string) =>
   new Date(d.slice(0, 10) + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 export default function TripClient({ trip: initial }: Props) {
+  const [transitCaveatDismissed, setTransitCaveatDismissed] = useState(false);
   const initialized = useRef(false);
   if (!initialized.current) {
     initialized.current = true;
@@ -235,7 +236,9 @@ export default function TripClient({ trip: initial }: Props) {
       ) : (
         <div className="flex flex-col lg:flex-row gap-4 items-start">
           <div className="flex-1 min-w-0 space-y-4">
-            {showTransitCaveat && <TransitEstimateCaveat />}
+            {showTransitCaveat && !transitCaveatDismissed && (
+              <TransitEstimateCaveat onDismiss={() => setTransitCaveatDismissed(true)} />
+            )}
             <ScheduleView />
           </div>
           {companion && (
