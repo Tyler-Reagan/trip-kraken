@@ -106,11 +106,16 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   reload: async () => {
     const tripId = get().tripId;
     if (!tripId) return;
-    const res = await fetch(`/api/trips/${tripId}`);
-    if (res.ok) {
-      set({ trip: await res.json() });
-      get().pollEnrichment();
+    // A transient fetch failure (e.g. the dev server mid-restart) must not kill the enrichment
+    // poll loop below — reschedule regardless of outcome so it retries on the next tick instead
+    // of silently going quiet for the rest of the session.
+    try {
+      const res = await fetch(`/api/trips/${tripId}`);
+      if (res.ok) set({ trip: await res.json() });
+    } catch {
+      // ignored — polled again shortly via pollEnrichment()
     }
+    get().pollEnrichment();
   },
 
   pollEnrichment: () => {

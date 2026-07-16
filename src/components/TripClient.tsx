@@ -125,23 +125,23 @@ export default function TripClient({ trip: initial }: Props) {
           <button onClick={() => setShowAddLocation(true)} className="btn-secondary text-sm">
             + Add location
           </button>
-          {pendingCount > 0 && (
+          {pendingCount > 0 && !isEnriching && (
             <span className="text-sm text-faint animate-pulse self-center">
               Enriching {pendingCount}…
             </span>
           )}
-          {failedCount > 0 && (
+          {(failedCount > 0 || pendingCount > 0) && (
             <button
               onClick={enrich}
               disabled={isEnriching}
               className="btn-secondary text-sm disabled:opacity-40"
-              title="Retry fetching details for locations where enrichment failed"
+              title="Retry fetching details for locations still missing them — pending items can get stuck here after a server restart drops the in-memory enrichment queue"
             >
               {isEnriching
                 ? enrichProgress
                   ? `${enrichProgress.enriched}/${enrichProgress.total} retried`
                   : "Retrying…"
-                : `Retry (${failedCount})`}
+                : `Retry (${failedCount + pendingCount})`}
             </button>
           )}
           <button onClick={() => setShowOptimize(true)} className="btn-primary text-sm">

@@ -51,9 +51,10 @@ export default function ImportForm() {
         return;
       }
 
-      // `imported=1` lets the trip view trigger the post-import lodging wizard once (#119); it
-      // strips the param off the URL itself after firing.
-      router.push(`/trips/${data.id}?imported=1`);
+      // Land on the bumper page (not the trip view directly) so the user isn't parked on a
+      // half-ready Places page while background enrichment runs — it redirects to
+      // `?imported=1` (which still triggers the post-import lodging wizard once, #119) once done.
+      router.push(`/trips/${data.id}/importing`);
     } catch {
       setError("Network error. Please try again.");
       setLoading(false);

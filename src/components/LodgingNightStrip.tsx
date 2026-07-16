@@ -91,18 +91,26 @@ const REGION_THEN_JP_POSTAL = /([A-Za-z][A-Za-z\s]*?)\s*,?\s*\d{3}[-−]\d{4}/;
 const REGION_THEN_US_ZIP = /([A-Za-z][A-Za-z\s]*?)\s*,?\s*\d{5}(?:-\d{4})?\b/;
 
 /** A recognizable label for a metro: the prefecture/state-level region read off its first
- *  activity's formatted address, not a ward or neighborhood name. Falls back to the activity's own
- *  name if the address doesn't carry a postal code to anchor on. */
+ *  activity's formatted address, not a ward or neighborhood name. Google's formattedAddress
+ *  usually omits the postal code entirely (our own places.ts fixtures never carry one), so the
+ *  postal-anchored patterns are the exception rather than the rule — the common case falls
+ *  through to the last comma-separated segment, which is where the city/prefecture normally
+ *  lands. Only falls back to the activity's own name when the address has no segments to anchor
+ *  on at all (a single, comma-free line). */
 function metroLabel(metro: UncoveredMetro): string {
   const first = metro.activities[0];
   const address = first?.address;
   const fallback = first?.name ?? "this area";
   if (!address) return fallback;
-  const region =
+  const postalAnchored =
     address.match(JP_POSTAL_THEN_REGION)?.[1] ??
     address.match(REGION_THEN_JP_POSTAL)?.[1] ??
     address.match(REGION_THEN_US_ZIP)?.[1];
-  return region?.trim() || fallback;
+  if (postalAnchored) return postalAnchored.trim();
+  const segments = address.split(",").map((s) => s.trim()).filter(Boolean);
+  if (segments.length < 2) return fallback;
+  const last = segments[segments.length - 1].replace(/〒?\s*\d{3}[-−]\d{4}$|\d{5}(-\d{4})?$/, "").trim();
+  return last || fallback;
 }
 
 /** Post-import wizard (#114's locked contract, #119): one step per metro lacking lodging, each
@@ -116,28 +124,53 @@ function metroLabel(metro: UncoveredMetro): string {
  *  below, for why a silent "all set" wasn't enough of a signal on its own). */
 type StepOutcome = "assigned" | "skipped";
 
-function NightStripWizard({ metros, onClose }: { metros: UncoveredMetro[]; onClose: () => void }) {
+// Centroid-rounded identity for a metro cluster, stable across re-renders as long as the cluster
+// doesn't move — which enrichment (address/name backfill) never does. Coarse enough (~1km) to
+// survive a cluster losing/gaining one member (e.g. a place promoted to lodging), well under the
+// 75km radius that separates distinct metros, so no collision risk between them.
+function metroKey(metro: UncoveredMetro): string {
+  return `${metro.centroid.lat.toFixed(2)},${metro.centroid.lng.toFixed(2)}`;
+}
+
+function NightStripWizard({ metros: liveMetros, onClose }: { metros: UncoveredMetro[]; onClose: () => void }) {
   const importBooking = useTripStore((s) => s.importBooking);
   const saveLodgingDates = useTripStore((s) => s.saveLodgingDates);
-  const [step, setStep] = useState(0);
-  const [outcomes, setOutcomes] = useState<StepOutcome[]>([]);
+  // The step *sequence* is fixed at open time (by key, not array position), so a metro dropping
+  // out of the live uncovered list mid-flow can't reindex the rest onto the wrong step. Each
+  // step's *display data* is still read from the live `metros` prop every render (via the cache
+  // below), so background enrichment finishing after the wizard opens still lands instead of
+  // being frozen out at pre-enrichment values.
+  const [sequence] = useState(() => liveMetros.map(metroKey));
+  const cacheRef = useRef<Record<string, UncoveredMetro>>({});
+  for (const m of liveMetros) cacheRef.current[metroKey(m)] = m;
+
+  const [outcomes, setOutcomes] = useState<Record<string, StepOutcome>>({});
   const [bookingText, setBookingText] = useState("");
   const [locationId, setLocationId] = useState("");
   const [checkInDate, setCheckInDate] = useState("");
   const [checkOutDate, setCheckOutDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const metro = metros[step];
-  const done = step >= metros.length;
+
+  const liveKeys = new Set(liveMetros.map(metroKey));
+  // A key that's fallen out of the live uncovered list got lodging some other way (e.g. edited
+  // directly on the night strip behind this modal) — count it resolved rather than getting the
+  // flow stuck waiting on a step that will never come back.
+  const outcomeOf = (key: string): StepOutcome | undefined => outcomes[key] ?? (!liveKeys.has(key) ? "assigned" : undefined);
+
+  const remainingKeys = sequence.filter((key) => outcomeOf(key) === undefined);
+  const currentKey = remainingKeys[0];
+  const metro = currentKey ? cacheRef.current[currentKey] : undefined;
+  const done = !metro;
 
   function advance(outcome: StepOutcome) {
+    if (!currentKey) return;
     setBookingText("");
     setLocationId("");
     setCheckInDate("");
     setCheckOutDate("");
     setError(null);
-    setOutcomes((o) => [...o, outcome]);
-    setStep((s) => s + 1);
+    setOutcomes((o) => ({ ...o, [currentKey]: outcome }));
   }
 
   async function handleImport() {
@@ -167,10 +200,12 @@ function NightStripWizard({ metros, onClose }: { metros: UncoveredMetro[]; onClo
       {done ? (
         <div className="space-y-3">
           <ul className="space-y-1.5">
-            {metros.map((m, i) => {
-              const assigned = outcomes[i] === "assigned";
+            {sequence.map((key) => {
+              const m = cacheRef.current[key];
+              if (!m) return null;
+              const assigned = outcomeOf(key) === "assigned";
               return (
-                <li key={i} className="flex items-start gap-2 text-sm">
+                <li key={key} className="flex items-start gap-2 text-sm">
                   <span className={`w-3.5 shrink-0 mt-0.5 text-center ${assigned ? "text-brand-600 dark:text-brand-400" : "text-faint"}`}>
                     {assigned ? "✓" : "–"}
                   </span>
@@ -188,21 +223,27 @@ function NightStripWizard({ metros, onClose }: { metros: UncoveredMetro[]; onClo
         </div>
       ) : (
         <div className="space-y-3">
-          {metros.length > 1 && (
+          {sequence.length > 1 && (
             <div className="flex flex-wrap gap-2">
-              {metros.map((m, i) => (
-                <span
-                  key={i}
-                  className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all ${
-                    i === step ? "bg-brand-600 text-white text-sm font-medium ring-2 ring-brand-500/30 scale-105"
-                    : i < step ? "bg-surface-2 text-faint text-xs line-through"
-                    : "bg-surface-2 text-sub text-xs border border-line-strong"
-                  }`}
-                >
-                  {metroLabel(m)}
-                  <span className={`text-numeral ${i === step ? "text-[11px]" : "text-[10px]"} opacity-90`}>{m.activities.length}</span>
-                </span>
-              ))}
+              {sequence.map((key) => {
+                const m = cacheRef.current[key];
+                if (!m) return null;
+                const isCurrent = key === currentKey;
+                const isHandled = outcomeOf(key) !== undefined;
+                return (
+                  <span
+                    key={key}
+                    className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all ${
+                      isCurrent ? "bg-brand-600 text-white text-sm font-medium ring-2 ring-brand-500/30 scale-105"
+                      : isHandled ? "bg-surface-2 text-faint text-xs line-through"
+                      : "bg-surface-2 text-sub text-xs border border-line-strong"
+                    }`}
+                  >
+                    {metroLabel(m)}
+                    <span className={`text-numeral ${isCurrent ? "text-[11px]" : "text-[10px]"} opacity-90`}>{m.activities.length}</span>
+                  </span>
+                );
+              })}
             </div>
           )}
 
@@ -325,9 +366,11 @@ export function NightStrip({ trip, lodgings, activities }: { trip: TripWithDetai
   const [editing, setEditing] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
 
-  // Post-import trigger (#119): ImportForm lands here with `?imported=1`. Runs once per landing —
-  // the ref (not just the query param) survives the router.replace below re-rendering this
-  // component before the param is gone. Nothing fires if every metro already has covering lodging.
+  // Post-import trigger (#119): ImportForm lands here with `?imported=1` (via the bumper page at
+  // `/trips/[id]/importing`, which only redirects here once background enrichment has finished —
+  // so by construction every location already has its real address, not raw import-time text).
+  // Runs once per landing — the ref (not just the query param) survives the router.replace below
+  // re-rendering this component before the param is gone.
   const firedRef = useRef(false);
   useEffect(() => {
     if (firedRef.current || searchParams.get("imported") !== "1") return;
