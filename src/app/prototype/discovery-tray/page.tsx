@@ -218,12 +218,16 @@ function FilterRow({ tray, compact }: { tray: Tray; compact?: boolean }) {
   );
 }
 
-/** Mode tabs + the scope picker: a stop select for Nearby, a consecutive-leg select for
- *  Along-the-way. Scope is always relative to the active day. */
+/** Mode tabs + a read-only scope label. Scope is chosen from the day card's ◎ / ⌁
+ *  triggers; the header pickers were dropped as clutter (round 3). */
 function TrayTitle({ tray, onClose }: { tray: Tray; onClose: () => void }) {
   const stops = tray.day.stops;
-  const selectCls =
-    "text-xs text-sub bg-surface-2 border border-line-strong rounded px-1.5 py-0.5 max-w-[260px] truncate cursor-pointer";
+  const scope =
+    tray.mode === "nearby"
+      ? `around ${stops[tray.anchorIdx] ?? stops[0]}`
+      : stops.length < 2
+        ? "needs at least two stops"
+        : `${stops[tray.legIdx]} → ${stops[tray.legIdx + 1]}`;
   return (
     <div className="flex items-center gap-2 min-w-0">
       <div className="flex rounded-lg border border-line-strong overflow-hidden text-xs shrink-0">
@@ -239,31 +243,7 @@ function TrayTitle({ tray, onClose }: { tray: Tray; onClose: () => void }) {
           </button>
         ))}
       </div>
-      {tray.mode === "nearby" ? (
-        <select
-          value={tray.anchorIdx}
-          onChange={(e) => tray.setAnchorIdx(Number(e.target.value))}
-          className={selectCls}
-          aria-label="Nearby anchor stop"
-        >
-          {stops.map((s, i) => (
-            <option key={s} value={i}>around {s}</option>
-          ))}
-        </select>
-      ) : stops.length < 2 ? (
-        <span className="text-xs text-faint">needs at least two stops</span>
-      ) : (
-        <select
-          value={tray.legIdx}
-          onChange={(e) => tray.setLegIdx(Number(e.target.value))}
-          className={selectCls}
-          aria-label="Along-the-way leg"
-        >
-          {stops.slice(0, -1).map((s, i) => (
-            <option key={s} value={i}>{s} → {stops[i + 1]}</option>
-          ))}
-        </select>
-      )}
+      <p className="text-xs text-sub truncate">{scope}</p>
       <button onClick={onClose} className="ml-auto text-faint hover:text-sub text-sm shrink-0" aria-label="Close">
         ✕
       </button>
