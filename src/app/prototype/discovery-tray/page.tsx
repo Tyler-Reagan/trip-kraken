@@ -6,17 +6,23 @@
 // /prototype/day-carousel — held constant here, not re-litigated.
 // wayfinder ticket #134, https://github.com/Tyler-Reagan/trip-kraken/issues/134
 //
-// Three variants, switchable via ?variant=:
+// Round 2 (footer rail chosen as the direction; A/B/C kept for comparison):
+//   - Nearby is stop-relative: each stop on the active day has a ◎ trigger, and the tray
+//     header carries a stop picker.
+//   - Along-the-way is leg-relative (consecutive stop pairs only): a "⋯ along this leg"
+//     affordance sits between adjacent stops, and the tray header carries a leg picker.
+//   - Results are inspectable: clicking a result card opens the same anchored popover the
+//     stops use, with fuller detail (reviews, price, tag, address, hours) + an Add action.
+//
+// Variants, switchable via ?variant=:
 //   A — Footer rail: fixed-height bottom tray, results browse horizontally.
 //   B — Footer grid: bottom tray with peek/expanded states, results browse vertically.
-//   C — Side panel: the current app's right-column attachment, adapted — shows the width
-//       competition with the carousel honestly instead of assuming footer wins.
-// Constant across variants: inspector opens as a popover anchored to the clicked stop;
-// the map is a floating popup window toggled from the header.
+//   C — Side panel: the current app's right-column attachment, adapted.
+// Constant across variants: inspector popovers, map as a floating popup window.
 // Fake data only — no wiring to the real store. Not linked from anywhere; delete after
 // the decision is captured.
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Fragment, Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   DndContext,
@@ -84,6 +90,49 @@ const PRICE = ["Free", "$", "$$", "$$$", "$$$$"];
 
 type TrayMode = "nearby" | "route";
 
+/** Fake per-anchor variety: rotating the result list makes switching the anchor/leg
+ *  visibly change what comes back, without real data. */
+function rotate<T>(arr: T[], k: number): T[] {
+  const n = arr.length;
+  const s = ((k % n) + n) % n;
+  return [...arr.slice(s), ...arr.slice(0, s)];
+}
+
+// ---------- tray state (per-variant; anchor/leg reset when the active day changes) ----------
+
+function useTray(activeIdx: number) {
+  const [open, setOpen] = useState(true);
+  const [mode, setMode] = useState<TrayMode>("nearby");
+  const [anchorIdx, setAnchorIdx] = useState(0); // which stop of the active day (nearby)
+  const [legIdx, setLegIdx] = useState(0); // which consecutive pair: stops[i] → stops[i+1] (route)
+  const [tag, setTag] = useState("all");
+  const [keyword, setKeyword] = useState("");
+
+  useEffect(() => {
+    setAnchorIdx(0);
+    setLegIdx(0);
+  }, [activeIdx]);
+
+  const day = DAYS[activeIdx];
+  const base =
+    mode === "nearby"
+      ? rotate(NEARBY_RESULTS, anchorIdx * 3 + activeIdx)
+      : rotate(ROUTE_RESULTS, legIdx * 2 + activeIdx);
+  const results = base.filter(
+    (r) =>
+      (tag === "all" || r.tag === tag) &&
+      (!keyword.trim() || r.name.toLowerCase().includes(keyword.trim().toLowerCase()))
+  );
+
+  return {
+    open, setOpen, mode, setMode, anchorIdx, setAnchorIdx, legIdx, setLegIdx,
+    tag, setTag, keyword, setKeyword, day, results,
+    openNearby: (i: number) => { setMode("nearby"); setAnchorIdx(i); setOpen(true); },
+    openAlong: (i: number) => { setMode("route"); setLegIdx(i); setOpen(true); },
+  };
+}
+type Tray = ReturnType<typeof useTray>;
+
 // ---------- shared bits ----------
 
 function Stars({ rating }: { rating: number }) {
@@ -95,8 +144,15 @@ function Stars({ rating }: { rating: number }) {
   );
 }
 
-/** One discovery result. Draggable up to a day card; the Add button is the click path. */
-function ResultCard({ result, wide }: { result: FakeResult; wide?: boolean }) {
+/** One discovery result. Draggable up to a day card; clicking opens its inspector popover. */
+function ResultCard({
+  result, wide, onInspect, onAdd,
+}: {
+  result: FakeResult;
+  wide?: boolean;
+  onInspect: (result: FakeResult, rect: DOMRect) => void;
+  onAdd: (result: FakeResult) => void;
+}) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `result:${result.id}`,
     data: { label: result.name, kind: "result" },
@@ -106,45 +162,44 @@ function ResultCard({ result, wide }: { result: FakeResult; wide?: boolean }) {
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className={`card p-2 flex flex-col gap-1.5 shrink-0 cursor-grab active:cursor-grabbing select-none touch-none transition-opacity ${
+      onClick={(e) => onInspect(result, e.currentTarget.getBoundingClientRect())}
+      className={`card p-2 flex flex-col gap-1 shrink-0 cursor-grab active:cursor-grabbing select-none touch-none transition-opacity hover:border-brand-400 ${
         isDragging ? "opacity-30" : ""
-      } ${wide ? "w-full" : "w-[168px]"}`}
+      } ${wide ? "w-full" : "w-[180px]"}`}
     >
       <div
-        className="h-14 rounded-md w-full"
+        className="h-12 rounded-md w-full"
         style={{ background: `linear-gradient(135deg, hsl(${result.hue} 45% 72%), hsl(${result.hue + 30} 40% 55%))` }}
       />
       <p className="text-xs font-medium text-ink truncate">{result.name}</p>
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-xs text-sub">
-          <Stars rating={result.rating} />
-          <span className="text-faint">·</span>
-          <span className="text-faint">{PRICE[result.price]}</span>
-        </span>
-        <button className="text-[11px] px-1.5 py-0.5 rounded bg-brand-600 dark:bg-brand-500 text-white font-medium">
-          + Add
-        </button>
+      <div className="flex items-center gap-1 text-[10px] text-faint whitespace-nowrap overflow-hidden">
+        <Stars rating={result.rating} />
+        <span>({result.reviews.toLocaleString()})</span>
+        <span>·</span>
+        <span>{PRICE[result.price]}</span>
+        <span>·</span>
+        <span className="capitalize truncate">{result.tag}</span>
       </div>
+      <button
+        onClick={(e) => { e.stopPropagation(); onAdd(result); }}
+        className="text-[11px] px-1.5 py-0.5 rounded bg-brand-600 dark:bg-brand-500 text-white font-medium self-start"
+      >
+        + Add
+      </button>
     </div>
   );
 }
 
 /** Filter controls as a single toolbar row — the footer's natural form for them. */
-function FilterRow({
-  tag, setTag, keyword, setKeyword, compact,
-}: {
-  tag: string; setTag: (t: string) => void;
-  keyword: string; setKeyword: (k: string) => void;
-  compact?: boolean;
-}) {
+function FilterRow({ tray, compact }: { tray: Tray; compact?: boolean }) {
   return (
     <div className={`flex items-center gap-1.5 ${compact ? "flex-wrap" : ""}`}>
       {FILTER_TAGS.map((t) => (
         <button
           key={t}
-          onClick={() => setTag(t)}
+          onClick={() => tray.setTag(t)}
           className={`px-2 py-0.5 text-[11px] rounded-full border capitalize whitespace-nowrap transition-colors ${
-            tag === t
+            tray.tag === t
               ? "bg-brand-600 dark:bg-brand-500 text-white border-brand-600 dark:border-brand-500"
               : "bg-surface-2 text-sub border-line-strong hover:bg-surface-3"
           }`}
@@ -153,8 +208,8 @@ function FilterRow({
         </button>
       ))}
       <input
-        value={keyword}
-        onChange={(e) => setKeyword(e.target.value)}
+        value={tray.keyword}
+        onChange={(e) => tray.setKeyword(e.target.value)}
         placeholder="Search…"
         className="input py-0.5 px-2 text-xs flex-1 min-w-[100px] max-w-[200px]"
       />
@@ -163,34 +218,52 @@ function FilterRow({
   );
 }
 
-function useFilteredResults(mode: TrayMode, tag: string, keyword: string) {
-  const base = mode === "nearby" ? NEARBY_RESULTS : ROUTE_RESULTS;
-  return base.filter(
-    (r) =>
-      (tag === "all" || r.tag === tag) &&
-      (!keyword.trim() || r.name.toLowerCase().includes(keyword.trim().toLowerCase()))
-  );
-}
-
-function TrayTitle({ mode, setMode, onClose }: { mode: TrayMode; setMode: (m: TrayMode) => void; onClose: () => void }) {
+/** Mode tabs + the scope picker: a stop select for Nearby, a consecutive-leg select for
+ *  Along-the-way. Scope is always relative to the active day. */
+function TrayTitle({ tray, onClose }: { tray: Tray; onClose: () => void }) {
+  const stops = tray.day.stops;
+  const selectCls =
+    "text-xs text-sub bg-surface-2 border border-line-strong rounded px-1.5 py-0.5 max-w-[260px] truncate cursor-pointer";
   return (
-    <div className="flex items-center gap-3 min-w-0">
+    <div className="flex items-center gap-2 min-w-0">
       <div className="flex rounded-lg border border-line-strong overflow-hidden text-xs shrink-0">
         {(["nearby", "route"] as const).map((m) => (
           <button
             key={m}
-            onClick={() => setMode(m)}
+            onClick={() => tray.setMode(m)}
             className={`px-2.5 py-1 font-medium transition-colors ${
-              mode === m ? "bg-ink text-canvas" : "bg-surface-2 text-sub hover:bg-surface-3"
+              tray.mode === m ? "bg-ink text-canvas" : "bg-surface-2 text-sub hover:bg-surface-3"
             }`}
           >
             {m === "nearby" ? "Nearby" : "Along the way"}
           </button>
         ))}
       </div>
-      <p className="text-xs text-sub truncate">
-        {mode === "nearby" ? "around Senso-ji Temple" : "Senso-ji Temple → Tokyo Skytree"}
-      </p>
+      {tray.mode === "nearby" ? (
+        <select
+          value={tray.anchorIdx}
+          onChange={(e) => tray.setAnchorIdx(Number(e.target.value))}
+          className={selectCls}
+          aria-label="Nearby anchor stop"
+        >
+          {stops.map((s, i) => (
+            <option key={s} value={i}>around {s}</option>
+          ))}
+        </select>
+      ) : stops.length < 2 ? (
+        <span className="text-xs text-faint">needs at least two stops</span>
+      ) : (
+        <select
+          value={tray.legIdx}
+          onChange={(e) => tray.setLegIdx(Number(e.target.value))}
+          className={selectCls}
+          aria-label="Along-the-way leg"
+        >
+          {stops.slice(0, -1).map((s, i) => (
+            <option key={s} value={i}>{s} → {stops[i + 1]}</option>
+          ))}
+        </select>
+      )}
       <button onClick={onClose} className="ml-auto text-faint hover:text-sub text-sm shrink-0" aria-label="Close">
         ✕
       </button>
@@ -198,11 +271,18 @@ function TrayTitle({ mode, setMode, onClose }: { mode: TrayMode; setMode: (m: Tr
   );
 }
 
-// ---------- inspector popover (constant across variants) ----------
+// ---------- inspector popover (stops and results share it) ----------
 
-type Inspected = { stop: string; rect: DOMRect };
+type Inspected = { name: string; rect: DOMRect; result?: FakeResult };
 
-function InspectorPopover({ inspected, onClose }: { inspected: Inspected; onClose: () => void }) {
+function InspectorPopover({
+  inspected, addLabel, onAdd, onClose,
+}: {
+  inspected: Inspected;
+  addLabel: string;
+  onAdd: (name: string) => void;
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -213,10 +293,16 @@ function InspectorPopover({ inspected, onClose }: { inspected: Inspected; onClos
     return () => window.removeEventListener("pointerdown", onDown);
   }, [onClose]);
 
-  // Anchor beside the clicked stop row; clamp so it never leaves the viewport.
-  const W = 260;
-  const left = Math.min(inspected.rect.right + 10, window.innerWidth - W - 12);
-  const top = Math.min(Math.max(inspected.rect.top - 8, 12), window.innerHeight - 240);
+  // Anchor beside the source element; open upward when it sits in the lower half of the
+  // viewport (footer result cards), downward otherwise. Clamped to the viewport.
+  const W = 264;
+  const H = 270;
+  const left = Math.max(12, Math.min(inspected.rect.right + 10, window.innerWidth - W - 12));
+  const openUp = inspected.rect.top > window.innerHeight / 2;
+  const top = openUp
+    ? Math.max(12, inspected.rect.top - H - 8)
+    : Math.min(inspected.rect.top - 8, window.innerHeight - H - 12);
+  const r = inspected.result;
 
   return (
     <div
@@ -224,33 +310,55 @@ function InspectorPopover({ inspected, onClose }: { inspected: Inspected; onClos
       className="fixed z-40 card shadow-xl p-3 space-y-2"
       style={{ left, top, width: W }}
       role="dialog"
-      aria-label={`Details for ${inspected.stop}`}
+      aria-label={`Details for ${inspected.name}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-semibold text-ink leading-snug">{inspected.stop}</p>
+        <p className="text-sm font-semibold text-ink leading-snug">{inspected.name}</p>
         <button onClick={onClose} className="text-faint hover:text-sub shrink-0" aria-label="Close">✕</button>
       </div>
       <div className="flex items-center gap-1.5">
-        <Stars rating={4.5} />
-        <span className="text-[11px] text-faint">(12,840 reviews)</span>
+        <Stars rating={r?.rating ?? 4.5} />
+        <span className="text-[11px] text-faint">({(r?.reviews ?? 12840).toLocaleString()} reviews)</span>
+        {r && (
+          <>
+            <span className="text-[11px] text-faint">·</span>
+            <span className="text-[11px] text-sub">{PRICE[r.price]}</span>
+          </>
+        )}
       </div>
       <p className="text-[11px] text-sub">2 Chome-3-1 Asakusa, Taito City, Tokyo</p>
       <div className="text-[11px] text-sub">
         <p className="font-medium">Hours</p>
-        <div className="flex justify-between"><span>Mon–Sun</span><span>6:00–17:00</span></div>
+        <div className="flex justify-between"><span>Mon–Sun</span><span>{r ? "9:00–18:00" : "6:00–17:00"}</span></div>
       </div>
-      <div className="flex items-center gap-1 text-[11px] text-sub">
-        <span className="w-20">Visit duration</span>
-        <input defaultValue={1} className="w-7 text-center bg-surface-2 border border-line-strong rounded px-1 py-0.5 text-xs" />
-        <span className="text-faint">h</span>
-        <input defaultValue={30} className="w-7 text-center bg-surface-2 border border-line-strong rounded px-1 py-0.5 text-xs" />
-        <span className="text-faint">m</span>
-      </div>
-      <div className="flex flex-wrap gap-1">
-        {["buddhist temple", "landmark"].map((c) => (
-          <span key={c} className="text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-sub">{c}</span>
-        ))}
-      </div>
+      {r ? (
+        <>
+          <div className="flex flex-wrap gap-1">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-sub capitalize">{r.tag}</span>
+          </div>
+          <button
+            onClick={() => onAdd(inspected.name)}
+            className="text-xs px-2 py-1 rounded bg-brand-600 dark:bg-brand-500 text-white font-medium"
+          >
+            {addLabel}
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="flex items-center gap-1 text-[11px] text-sub">
+            <span className="w-20">Visit duration</span>
+            <input defaultValue={1} className="w-7 text-center bg-surface-2 border border-line-strong rounded px-1 py-0.5 text-xs" />
+            <span className="text-faint">h</span>
+            <input defaultValue={30} className="w-7 text-center bg-surface-2 border border-line-strong rounded px-1 py-0.5 text-xs" />
+            <span className="text-faint">m</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {["buddhist temple", "landmark"].map((c) => (
+              <span key={c} className="text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-sub">{c}</span>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -292,19 +400,38 @@ const EDGE_ZONE_PX = 70;
 const DWELL_MS = 450;
 const COOLDOWN_MS = 350;
 
-function DraggableStop({ id, label, onInspect }: { id: string; label: string; onInspect: (rect: DOMRect) => void }) {
+function DraggableStop({
+  id, label, onInspect, onNearby,
+}: {
+  id: string;
+  label: string;
+  onInspect: (rect: DOMRect) => void;
+  onNearby: () => void;
+}) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data: { label, kind: "stop" } });
   return (
     <li
       ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      onClick={(e) => onInspect(e.currentTarget.getBoundingClientRect())}
-      className={`text-xs px-2 py-1 mb-1 rounded border border-line-strong bg-surface cursor-grab active:cursor-grabbing select-none touch-none transition-opacity hover:border-brand-400 ${
+      className={`flex items-center gap-1 text-xs mb-1 rounded border border-line-strong bg-surface transition-opacity hover:border-brand-400 ${
         isDragging ? "opacity-30" : ""
       }`}
     >
-      ⠿ {label}
+      <span
+        {...listeners}
+        {...attributes}
+        onClick={(e) => onInspect((e.currentTarget.parentElement as HTMLElement).getBoundingClientRect())}
+        className="flex-1 px-2 py-1 cursor-grab active:cursor-grabbing select-none touch-none truncate"
+      >
+        ⠿ {label}
+      </span>
+      <button
+        onClick={(e) => { e.stopPropagation(); onNearby(); }}
+        title="Search nearby this stop"
+        aria-label={`Search nearby ${label}`}
+        className="px-1.5 text-faint hover:text-brand-600 dark:hover:text-brand-400 shrink-0"
+      >
+        ◎
+      </button>
     </li>
   );
 }
@@ -334,13 +461,16 @@ function DroppableDayCard({
 }
 
 function FocalStack({
-  isDragging, onInspect, stackHeight = 340,
+  active, onActiveChange, isDragging, onInspect, onNearby, onAlong, stackHeight = 340,
 }: {
+  active: number;
+  onActiveChange: (i: number) => void;
   isDragging: boolean;
   onInspect: (stop: string, rect: DOMRect) => void;
+  onNearby: (stopIdx: number) => void;
+  onAlong: (legIdx: number) => void;
   stackHeight?: number;
 }) {
-  const [active, setActive] = useState(1);
   const [dwellSide, setDwellSide] = useState<"left" | "right" | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const directionRef = useRef<1 | -1>(1);
@@ -351,7 +481,7 @@ function FocalStack({
     const clamped = Math.max(0, Math.min(DAYS.length - 1, next));
     if (clamped === active) return;
     directionRef.current = clamped > active ? 1 : -1;
-    setActive(clamped);
+    onActiveChange(clamped);
   }
 
   function clearDwell() {
@@ -463,13 +593,26 @@ function FocalStack({
               <div className="flex-1 overflow-hidden">
                 {isActive ? (
                   <ul>
-                    {day.stops.map((s) => (
-                      <DraggableStop
-                        key={s}
-                        id={`stop:${day.dayNumber}:${s}`}
-                        label={s}
-                        onInspect={(rect) => onInspect(s, rect)}
-                      />
+                    {day.stops.map((s, i) => (
+                      <Fragment key={s}>
+                        <DraggableStop
+                          id={`stop:${day.dayNumber}:${s}`}
+                          label={s}
+                          onInspect={(rect) => onInspect(s, rect)}
+                          onNearby={() => onNearby(i)}
+                        />
+                        {i < day.stops.length - 1 && (
+                          <li className="mb-1">
+                            <button
+                              onClick={() => onAlong(i)}
+                              title={`Search along ${s} → ${day.stops[i + 1]}`}
+                              className="w-full text-center text-[10px] text-faint hover:text-brand-600 dark:hover:text-brand-400 leading-none py-0.5 transition-colors"
+                            >
+                              ⌁ along this leg
+                            </button>
+                          </li>
+                        )}
+                      </Fragment>
                     ))}
                   </ul>
                 ) : (
@@ -498,10 +641,18 @@ function FocalStack({
 
 // ---------- variant scaffold: DndContext + inspector + map, shared by all variants ----------
 
+type ScaffoldCtx = {
+  isDragging: boolean;
+  onInspectStop: (stop: string, rect: DOMRect) => void;
+  onInspectResult: (result: FakeResult, rect: DOMRect) => void;
+  notify: (msg: string) => void;
+};
+
 function Scaffold({
-  children, discoveryOpen, setDiscoveryOpen,
+  children, active, discoveryOpen, setDiscoveryOpen,
 }: {
-  children: (ctx: { isDragging: boolean; onInspect: (stop: string, rect: DOMRect) => void }) => React.ReactNode;
+  children: (ctx: ScaffoldCtx) => React.ReactNode;
+  active: number;
   discoveryOpen: boolean;
   setDiscoveryOpen: (v: boolean) => void;
 }) {
@@ -512,6 +663,7 @@ function Scaffold({
   const [mapOpen, setMapOpen] = useState(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  const activeDayNumber = DAYS[active].dayNumber;
 
   function handleDragStart(e: DragStartEvent) {
     setIsDragging(true);
@@ -557,9 +709,24 @@ function Scaffold({
         <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium min-h-[16px]">{dropMessage}</p>
       </div>
 
-      {children({ isDragging, onInspect: (stop, rect) => setInspected({ stop, rect }) })}
+      {children({
+        isDragging,
+        onInspectStop: (stop, rect) => setInspected({ name: stop, rect }),
+        onInspectResult: (result, rect) => setInspected({ name: result.name, rect, result }),
+        notify: setDropMessage,
+      })}
 
-      {inspected && <InspectorPopover inspected={inspected} onClose={() => setInspected(null)} />}
+      {inspected && (
+        <InspectorPopover
+          inspected={inspected}
+          addLabel={`+ Add to Day ${activeDayNumber}`}
+          onAdd={(name) => {
+            setDropMessage(`Would add "${name}" to Day ${activeDayNumber}`);
+            setInspected(null);
+          }}
+          onClose={() => setInspected(null)}
+        />
+      )}
       {mapOpen && <MapPopup onClose={() => setMapOpen(false)} />}
 
       <DragOverlay dropAnimation={null}>
@@ -576,29 +743,41 @@ function Scaffold({
 // stack for much height, but 12+ results means sideways scrolling with a mouse wheel.
 
 function VariantA() {
-  const [open, setOpen] = useState(true);
-  const [mode, setMode] = useState<TrayMode>("nearby");
-  const [tag, setTag] = useState("all");
-  const [keyword, setKeyword] = useState("");
-  const results = useFilteredResults(mode, tag, keyword);
+  const [active, setActive] = useState(1);
+  const tray = useTray(active);
 
   return (
-    <Scaffold discoveryOpen={open} setDiscoveryOpen={setOpen}>
-      {({ isDragging, onInspect }) => (
+    <Scaffold active={active} discoveryOpen={tray.open} setDiscoveryOpen={tray.setOpen}>
+      {({ isDragging, onInspectStop, onInspectResult, notify }) => (
         <>
-          <FocalStack isDragging={isDragging} onInspect={onInspect} stackHeight={320} />
-          {open && (
+          <FocalStack
+            active={active}
+            onActiveChange={setActive}
+            isDragging={isDragging}
+            onInspect={onInspectStop}
+            onNearby={tray.openNearby}
+            onAlong={tray.openAlong}
+            stackHeight={320}
+          />
+          {tray.open && (
             <div className="fixed bottom-0 left-0 right-0 z-30 bg-surface border-t border-line shadow-[0_-4px_16px_rgba(0,0,0,0.08)]">
               <div className="max-w-6xl mx-auto px-4 py-2 space-y-2">
                 <div className="flex items-center gap-4 flex-wrap">
-                  <TrayTitle mode={mode} setMode={setMode} onClose={() => setOpen(false)} />
-                  <FilterRow tag={tag} setTag={setTag} keyword={keyword} setKeyword={setKeyword} />
+                  <TrayTitle tray={tray} onClose={() => tray.setOpen(false)} />
+                  <FilterRow tray={tray} />
                 </div>
                 <div className="flex gap-2 overflow-x-auto pb-2">
-                  {results.length === 0 ? (
+                  {tray.results.length === 0 ? (
                     <p className="text-xs text-faint py-6">No results — try a different filter or search.</p>
                   ) : (
-                    results.map((r) => <ResultCard key={r.id} result={r} />)
+                    tray.results.map((r) => (
+                      <ResultCard
+                        key={r.id}
+                        result={r}
+                        onInspect={onInspectResult}
+                        onAdd={(res) => notify(`Would add "${res.name}" to Day ${DAYS[active].dayNumber}`)}
+                      />
+                    ))
                   )}
                 </div>
               </div>
@@ -615,56 +794,68 @@ function VariantA() {
 // scrolls vertically — mouse-wheel-friendly browsing at the cost of covering more stack.
 
 function VariantB() {
-  const [open, setOpen] = useState(true);
+  const [active, setActive] = useState(1);
   const [expandedTray, setExpandedTray] = useState(false);
-  const [mode, setMode] = useState<TrayMode>("nearby");
-  const [tag, setTag] = useState("all");
-  const [keyword, setKeyword] = useState("");
-  const results = useFilteredResults(mode, tag, keyword);
+  const tray = useTray(active);
 
   return (
-    <Scaffold discoveryOpen={open} setDiscoveryOpen={setOpen}>
-      {({ isDragging, onInspect }) => (
-        <>
-          <FocalStack isDragging={isDragging} onInspect={onInspect} stackHeight={320} />
-          {open && (
-            <div className="fixed bottom-0 left-0 right-0 z-30 bg-surface border-t border-line shadow-[0_-4px_16px_rgba(0,0,0,0.08)]">
-              <div className="max-w-6xl mx-auto px-4 py-2 space-y-2">
-                <div className="flex items-center gap-4 flex-wrap">
-                  <button
-                    onClick={() => setExpandedTray((v) => !v)}
-                    className="text-xs text-sub hover:text-ink shrink-0"
-                    aria-label={expandedTray ? "Collapse tray" : "Expand tray"}
-                  >
-                    {expandedTray ? "▾ Collapse" : "▴ Expand"}
-                  </button>
-                  <TrayTitle mode={mode} setMode={setMode} onClose={() => setOpen(false)} />
-                  <FilterRow tag={tag} setTag={setTag} keyword={keyword} setKeyword={setKeyword} />
+    <Scaffold active={active} discoveryOpen={tray.open} setDiscoveryOpen={tray.setOpen}>
+      {({ isDragging, onInspectStop, onInspectResult, notify }) => {
+        const onAdd = (res: FakeResult) => notify(`Would add "${res.name}" to Day ${DAYS[active].dayNumber}`);
+        return (
+          <>
+            <FocalStack
+              active={active}
+              onActiveChange={setActive}
+              isDragging={isDragging}
+              onInspect={onInspectStop}
+              onNearby={tray.openNearby}
+              onAlong={tray.openAlong}
+              stackHeight={320}
+            />
+            {tray.open && (
+              <div className="fixed bottom-0 left-0 right-0 z-30 bg-surface border-t border-line shadow-[0_-4px_16px_rgba(0,0,0,0.08)]">
+                <div className="max-w-6xl mx-auto px-4 py-2 space-y-2">
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <button
+                      onClick={() => setExpandedTray((v) => !v)}
+                      className="text-xs text-sub hover:text-ink shrink-0"
+                      aria-label={expandedTray ? "Collapse tray" : "Expand tray"}
+                    >
+                      {expandedTray ? "▾ Collapse" : "▴ Expand"}
+                    </button>
+                    <TrayTitle tray={tray} onClose={() => tray.setOpen(false)} />
+                    <FilterRow tray={tray} />
+                  </div>
+                  {expandedTray ? (
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2 overflow-y-auto pb-2" style={{ maxHeight: "40vh" }}>
+                      {tray.results.map((r) => (
+                        <ResultCard key={r.id} result={r} wide onInspect={onInspectResult} onAdd={onAdd} />
+                      ))}
+                      {tray.results.length === 0 && <p className="text-xs text-faint py-6">No results.</p>}
+                    </div>
+                  ) : (
+                    <div className="flex gap-2 overflow-x-auto pb-2">
+                      {tray.results.slice(0, 8).map((r) => (
+                        <ResultCard key={r.id} result={r} onInspect={onInspectResult} onAdd={onAdd} />
+                      ))}
+                      {tray.results.length > 8 && (
+                        <button
+                          onClick={() => setExpandedTray(true)}
+                          className="shrink-0 w-[100px] card flex items-center justify-center text-xs text-sub hover:text-ink"
+                        >
+                          +{tray.results.length - 8} more
+                        </button>
+                      )}
+                      {tray.results.length === 0 && <p className="text-xs text-faint py-6">No results.</p>}
+                    </div>
+                  )}
                 </div>
-                {expandedTray ? (
-                  <div className="grid grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-2 overflow-y-auto pb-2" style={{ maxHeight: "40vh" }}>
-                    {results.map((r) => <ResultCard key={r.id} result={r} wide />)}
-                    {results.length === 0 && <p className="text-xs text-faint py-6">No results.</p>}
-                  </div>
-                ) : (
-                  <div className="flex gap-2 overflow-x-auto pb-2">
-                    {results.slice(0, 8).map((r) => <ResultCard key={r.id} result={r} />)}
-                    {results.length > 8 && (
-                      <button
-                        onClick={() => setExpandedTray(true)}
-                        className="shrink-0 w-[100px] card flex items-center justify-center text-xs text-sub hover:text-ink"
-                      >
-                        +{results.length - 8} more
-                      </button>
-                    )}
-                    {results.length === 0 && <p className="text-xs text-faint py-6">No results.</p>}
-                  </div>
-                )}
               </div>
-            </div>
-          )}
-        </>
-      )}
+            )}
+          </>
+        );
+      }}
     </Scaffold>
   );
 }
@@ -675,28 +866,41 @@ function VariantB() {
 // does to the carousel instead of assuming the footer wins.
 
 function VariantC() {
-  const [open, setOpen] = useState(true);
-  const [mode, setMode] = useState<TrayMode>("nearby");
-  const [tag, setTag] = useState("all");
-  const [keyword, setKeyword] = useState("");
-  const results = useFilteredResults(mode, tag, keyword);
+  const [active, setActive] = useState(1);
+  const tray = useTray(active);
 
   return (
-    <Scaffold discoveryOpen={open} setDiscoveryOpen={setOpen}>
-      {({ isDragging, onInspect }) => (
+    <Scaffold active={active} discoveryOpen={tray.open} setDiscoveryOpen={tray.setOpen}>
+      {({ isDragging, onInspectStop, onInspectResult, notify }) => (
         <div className="flex gap-4 items-start">
           <div className="flex-1 min-w-0">
-            <FocalStack isDragging={isDragging} onInspect={onInspect} stackHeight={340} />
+            <FocalStack
+              active={active}
+              onActiveChange={setActive}
+              isDragging={isDragging}
+              onInspect={onInspectStop}
+              onNearby={tray.openNearby}
+              onAlong={tray.openAlong}
+              stackHeight={340}
+            />
           </div>
-          {open && (
+          {tray.open && (
             <aside className="w-[300px] shrink-0 card flex flex-col max-h-[calc(100vh-9rem)]">
               <div className="p-3 border-b border-line space-y-2">
-                <TrayTitle mode={mode} setMode={setMode} onClose={() => setOpen(false)} />
-                <FilterRow tag={tag} setTag={setTag} keyword={keyword} setKeyword={setKeyword} compact />
+                <TrayTitle tray={tray} onClose={() => tray.setOpen(false)} />
+                <FilterRow tray={tray} compact />
               </div>
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                {results.map((r) => <ResultCard key={r.id} result={r} wide />)}
-                {results.length === 0 && <p className="text-xs text-faint py-6">No results.</p>}
+                {tray.results.map((r) => (
+                  <ResultCard
+                    key={r.id}
+                    result={r}
+                    wide
+                    onInspect={onInspectResult}
+                    onAdd={(res) => notify(`Would add "${res.name}" to Day ${DAYS[active].dayNumber}`)}
+                  />
+                ))}
+                {tray.results.length === 0 && <p className="text-xs text-faint py-6">No results.</p>}
               </div>
             </aside>
           )}
@@ -725,7 +929,7 @@ function PrototypeSwitcher({ current }: { current: string }) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const t = e.target as HTMLElement;
-      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) return;
+      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable) return;
       if (e.key === "ArrowLeft") go(idx - 1);
       if (e.key === "ArrowRight") go(idx + 1);
     }
@@ -762,8 +966,9 @@ function DiscoveryTrayPrototypeInner() {
         <h1 className="text-page-title text-ink">Discovery attachment prototype</h1>
         <p className="text-body text-sub mt-0.5">
           Ticket #134 — how Nearby/Along-route/Inspector attach to the locked focal-stack shell.
-          Click a stop for its inspector popover; drag a stop or a result card onto a day (edges page while dragging).
-          Map is a popup via the 🗺 button. Fake data; not linked from the real app.
+          ◎ on a stop opens Nearby anchored there; “⌁ along this leg” between two stops opens Along-the-way for
+          that leg; both scopes are switchable from the tray header. Click a stop or a result card to inspect it.
+          Drag either onto a day (edges page while dragging). Map is a popup via the 🗺 button. Fake data.
         </p>
       </div>
       <Component key={variant.key} />
