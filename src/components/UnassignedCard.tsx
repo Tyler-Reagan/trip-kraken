@@ -4,7 +4,7 @@ import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { ScheduledStop, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import { GripVertical, Search, Trash2 } from "lucide-react";
-import { UNASSIGNED_DROP_ID } from "./ScheduleView";
+import { UNASSIGNED_DROP_ID } from "./DayNavigator";
 
 interface Props {
   locations: Location[];
@@ -87,6 +87,7 @@ function UnassignedRow({ id, loc, schedulable }: { id: string; loc: Location; sc
   return (
     <li
       ref={setNodeRef}
+      data-inspect-anchor={loc.id}
       {...(schedulable ? { ...attributes, ...listeners } : {})}
       className={`group flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none
         ${schedulable ? "touch-none" : ""}

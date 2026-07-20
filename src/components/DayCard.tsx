@@ -8,7 +8,7 @@ import type { DerivedDay, ScheduledStop, Lodging, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import { dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { GripVertical, Route, Search, Trash2 } from "lucide-react";
-import { dayDropId } from "./ScheduleView";
+import { dayDropId } from "./DayNavigator";
 
 interface Props {
   day: DerivedDay;
@@ -185,6 +185,7 @@ function AnchorRow({ loc, role, date }: { loc: Lodging; role: "start" | "end" | 
 
   return (
     <li
+      data-inspect-anchor={loc.id}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("button")) return;
         setInspectedLocationId(loc.id);
@@ -269,6 +270,7 @@ function StopRow({ id, stop, index, dayNumber, dayOfWeek, date }: StopRowProps) 
   return (
     <li
       ref={(el) => { setNodeRef(el); highlightRef.current = el; }}
+      data-inspect-anchor={loc.id}
       style={{ transform: CSS.Transform.toString(transform), transition: transition ?? undefined }}
       {...attributes}
       {...listeners}

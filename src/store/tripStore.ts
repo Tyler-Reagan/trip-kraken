@@ -1,14 +1,16 @@
 import { create } from "zustand";
-import type { TripWithDetails, Location, Lodging } from "@/types";
+import { deriveDays, type TripWithDetails, type Location, type Lodging, type NearbyPlace } from "@/types";
 import { reorderPlacements, insertPlacement } from "@/lib/placementOrdering";
 
 type ActiveSurface = "itinerary" | "places";
-export type ScheduleFilter = number | "unassigned" | null;
 
-/** An along-route discovery search: a free-text query scoped to the corridor between two of the
- *  trip's stops (#102). Distinct from an anchored `nearbySearchLocation` — they're mutually
- *  exclusive since both drive the single companion panel. `date` is the day to place adds on. */
+/** An along-route discovery search: a free-text query scoped to the corridor between two
+ *  *consecutive* stops (#102, #134). `date` is the day to place adds on. */
 export type RouteSearch = { from: Location; to: Location; date: string | null };
+
+/** Which tab of the discovery tray is showing (#134). Null = tray closed. The nearby and
+ *  route scopes persist independently so tab-switching returns to the last scope of each. */
+export type DiscoveryMode = "nearby" | "route";
 
 interface TripStore {
   // Data
@@ -17,11 +19,12 @@ interface TripStore {
 
   // UI state
   activeSurface: ActiveSurface;
-  mapShown: boolean;
-  mapExpanded: boolean;
-  selectedDayNumber: ScheduleFilter;
+  /** The focal day of the day-navigator carousel, 1-based (#134). */
+  activeDayNumber: number;
+  mapPopupOpen: boolean;
   highlightedLocationId: string | null;
   inspectedLocationId: string | null;
+  discoveryMode: DiscoveryMode | null;
   nearbySearchLocation: Location | null;
   nearbySearchDate: string | null;
   routeSearch: RouteSearch | null;
@@ -31,13 +34,14 @@ interface TripStore {
   // Setters
   setTrip: (trip: TripWithDetails) => void;
   setActiveSurface: (v: ActiveSurface) => void;
-  setMapShown: (v: boolean) => void;
-  setMapExpanded: (v: boolean) => void;
-  setSelectedDayNumber: (n: ScheduleFilter) => void;
+  setActiveDayNumber: (n: number) => void;
+  setMapPopupOpen: (v: boolean) => void;
   setHighlightedLocationId: (id: string | null) => void;
   setInspectedLocationId: (id: string | null) => void;
+  setDiscoveryMode: (m: DiscoveryMode) => void;
   setNearbySearchLocation: (loc: Location | null, date?: string | null) => void;
   setRouteSearch: (search: RouteSearch | null) => void;
+  closeDiscovery: () => void;
   setShowOptimize: (v: boolean) => void;
   setShowAddLocation: (v: boolean) => void;
 
@@ -55,6 +59,10 @@ interface TripStore {
     locationId: string,
     dates: { checkInDate: string; checkOutDate: string } | null
   ) => Promise<string | null>;
+  /** Add a discovery result to the trip (and, when `date` is set, place it on that day at
+   *  `order`, else appended). Returns an error message or null. Shared by the tray's Add
+   *  button and dropping a result card on a day card (#134). */
+  addDiscoveredPlace: (place: NearbyPlace, date: string | null, order?: number) => Promise<string | null>;
   setDayLabel: (date: string, label: string | null) => Promise<void>;
   setTransitCaveatDismissed: (v: boolean) => Promise<void>;
   importBooking: (text: string) => Promise<string | null>;
@@ -75,11 +83,11 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   tripId: null,
 
   activeSurface: "itinerary",
-  mapShown: true,
-  mapExpanded: false,
-  selectedDayNumber: null,
+  activeDayNumber: 1,
+  mapPopupOpen: false,
   highlightedLocationId: null,
   inspectedLocationId: null,
+  discoveryMode: null,
   nearbySearchLocation: null,
   nearbySearchDate: null,
   routeSearch: null,
@@ -91,16 +99,25 @@ export const useTripStore = create<TripStore>()((set, get) => ({
 
   setTrip: (trip) => set({ trip, tripId: trip.id }),
   setActiveSurface: (v) =>
-    set({ activeSurface: v, inspectedLocationId: null, nearbySearchLocation: null, routeSearch: null, mapExpanded: false }),
-  setMapShown: (v) => set({ mapShown: v }),
-  setMapExpanded: (v) => set({ mapExpanded: v }),
-  setSelectedDayNumber: (n) => set({ selectedDayNumber: n, inspectedLocationId: null }),
+    set({ activeSurface: v, inspectedLocationId: null, discoveryMode: null, nearbySearchLocation: null, routeSearch: null }),
+  // Paging closes the inspector popover — its anchor row leaves the DOM with the old day.
+  setActiveDayNumber: (n) => set({ activeDayNumber: n, inspectedLocationId: null }),
+  setMapPopupOpen: (v) => set({ mapPopupOpen: v }),
   setHighlightedLocationId: (id) => set({ highlightedLocationId: id }),
   setInspectedLocationId: (id) => set({ inspectedLocationId: id }),
-  // Anchored and route search share the one companion slot — opening either closes the other.
+  // Tab-switching only — scope for the target mode must already exist (the tray disables the
+  // tab otherwise); scope itself is chosen from the day card's triggers, not the tray (#134).
+  setDiscoveryMode: (m) => set({ discoveryMode: m }),
   setNearbySearchLocation: (loc, date) =>
-    set({ nearbySearchLocation: loc, nearbySearchDate: date ?? null, routeSearch: loc ? null : get().routeSearch }),
-  setRouteSearch: (search) => set({ routeSearch: search, nearbySearchLocation: search ? null : get().nearbySearchLocation }),
+    loc
+      ? set({ nearbySearchLocation: loc, nearbySearchDate: date ?? null, discoveryMode: "nearby" })
+      : set({ nearbySearchLocation: null, nearbySearchDate: null, discoveryMode: get().routeSearch ? "route" : null }),
+  setRouteSearch: (search) =>
+    search
+      ? set({ routeSearch: search, discoveryMode: "route" })
+      : set({ routeSearch: null, discoveryMode: get().nearbySearchLocation ? "nearby" : null }),
+  closeDiscovery: () =>
+    set({ discoveryMode: null, nearbySearchLocation: null, nearbySearchDate: null, routeSearch: null }),
   setShowOptimize: (v) => set({ showOptimize: v }),
   setShowAddLocation: (v) => set({ showAddLocation: v }),
 
@@ -237,6 +254,52 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     return null;
   },
 
+  addDiscoveredPlace: async (place, date, order) => {
+    const tripId = get().tripId;
+    if (!tripId) return "No trip loaded";
+    try {
+      const res = await fetch(`/api/trips/${tripId}/locations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: place.name,
+          address: place.address,
+          lat: place.lat,
+          lng: place.lng,
+          placeId: place.placeId,
+          rating: place.rating,
+          reviewCount: place.reviewCount,
+          categories: place.categories,
+        }),
+      });
+      // 409 = already in the trip — not an error, just nothing new to place.
+      if (res.status === 409) {
+        await get().reload();
+        return null;
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return (data as { error?: string }).error ?? "Failed to add location";
+      }
+      const newLocation = (await res.json()) as { id?: string };
+      if (date && newLocation.id) {
+        await fetch(`/api/trips/${tripId}/placements`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            locationId: newLocation.id,
+            date,
+            ...(order !== undefined ? { order } : {}),
+          }),
+        });
+      }
+      await get().reload();
+      return null;
+    } catch {
+      return "Network error. Could not add location.";
+    }
+  },
+
   setDayLabel: async (date, label) => {
     const tripId = get().tripId;
     if (!tripId) return;
@@ -294,9 +357,15 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   },
 
   handleMapLocationClick: (locationId) => {
-    // Map dots live in the itinerary companion; clicking one surfaces the stop in the
-    // adjacent list. Drop out of full-bleed so the highlighted row is in view.
-    set({ highlightedLocationId: locationId, activeSurface: "itinerary", mapExpanded: false });
+    // Clicking a map dot surfaces the stop in the itinerary: page the carousel to the day
+    // holding it (the stop's row only exists in the DOM when its day is focal), then flash it.
+    const trip = get().trip;
+    const day = trip ? deriveDays(trip).find((d) => d.stops.some((s) => s.location.id === locationId)) : undefined;
+    set({
+      highlightedLocationId: locationId,
+      activeSurface: "itinerary",
+      ...(day ? { activeDayNumber: day.dayNumber } : {}),
+    });
     setTimeout(() => set({ highlightedLocationId: null }), 2000);
   },
 }));
