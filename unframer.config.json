@@ -1,0 +1,7 @@
+{
+  "schema": "https://unframer.co",
+  "components": {
+    "ImmersiveCarousel": "https://framer.com/m/ImmersiveCarousel-gIhelg.js@M6wuw0ZrHgGT1T6ohy2j"
+  },
+  "outDir": "./framer"
+}

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<!-- saved from url=(0140)file:///private/tmp/claude-501/-Users-tylerreagan-Projects-trip-kraken/6654a029-06c8-4d7a-8286-a4d35836fbec/scratchpad/trip-model-brief.html -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The place &amp; plan model — trip-kraken</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --border:#30363d; --border2:#3d444d;
+    --fg:#c9d1d9; --muted:#8b949e; --faint:#6e7681;
+    --accent:#58a6ff; --accent-bg:#0f1d2e; --accent-line:#1f3a5f;
+    --green:#3fb950; --green-bg:#0f1f14; --green-line:#1f3d28;
+    --amber:#d29922; --violet:#bc8cff; --violet-bg:#1a1229; --violet-line:#3d2a5c;
+    --red:#f85149;
+    --amber-bg:#231c0f; --amber-line:#3d3115;
+    --red-bg:#2a1514; --red-line:#48201e;
+    --code-bg:#1a2029; --code-fg:#a9c7ff;
+    --radius:8px; --radius-lg:10px;
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    --font-mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --text-base:17px; --text-sm:14px; --text-xs:12px;
+    --text-lg:19px; --text-xl:22px;
+    --h1-size:30px; --line-height:1.62;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:var(--text-base)/var(--line-height) var(--font-sans);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto;padding:32px 24px 80px}
+  .mono{font-family:var(--font-mono)}
+  h1{font-size:var(--h1-size);font-weight:700;margin:0 0 5px;letter-spacing:-.01em;line-height:1.18}
+  h1 .accent{color:var(--accent)}
+  .sub{color:var(--muted);margin:0 0 18px;font-size:var(--text-base);max-width:790px}
+  h2{font-size:var(--text-xl);font-weight:700;margin:42px 0 12px;padding-bottom:7px;
+    border-bottom:1px solid var(--border2);letter-spacing:-.01em}
+  p{margin:10px 0}
+  code{font-family:var(--font-mono);font-size:.85em;background:var(--code-bg);
+    border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--code-fg)}
+  .masthead{margin:0 0 28px}
+  .masthead-kicker{font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:.1em;
+    text-transform:uppercase;color:var(--accent);margin:0 0 8px}
+  .block{--block-accent:var(--accent);--block-tag-bg:var(--accent-bg);--block-tag-line:var(--accent-line);
+    position:relative;margin:32px 0;padding:26px 30px 30px;border-radius:14px;border:1px solid var(--border);
+    background:linear-gradient(160deg,color-mix(in srgb,var(--block-accent) 6%,var(--panel)) 0%,var(--panel) 55%,var(--bg) 100%);
+    overflow:hidden}
+  .block::after{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--block-accent);border-radius:14px 0 0 14px}
+  .block h2{margin:0 0 14px;padding:0;border-bottom:none}
+  .block-now{--block-accent:var(--green);--block-tag-bg:var(--green-bg);--block-tag-line:var(--green-line)}
+  .block-compare{--block-accent:var(--violet);--block-tag-bg:var(--violet-bg);--block-tag-line:var(--violet-line)}
+  .block-warn{--block-accent:var(--amber);--block-tag-bg:var(--amber-bg);--block-tag-line:var(--amber-line)}
+  .facts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0}
+  .fact{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);padding:15px 17px}
+  .fact-label{font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:.06em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:7px}
+  .fact-punch{margin:0;font-size:var(--text-lg);font-weight:600;line-height:1.35;letter-spacing:-.01em}
+  .fact-detail{margin:5px 0 0;font-size:var(--text-sm);color:var(--muted);line-height:1.45}
+  .points{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:4px 0 8px}
+  .point{--point-color:var(--block-accent,var(--accent));display:flex;gap:12px;align-items:flex-start;
+    padding:15px 17px;border-radius:var(--radius-lg);border:1px solid var(--border);
+    border-left:3px solid var(--point-color);background:color-mix(in srgb,var(--point-color) 4%,var(--bg))}
+  .point-marker{flex:none;width:8px;height:8px;margin-top:8px;border-radius:50%;background:var(--point-color);
+    box-shadow:0 0 8px color-mix(in srgb,var(--point-color) 55%,transparent)}
+  .point-head{margin:0 0 5px;font-size:var(--text-base);font-weight:600;line-height:1.35;color:var(--fg)}
+  .point-copy{margin:0;font-size:var(--text-sm);color:var(--muted);line-height:1.55}
+  .bridge{margin:20px 0 0;padding:15px 19px;border-radius:var(--radius-lg);
+    border:1px solid var(--block-tag-line,var(--accent-line));border-left:4px solid var(--block-accent,var(--accent));
+    background:var(--block-tag-bg,var(--accent-bg))}
+  .bridge-label{display:block;font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:.06em;
+    text-transform:uppercase;color:var(--block-accent,var(--accent));margin-bottom:7px}
+  .bridge-punch{margin:0;font-size:var(--text-lg);font-weight:600;color:var(--fg);line-height:1.35;letter-spacing:-.01em}
+  .tags{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 20px}
+  .tag{font-family:var(--font-mono);font-size:var(--text-xs);border:1px solid var(--border2);
+    border-radius:999px;padding:3px 11px;color:var(--muted);background:var(--panel)}
+  .tag.g{border-color:var(--green-line);color:var(--green);background:var(--green-bg)}
+  .tag.v{border-color:var(--violet-line);color:var(--violet);background:var(--violet-bg)}
+  .tag.a{border-color:var(--accent-line);color:var(--accent);background:var(--accent-bg)}
+  .key,.note{border-radius:var(--radius-lg);padding:14px 16px;margin:16px 0;font-size:var(--text-base)}
+  .key{background:var(--accent-bg);border:1px solid var(--accent-line)} .key b{color:var(--accent)}
+  .note{background:var(--red-bg);border:1px solid var(--red-line)} .note b{color:var(--red)}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:var(--text-base)}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--border);vertical-align:top}
+  thead th{font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:.05em;text-transform:uppercase;
+    color:var(--faint);border-bottom:1.5px solid var(--border2);font-weight:600}
+  tbody tr:last-child td{border-bottom:none}
+  td:first-child{font-weight:600}
+  .tk{font-family:var(--font-mono);font-size:13px;color:var(--muted)}
+  .noun{color:var(--accent);font-weight:600} .adj{color:var(--violet);font-weight:600}
+  .ok{color:var(--green);font-weight:600} .x{color:var(--red);font-weight:600} .mid{color:var(--amber);font-weight:600}
+  .st{font-family:var(--font-mono);font-size:var(--text-xs);white-space:nowrap}
+  figure{margin:18px 0}
+  .diagram{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;
+    box-shadow:0 1px 0 color-mix(in srgb,var(--block-accent,var(--accent)) 25%,transparent),0 10px 32px rgba(0,0,0,.2)}
+  .diagram svg{display:block;width:100%;height:auto}
+  figcaption{color:var(--muted);font-size:var(--text-sm);margin:10px auto 0;text-align:center;line-height:1.5;
+    max-width:700px;padding:9px 16px;border-radius:999px;border:1px solid var(--border);
+    background:color-mix(in srgb,var(--block-accent,var(--accent)) 5%,var(--panel))}
+  footer{margin-top:40px;padding:18px 20px;font-size:var(--text-sm);color:var(--muted);
+    background:var(--panel);border-radius:var(--radius-lg);border:1px solid var(--border)}
+  footer .footer-line{margin:0;line-height:1.5}
+  footer .footer-line+.footer-line{margin-top:7px}
+  footer .footer-faint{color:var(--faint);font-size:var(--text-xs)}
+  @media (max-width:820px){ .facts,.points{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="masthead-kicker">Data model · trip-kraken</p>
+    <h1>One place type, <span class="accent">one plan</span></h1>
+    <p class="sub">A trip is a set of typed <code>Location</code>s plus a plan that arranges them on a date axis.
+      Lodging, transit, and activity are <em>kinds of one primitive</em>; the temporal facts about a place are
+      <em>fields on it</em>; the plan is the only thing the optimizer produces.</p>
+    <div class="tags">
+      <span class="tag a">1 table</span>
+      <span class="tag a">3 kinds</span>
+      <span class="tag g">1 date axis</span>
+      <span class="tag v">Stay &amp; locks removed</span>
+    </div>
+  </header>
+
+  <section class="block">
+    <h2>The whole model in one breath</h2>
+    <div class="facts">
+      <div class="fact">
+        <div class="fact-label">One primitive</div>
+        <p class="fact-punch">Location, typed by kind</p>
+        <p class="fact-detail">Every place is one <code>Location</code> in one table, discriminated by <code>kind</code>: activity · transit · lodging. Functions over Location inherit to all of them.</p>
+      </div>
+      <div class="fact">
+        <div class="fact-label">One seam</div>
+        <p class="fact-punch">Constraint vs. plan</p>
+        <p class="fact-detail">Facts <em>about</em> a place (a stay’s dates, a transit’s times) are fields — optimizer <em>inputs</em>. The arrangement of places is the <em>Plan</em> — the only output.</p>
+      </div>
+      <div class="fact">
+        <div class="fact-label">One axis</div>
+        <p class="fact-punch">Real dates, always</p>
+        <p class="fact-detail">Every trip has a date range; day-numbers derive from it. A place’s presence across days is <em>projected</em> from its fields, never stored twice.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="block block-compare">
+    <h2>The taxonomy: one interface, extended by kind</h2>
+    <p>A discriminated union over a single table. Subtype interfaces are added <em>lazily</em> — only when a
+      kind (or a leaf) carries fields of its own. A value stays at the nearest meaningful level until it earns a deeper one.</p>
+
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 900 270" role="img" aria-label="Location is the base interface; Activity, Transit, and Lodging extend it, with leaf types added lazily.">
+          <!-- base -->
+          <rect x="330" y="20" width="240" height="58" rx="10" fill="#161b22" stroke="#58a6ff" stroke-opacity="0.6"></rect>
+          <text x="450" y="44" fill="#c9d1d9" font-size="15" font-weight="700" font-family="sans-serif" text-anchor="middle">Location</text>
+          <text x="450" y="64" fill="#8b949e" font-size="11.5" font-family="monospace" text-anchor="middle">id · name · lat/lng · kind</text>
+
+          <!-- connectors -->
+          <line x1="450" y1="78" x2="160" y2="150" stroke="#30363d" stroke-width="1.5"></line>
+          <line x1="450" y1="78" x2="450" y2="150" stroke="#30363d" stroke-width="1.5"></line>
+          <line x1="450" y1="78" x2="740" y2="150" stroke="#30363d" stroke-width="1.5"></line>
+
+          <!-- Activity -->
+          <rect x="30" y="150" width="260" height="64" rx="10" fill="#58a6ff" fill-opacity="0.07" stroke="#58a6ff" stroke-opacity="0.45"></rect>
+          <text x="46" y="174" fill="#58a6ff" font-size="14" font-weight="700" font-family="sans-serif">Activity</text>
+          <text x="46" y="196" fill="#8b949e" font-size="11.5" font-family="monospace">{ visitDuration }</text>
+          <text x="46" y="244" fill="#6e7681" font-size="11" font-family="sans-serif">↳ Restaurant · Retail · Museum …</text>
+
+          <!-- Transit -->
+          <rect x="320" y="150" width="260" height="64" rx="10" fill="#d29922" fill-opacity="0.07" stroke="#d29922" stroke-opacity="0.45"></rect>
+          <text x="336" y="174" fill="#d29922" font-size="14" font-weight="700" font-family="sans-serif">Transit</text>
+          <text x="336" y="196" fill="#8b949e" font-size="11.5" font-family="monospace">{ schedule — parked }</text>
+          <text x="336" y="244" fill="#6e7681" font-size="11" font-family="sans-serif">↳ Airport · Station …</text>
+
+          <!-- Lodging -->
+          <rect x="610" y="150" width="260" height="64" rx="10" fill="#bc8cff" fill-opacity="0.07" stroke="#bc8cff" stroke-opacity="0.45"></rect>
+          <text x="626" y="174" fill="#bc8cff" font-size="14" font-weight="700" font-family="sans-serif">Lodging</text>
+          <text x="626" y="196" fill="#8b949e" font-size="11.5" font-family="monospace">{ checkIn · checkOut }</text>
+          <text x="626" y="244" fill="#6e7681" font-size="11" font-family="sans-serif">↳ Hotel …</text>
+        </svg>
+      </div>
+      <figcaption>One table, narrowed by <span class="mono">kind</span>. Only <strong>Lodging</strong> carries fields today (its dates); Transit’s are parked; leaves are added when they earn their own data.</figcaption>
+    </figure>
+
+    <div class="points">
+      <div class="point"><span class="point-marker"></span><div>
+        <p class="point-head">Functions-over-records, not methods</p>
+        <p class="point-copy">A hotel <em>is</em> a Location; <code>f(loc)</code> works on it for free. Narrow on <code>kind</code> only for the rare lodging-specific bit. No runtime classes, no hydration.</p>
+      </div></div>
+      <div class="point"><span class="point-marker"></span><div>
+        <p class="point-head">Depth is data, not types</p>
+        <p class="point-copy">Restaurant vs. retail vs. airport already lives in the Places <code>categories</code> string. Mint a subtype interface only when it adds a field.</p>
+      </div></div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>The seam: constraint in, plan out</h2>
+    <p>The Manifest is just Locations and their data. The <strong>Plan</strong> carries the weight of contextualizing
+      them onto a timeline — clustered by day. It does so two ways: it <em>projects</em> each constraint-field
+      across the days it covers, and it <em>places</em> the activities.</p>
+
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 920 384" role="img" aria-label="The Manifest of Locations grouped by kind is turned by optimize into a Plan clustered by day; lodging and transit project as derived bookends, activities are stored placements.">
+          <defs>
+            <marker id="ah" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#3fb950"></path>
+            </marker>
+          </defs>
+
+          <!-- MANIFEST -->
+          <rect x="16" y="20" width="372" height="344" rx="10" fill="#161b22" stroke="#30363d"></rect>
+          <text x="34" y="46" fill="#c9d1d9" font-weight="700" font-size="15" font-family="sans-serif">MANIFEST</text>
+          <text x="132" y="46" fill="#8b949e" font-size="12" font-family="sans-serif">— grouped by kind</text>
+
+          <text x="34" y="80" fill="#bc8cff" font-size="11" font-family="monospace" letter-spacing="1">LODGING</text>
+          <rect x="34" y="88" width="320" height="28" rx="6" fill="#bc8cff" fill-opacity="0.12" stroke="#bc8cff" stroke-opacity="0.45"></rect>
+          <text x="48" y="106" fill="#c9d1d9" font-size="13" font-family="sans-serif">Hotel Sakura · Jun 24 → 27</text>
+
+          <text x="34" y="142" fill="#d29922" font-size="11" font-family="monospace" letter-spacing="1">TRANSIT</text>
+          <rect x="34" y="150" width="154" height="26" rx="6" fill="#d29922" fill-opacity="0.12" stroke="#d29922" stroke-opacity="0.45"></rect>
+          <text x="48" y="167" fill="#c9d1d9" font-size="12.5" font-family="sans-serif">Narita · in</text>
+          <rect x="200" y="150" width="154" height="26" rx="6" fill="#d29922" fill-opacity="0.12" stroke="#d29922" stroke-opacity="0.45"></rect>
+          <text x="214" y="167" fill="#c9d1d9" font-size="12.5" font-family="sans-serif">Haneda · out</text>
+
+          <text x="34" y="204" fill="#58a6ff" font-size="11" font-family="monospace" letter-spacing="1">ACTIVITY</text>
+          <rect x="34" y="212" width="320" height="26" rx="6" fill="#58a6ff" fill-opacity="0.11" stroke="#58a6ff" stroke-opacity="0.42"></rect>
+          <text x="48" y="229" fill="#c9d1d9" font-size="13" font-family="sans-serif">Senso-ji Temple</text>
+          <rect x="34" y="244" width="320" height="26" rx="6" fill="#58a6ff" fill-opacity="0.11" stroke="#58a6ff" stroke-opacity="0.42"></rect>
+          <text x="48" y="261" fill="#c9d1d9" font-size="13" font-family="sans-serif">teamLab Planets</text>
+          <rect x="34" y="276" width="320" height="26" rx="6" fill="#58a6ff" fill-opacity="0.11" stroke="#58a6ff" stroke-opacity="0.42"></rect>
+          <text x="48" y="293" fill="#c9d1d9" font-size="13" font-family="sans-serif">Meiji Shrine</text>
+
+          <!-- arrow -->
+          <line x1="400" y1="192" x2="466" y2="192" stroke="#3fb950" stroke-width="2" marker-end="url(#ah)"></line>
+          <text x="433" y="180" fill="#3fb950" font-size="12" font-family="monospace" text-anchor="middle">optimize</text>
+
+          <!-- PLAN -->
+          <rect x="486" y="20" width="418" height="344" rx="10" fill="#161b22" stroke="#30363d"></rect>
+          <text x="504" y="46" fill="#c9d1d9" font-weight="700" font-size="15" font-family="sans-serif">PLAN</text>
+          <text x="556" y="46" fill="#8b949e" font-size="12" font-family="sans-serif">— clustered by day</text>
+
+          <!-- legend -->
+          <rect x="700" y="36" width="16" height="11" rx="2" fill="#58a6ff" fill-opacity="0.5"></rect>
+          <text x="722" y="45" fill="#8b949e" font-size="10.5" font-family="monospace">placement</text>
+          <rect x="800" y="36" width="16" height="11" rx="2" fill="#bc8cff" fill-opacity="0.12" stroke="#bc8cff" stroke-opacity="0.6" stroke-dasharray="3 2"></rect>
+          <text x="822" y="45" fill="#8b949e" font-size="10.5" font-family="monospace">projection</text>
+
+          <!-- Day 1 -->
+          <rect x="502" y="62" width="388" height="86" rx="8" fill="#0d1117" stroke="#30363d"></rect>
+          <text x="516" y="82" fill="#8b949e" font-size="11" font-family="monospace">DAY 1 · Jun 24</text>
+          <rect x="516" y="90" width="120" height="22" rx="5" fill="#d29922" fill-opacity="0.08" stroke="#d29922" stroke-opacity="0.55" stroke-dasharray="4 3"></rect>
+          <text x="528" y="105" fill="#c9d1d9" font-size="11.5" font-family="sans-serif">Narita · arrive</text>
+          <rect x="648" y="90" width="142" height="22" rx="5" fill="#bc8cff" fill-opacity="0.08" stroke="#bc8cff" stroke-opacity="0.55" stroke-dasharray="4 3"></rect>
+          <text x="660" y="105" fill="#c9d1d9" font-size="11.5" font-family="sans-serif">Hotel Sakura</text>
+          <rect x="516" y="118" width="120" height="22" rx="5" fill="#58a6ff" fill-opacity="0.13" stroke="#58a6ff" stroke-opacity="0.5"></rect>
+          <text x="528" y="133" fill="#c9d1d9" font-size="11.5" font-family="sans-serif">Senso-ji</text>
+
+          <!-- Day 2 -->
+          <rect x="502" y="158" width="388" height="86" rx="8" fill="#0d1117" stroke="#30363d"></rect>
+          <text x="516" y="178" fill="#8b949e" font-size="11" font-family="monospace">DAY 2 · Jun 25</text>
+          <rect x="516" y="186" width="142" height="22" rx="5" fill="#bc8cff" fill-opacity="0.08" stroke="#bc8cff" stroke-opacity="0.55" stroke-dasharray="4 3"></rect>
+          <text x="528" y="201" fill="#c9d1d9" font-size="11.5" font-family="sans-serif">Hotel Sakura</text>
+          <rect x="516" y="214" width="112" height="22" rx="5" fill="#58a6ff" fill-opacity="0.13" stroke="#58a6ff" stroke-opacity="0.5"></rect>
+          <text x="528" y="229" fill="#c9d1d9" font-size="11.5" font-family="sans-serif">teamLab</text>
+          <rect x="640" y="214" width="120" height="22" rx="5" fill="#58a6ff" fill-opacity="0.13" stroke="#58a6ff" stroke-opacity="0.5"></rect>
+          <text x="652" y="229" fill="#c9d1d9" font-size="11.5" font-family="sans-serif">Meiji Shrine</text>
+
+          <!-- Day 3 -->
+          <rect x="502" y="254" width="388" height="86" rx="8" fill="#0d1117" stroke="#30363d"></rect>
+          <text x="516" y="274" fill="#8b949e" font-size="11" font-family="monospace">DAY 3 · Jun 26</text>
+          <rect x="516" y="282" width="142" height="22" rx="5" fill="#bc8cff" fill-opacity="0.08" stroke="#bc8cff" stroke-opacity="0.55" stroke-dasharray="4 3"></rect>
+          <text x="528" y="297" fill="#c9d1d9" font-size="11.5" font-family="sans-serif">Hotel Sakura</text>
+          <rect x="664" y="282" width="126" height="22" rx="5" fill="#d29922" fill-opacity="0.08" stroke="#d29922" stroke-opacity="0.55" stroke-dasharray="4 3"></rect>
+          <text x="676" y="297" fill="#c9d1d9" font-size="11.5" font-family="sans-serif">Haneda · depart</text>
+          <rect x="516" y="310" width="112" height="22" rx="5" fill="#58a6ff" fill-opacity="0.13" stroke="#58a6ff" stroke-opacity="0.5"></rect>
+          <text x="528" y="325" fill="#c9d1d9" font-size="11.5" font-family="sans-serif">Shibuya</text>
+        </svg>
+      </div>
+      <figcaption>One stay (Jun 24→27) <em>projects</em> Hotel Sakura onto all three days — that’s not multiplicity, it’s the date range covering days. Only the solid <strong>placements</strong> are stored; the dashed bookends are derived from fields.</figcaption>
+    </figure>
+  </section>
+
+  <section class="block">
+    <h2>What’s real — the whole glossary</h2>
+    <table>
+      <thead><tr><th>Thing</th><th>Kind</th><th>What it is</th></tr></thead>
+      <tbody>
+        <tr><td><span class="noun">Trip</span></td><td class="tk">entity</td><td>a dated container — start/end dates, always</td></tr>
+        <tr><td><span class="noun">Location</span></td><td class="tk">entity</td><td>the one place; typed by <code>kind</code>; carries kind-specific constraint fields (lodging dates, transit times)</td></tr>
+        <tr><td><span class="noun">Placement</span></td><td class="tk">entity</td><td>a scheduled activity: <code>{ date, locationId, order }</code></td></tr>
+        <tr><td><span class="noun">Day</span></td><td class="tk">grouping</td><td>a date in the trip; clusters placements; may carry a label</td></tr>
+        <tr><td><span class="adj">kind</span></td><td class="tk">field</td><td><code>activity</code> · <code>transit</code> · <code>lodging</code> (+ lazy leaves)</td></tr>
+        <tr><td><span class="adj">lodging / arrival / candidate</span></td><td class="tk">adjective</td><td>derived reflections of fields — never stored</td></tr>
+      </tbody>
+    </table>
+    <div class="bridge">
+      <span class="bridge-label">The invariant</span>
+      <p class="bridge-punch">Entities are nouns; roles are adjectives. A place is never <em>a lodging</em> — it’s a Location of <code>kind: lodging</code>.</p>
+    </div>
+    <div class="note"><b>Gone for good:</b> the <code>Stay</code> entity (its dates fold onto <code>Lodging</code>) · locking · same-place multiplicity · the date / day-number dual mode · stored roles &amp; <code>isLodging</code> · stored trip edges (derived from earliest/latest transit).</div>
+  </section>
+
+  <section class="block block-now">
+    <h2>Status &amp; what’s still parked</h2>
+    <p>The model is settled. Three items are explicitly parked — none blocks building the foundation.</p>
+    <table>
+      <thead><tr><th>State</th><th>Item</th></tr></thead>
+      <tbody>
+        <tr><td class="st"><span class="ok">✓ settled</span></td><td>One Location + kind hierarchy · constraint-vs-plan seam · forced date axis · placements clustered by day · Stay/locking/multiplicity removed</td></tr>
+        <tr><td class="st"><span class="mid">· parked</span></td><td>Exact <strong>transit constraint-fields</strong> (arrival/departure shape) — later pass</td></tr>
+        <tr><td class="st"><span class="mid">· parked</span></td><td>Optimizer <strong>using mid-trip scheduled transit</strong> — rich feature, the model already accommodates it</td></tr>
+        <tr><td class="st"><span class="mid">· parked</span></td><td><strong>Partial re-optimization</strong> — returns later as its own feature, independent of the dropped lock</td></tr>
+      </tbody>
+    </table>
+    <div class="bridge">
+      <span class="bridge-label">Next step</span>
+      <p class="bridge-punch">Write the ADR on this model — glossary, kind hierarchy, the seam, the date axis — then build it in slices.</p>
+    </div>
+  </section>
+
+  <footer>
+    <p class="footer-line">Distilled from the 2026-06-27 place-model design session.</p>
+    <p class="footer-line footer-faint">Supersedes the earlier lodging briefs: <code>Stay</code> dissolves into <code>Lodging</code> fields, arrival/departure into <code>Transit</code>, the schedule into day-clustered placements. Backend/code/docs use this glossary verbatim; UI copy may diverge later.</p>
+  </footer>
+
+</div>
+
+
+</body></html>
