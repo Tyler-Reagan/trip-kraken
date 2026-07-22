@@ -140,7 +140,16 @@ export default function LocationInspector() {
           <X className="w-4 h-4" />
         </button>
       </div>
+      <LocationInspectorContent loc={loc} />
+    </aside>
+  );
+}
 
+/** The inspector's body, shared between the Places-surface side panel above and the
+ *  itinerary's anchored popover ({@link InspectorPopover}, #134). */
+export function LocationInspectorContent({ loc }: { loc: Location }) {
+  return (
+    <>
       {/* Rating */}
       {(loc.rating !== null || loc.reviewCount !== null) && (
         <div className="flex items-center gap-1.5 text-sm">
@@ -193,6 +202,6 @@ export default function LocationInspector() {
       {loc.enrichmentStatus === "failed" && (
         <p className="text-xs text-amber-500 dark:text-amber-400">Details unavailable</p>
       )}
-    </aside>
+    </>
   );
 }

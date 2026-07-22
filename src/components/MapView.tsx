@@ -52,7 +52,7 @@ function computeInitialViewState(trip: { locations: { excluded: boolean; lat: nu
 
 export default function MapView({ heightClass = "h-[520px]" }: { heightClass?: string }) {
   const trip = useTripStore((s) => s.trip);
-  const selectedDayNumber = useTripStore((s) => s.selectedDayNumber);
+  const activeDayNumber = useTripStore((s) => s.activeDayNumber);
   const highlightedLocationId = useTripStore((s) => s.highlightedLocationId);
   const handleMapLocationClick = useTripStore((s) => s.handleMapLocationClick);
   const mapRef = useRef<MapRef>(null);
@@ -103,7 +103,7 @@ export default function MapView({ heightClass = "h-[520px]" }: { heightClass?: s
 
     for (const day of days) {
       const rgb = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length];
-      const isActive = selectedDayNumber === null || selectedDayNumber === day.dayNumber;
+      const isActive = activeDayNumber === day.dayNumber;
       const alpha = isActive ? 1 : 0.18;
       const color = toRgb(rgb);
 
@@ -153,7 +153,7 @@ export default function MapView({ heightClass = "h-[520px]" }: { heightClass?: s
     const BASE_COLOR = "#e5e7eb"; // gray-200
     for (const lodging of Object.values(lodgingMap)) {
       const sortedDays = lodging.dayNumbers.slice().sort((a: number, b: number) => a - b);
-      const isActive = selectedDayNumber === null || (typeof selectedDayNumber === "number" && sortedDays.includes(selectedDayNumber));
+      const isActive = sortedDays.includes(activeDayNumber);
       points.features.push({
         type: "Feature",
         geometry: { type: "Point", coordinates: [lodging.lng, lodging.lat] },
@@ -170,7 +170,7 @@ export default function MapView({ heightClass = "h-[520px]" }: { heightClass?: s
     }
 
     return { pointsGeoJSON: points, routesGeoJSON: routes };
-  }, [days, selectedDayNumber, highlightedLocationId]);
+  }, [days, activeDayNumber, highlightedLocationId]);
 
   const routeLayer: LayerProps = {
     id: "routes",
@@ -300,7 +300,7 @@ export default function MapView({ heightClass = "h-[520px]" }: { heightClass?: s
           )}
           {days.map((day) => {
             const [r, g, b] = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length];
-            const isActive = selectedDayNumber === null || selectedDayNumber === day.dayNumber;
+            const isActive = activeDayNumber === day.dayNumber;
             return (
               <div
                 key={day.date}
