@@ -83,7 +83,7 @@ function pointsOfDay(day: DerivedDay): { lat: number | null; lng: number | null 
  * for the day in view. Every tier click is a `focusMap` command; `MapView` is the sole consumer of
  * `focusTarget` and never reads `activeDayNumber` for camera purposes (#137).
  */
-export default function MapView({ heightClass = "h-[420px]" }: { heightClass?: string }) {
+export default function MapView() {
   const trip = useTripStore((s) => s.trip);
   const activeDayNumber = useTripStore((s) => s.activeDayNumber);
   const highlightedLocationId = useTripStore((s) => s.highlightedLocationId);
@@ -356,7 +356,7 @@ export default function MapView({ heightClass = "h-[420px]" }: { heightClass?: s
   if (!trip) return null;
 
   return (
-    <div className={`flex flex-col w-full ${heightClass} rounded-xl overflow-hidden border border-line`}>
+    <div className="flex flex-col w-full h-full overflow-hidden">
       {/* Metro band — underline tabs, led by the trip-reset chip. */}
       <div className="flex items-stretch shrink-0 bg-surface-2 border-b border-line">
         <button
