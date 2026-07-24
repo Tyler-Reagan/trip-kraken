@@ -134,16 +134,28 @@
   }
 }
 
-/* react-moveable resize handles on the floating map window (#128). Recolored off its default
-   loud blue to the brand accent — teal = interaction affordance, consistent with the rest of the
-   app — and shrunk a touch so the control reads as a hairline grip, not a widget. */
+/* react-moveable resize handles on the floating map window (#128). The default control is a loud
+   blue widget; this makes it a quiet affordance instead — hairline dots that sit *at rest* nearly
+   invisible and only come up to the brand accent when the window is hovered, so the window reads as
+   a clean card until you actually reach for an edge. */
 .tk-map-moveable {
-  --moveable-color: #3fa5a0;
+  --moveable-color: transparent; /* kill the control-box outline entirely */
 }
 .tk-map-moveable .moveable-control.moveable-direction {
-  width: 8px;
-  height: 8px;
-  margin-top: -4px;
-  margin-left: -4px;
-  border-radius: 2px;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  margin-left: -3px;
+  border-width: 1px;
+  border-color: var(--border-strong);
+  background: var(--surface);
+  border-radius: 9999px;
+  opacity: 0;
+  transition: opacity 0.12s ease, border-color 0.12s ease;
+}
+/* Moveable's control box is a sibling portal, not a descendant of the window, so hover is keyed on
+   the box itself (it overlays the window 1:1). */
+.tk-map-moveable:hover .moveable-control.moveable-direction {
+  opacity: 1;
+  border-color: #3fa5a0;
 }
