@@ -12,6 +12,20 @@ export type RouteSearch = { from: Location; to: Location; date: string | null };
  *  route scopes persist independently so tab-switching returns to the last scope of each. */
 export type DiscoveryMode = "nearby" | "route";
 
+/**
+ * A one-shot camera command for the map (#137): "point at this". Last write wins — a newer target
+ * simply overwrites an unconsumed one — and `MapView` clears it the moment it moves the camera, so
+ * the field is a *command*, never a record of where the map is looking. `MapView` is its only
+ * consumer, and it reads this alone: it never watches `activeDayNumber` directly, which is what
+ * keeps "which day is the itinerary on" and "what is the camera doing" from fusing into one
+ * unstateable thing.
+ */
+export type FocusTarget =
+  | { tier: "trip" }
+  | { tier: "metro"; metroId: string }
+  | { tier: "day"; dayNumber: number }
+  | { tier: "stop"; locationId: string };
+
 interface TripStore {
   // Data
   trip: TripWithDetails | null;
@@ -22,6 +36,11 @@ interface TripStore {
   /** The focal day of the day-navigator carousel, 1-based (#134). */
   activeDayNumber: number;
   mapPopupOpen: boolean;
+  focusTarget: FocusTarget | null;
+  /** Whether a passive day change still moves the camera (#137, policy b: explicit click > manual
+   *  pan > passive scroll). Every explicit `focusMap` re-arms it; the user's own pan/zoom on the
+   *  map disarms it, so paging the itinerary afterwards leaves their view where they put it. */
+  autoFocusArmed: boolean;
   highlightedLocationId: string | null;
   inspectedLocationId: string | null;
   discoveryMode: DiscoveryMode | null;
@@ -36,6 +55,11 @@ interface TripStore {
   setActiveSurface: (v: ActiveSurface) => void;
   setActiveDayNumber: (n: number) => void;
   setMapPopupOpen: (v: boolean) => void;
+  /** The one explicit "show me this on the map" action, behind every map link — the map's own
+   *  tier bands and the itinerary's metro badges / stop links alike. */
+  focusMap: (target: FocusTarget) => void;
+  consumeFocusTarget: () => void;
+  disarmAutoFocus: () => void;
   setHighlightedLocationId: (id: string | null) => void;
   setInspectedLocationId: (id: string | null) => void;
   setDiscoveryMode: (m: DiscoveryMode) => void;
@@ -85,6 +109,8 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   activeSurface: "itinerary",
   activeDayNumber: 1,
   mapPopupOpen: false,
+  focusTarget: null,
+  autoFocusArmed: true,
   highlightedLocationId: null,
   inspectedLocationId: null,
   discoveryMode: null,
@@ -100,9 +126,29 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   setTrip: (trip) => set({ trip, tripId: trip.id }),
   setActiveSurface: (v) =>
     set({ activeSurface: v, inspectedLocationId: null, discoveryMode: null, nearbySearchLocation: null, routeSearch: null }),
-  // Paging closes the inspector popover — its anchor row leaves the DOM with the old day.
-  setActiveDayNumber: (n) => set({ activeDayNumber: n, inspectedLocationId: null }),
+  // The *passive* day change (#137): paging the carousel — arrows, index strip, drag-to-edge
+  // dwell. It follows the camera along only while auto-focus is armed, and never opens the map
+  // popup: paging days is itinerary navigation that the map tags along with, not a map link.
+  // Paging also closes the inspector popover — its anchor row leaves the DOM with the old day.
+  setActiveDayNumber: (n) =>
+    set({
+      activeDayNumber: n,
+      inspectedLocationId: null,
+      ...(get().autoFocusArmed ? { focusTarget: { tier: "day" as const, dayNumber: n } } : {}),
+    }),
   setMapPopupOpen: (v) => set({ mapPopupOpen: v }),
+  // Explicit (#137): always sets the target, always re-arms, and ensures the map is visible to
+  // receive it (#128 decision 5) — without forcing any particular map size. A day target moves the
+  // itinerary's focal day too, so the two surfaces never disagree about which day is being looked at.
+  focusMap: (target) =>
+    set({
+      focusTarget: target,
+      autoFocusArmed: true,
+      mapPopupOpen: true,
+      ...(target.tier === "day" ? { activeDayNumber: target.dayNumber, inspectedLocationId: null } : {}),
+    }),
+  consumeFocusTarget: () => set({ focusTarget: null }),
+  disarmAutoFocus: () => set({ autoFocusArmed: false }),
   setHighlightedLocationId: (id) => set({ highlightedLocationId: id }),
   setInspectedLocationId: (id) => set({ inspectedLocationId: id }),
   // Tab-switching only — scope for the target mode must already exist (the tray disables the
@@ -359,6 +405,9 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   handleMapLocationClick: (locationId) => {
     // Clicking a map dot surfaces the stop in the itinerary: page the carousel to the day
     // holding it (the stop's row only exists in the DOM when its day is focal), then flash it.
+    // Deliberately sets the day directly rather than through `setActiveDayNumber` — this travels
+    // itinerary-ward, so it must not emit a focus target and yank the camera out from under the
+    // dot the user just clicked.
     const trip = get().trip;
     const day = trip ? deriveDays(trip).find((d) => d.stops.some((s) => s.location.id === locationId)) : undefined;
     set({
