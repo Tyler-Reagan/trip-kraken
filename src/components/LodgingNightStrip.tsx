@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Hotel, Lightbulb, MapPin, X } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 import { clusterByMetro, type MetroCluster } from "@/lib/metroCluster";
+import { metroKey, metroLabel } from "@/lib/tripMetros";
 import {
   addDaysIso,
   lodgingCoversNight,
@@ -80,39 +81,6 @@ function AssignExisting({ activities, onAssign, onCancel }: { activities: Locati
  *  off #116's real detector (no fixture, no re-derived heuristic). */
 type UncoveredMetro = MetroCluster<Location, Lodging>;
 
-// Google's formattedAddress for Japan comes back in two different orderings depending on the
-// place ("<block/chōme>, <ward>, <city>, <postal>, Japan" vs. "Japan, 〒<postal> <city>, <ward>,
-// <block>") — comma-position heuristics (e.g. "second-to-last segment") land on whichever is
-// there, which is a street-block or ward name a user wouldn't recognize on a map about as often as
-// it lands on the city. The postal code is the one token both orderings agree on, so anchor to it
-// instead: the region name always sits immediately beside it, on whichever side isn't the marker.
-const JP_POSTAL_THEN_REGION = /〒\s*\d{3}[-−]\d{4}\s+([^,]+)/;
-const REGION_THEN_JP_POSTAL = /([A-Za-z][A-Za-z\s]*?)\s*,?\s*\d{3}[-−]\d{4}/;
-const REGION_THEN_US_ZIP = /([A-Za-z][A-Za-z\s]*?)\s*,?\s*\d{5}(?:-\d{4})?\b/;
-
-/** A recognizable label for a metro: the prefecture/state-level region read off its first
- *  activity's formatted address, not a ward or neighborhood name. Google's formattedAddress
- *  usually omits the postal code entirely (our own places.ts fixtures never carry one), so the
- *  postal-anchored patterns are the exception rather than the rule — the common case falls
- *  through to the last comma-separated segment, which is where the city/prefecture normally
- *  lands. Only falls back to the activity's own name when the address has no segments to anchor
- *  on at all (a single, comma-free line). */
-function metroLabel(metro: UncoveredMetro): string {
-  const first = metro.activities[0];
-  const address = first?.address;
-  const fallback = first?.name ?? "this area";
-  if (!address) return fallback;
-  const postalAnchored =
-    address.match(JP_POSTAL_THEN_REGION)?.[1] ??
-    address.match(REGION_THEN_JP_POSTAL)?.[1] ??
-    address.match(REGION_THEN_US_ZIP)?.[1];
-  if (postalAnchored) return postalAnchored.trim();
-  const segments = address.split(",").map((s) => s.trim()).filter(Boolean);
-  if (segments.length < 2) return fallback;
-  const last = segments[segments.length - 1].replace(/〒?\s*\d{3}[-−]\d{4}$|\d{5}(-\d{4})?$/, "").trim();
-  return last || fallback;
-}
-
 /** Post-import wizard (#114's locked contract, #119): one step per metro lacking lodging, each
  *  skippable. No new lodging-creation path — "Import & continue" runs the real booking-
  *  confirmation parser (#57/ADR-0010; a stand-in for whatever richer booking source arrives
@@ -123,14 +91,6 @@ function metroLabel(metro: UncoveredMetro): string {
  *  closing screen can recap what happened instead of closing silently (see the chip row itself,
  *  below, for why a silent "all set" wasn't enough of a signal on its own). */
 type StepOutcome = "assigned" | "skipped";
-
-// Centroid-rounded identity for a metro cluster, stable across re-renders as long as the cluster
-// doesn't move — which enrichment (address/name backfill) never does. Coarse enough (~1km) to
-// survive a cluster losing/gaining one member (e.g. a place promoted to lodging), well under the
-// 75km radius that separates distinct metros, so no collision risk between them.
-function metroKey(metro: UncoveredMetro): string {
-  return `${metro.centroid.lat.toFixed(2)},${metro.centroid.lng.toFixed(2)}`;
-}
 
 function NightStripWizard({ metros: liveMetros, onClose }: { metros: UncoveredMetro[]; onClose: () => void }) {
   const importBooking = useTripStore((s) => s.importBooking);
