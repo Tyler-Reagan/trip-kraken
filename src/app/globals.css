@@ -133,3 +133,17 @@
     @apply w-8 h-8 flex items-center justify-center rounded-md;
   }
 }
+
+/* react-moveable resize handles on the floating map window (#128). Recolored off its default
+   loud blue to the brand accent — teal = interaction affordance, consistent with the rest of the
+   app — and shrunk a touch so the control reads as a hairline grip, not a widget. */
+.tk-map-moveable {
+  --moveable-color: #3fa5a0;
+}
+.tk-map-moveable .moveable-control.moveable-direction {
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  margin-left: -4px;
+  border-radius: 2px;
+}
