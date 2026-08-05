@@ -72,7 +72,7 @@ withApiKey("test-key", () => {
 // file (issue #88's manual eval ingested one): temporarily hides it, mirroring
 // transitGraphStore.test.ts's own backup/restore pattern around its singleton test — this must
 // never clobber a real ingested graph. Safe to do here: nothing earlier in this file calls
-// costMatrix/describeLeg on the OSM-Japan provider, so getTransitGraph()'s cache is never
+// costMatrix/describePath on the OSM-Japan provider, so getTransitGraph()'s cache is never
 // populated before this point in this process.
 const hadRealGraph = fs.existsSync(DEFAULT_GRAPH_PATH);
 const backupPath = `${DEFAULT_GRAPH_PATH}.bak-${Date.now()}`;

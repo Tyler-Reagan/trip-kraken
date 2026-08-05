@@ -1,7 +1,7 @@
 /**
  * OSM-Japan `TravelCostProvider` tests (issue #85, Seam 1). Standalone (no test runner): run with
  * `tsx src/lib/osmTransitProvider.test.ts`. Exercises the provider purely through its public
- * `TravelCostProvider` interface (`costMatrix`/`describeLeg`) against a small hand-built graph
+ * `TravelCostProvider` interface (`costMatrix`/`describePath`) against a small hand-built graph
  * fixture — no runtime network I/O, so the fixture is a graph, not an HTTP mock (unlike
  * googleRoutesProvider.test.ts, which mocks `global.fetch`).
  *
@@ -118,12 +118,12 @@ const nearCompareB = P(35.0001, 141.0001); // ~10m from compare-subway-b
 const isolated = P(36.5, 140.5); // far from every stop node in the fixture
 
 // ── Multi-line journey: Akihabara -> Otemachi crosses the Tokyo interchange (loop -> spur) ──
-const multiLine = await provider.describeLeg(nearAkihabara, nearOtemachi, "transit");
+const multiLine = await provider.describePath(nearAkihabara, nearOtemachi, "transit");
 assert.deepEqual(multiLine.lineNames, ["Loop Line", "Spur Subway"], "reports both real line names in ride order");
 assert.equal(multiLine.transferCount, 1, "one transfer edge traversed at the Tokyo interchange");
 
 // ── Single-ride journey: Akihabara -> Kanda stays on one line, zero transfers ──
-const singleRide = await provider.describeLeg(nearAkihabara, nearKanda, "transit");
+const singleRide = await provider.describePath(nearAkihabara, nearKanda, "transit");
 assert.deepEqual(singleRide.lineNames, ["Loop Line"], "single-line journey reports just that line");
 assert.equal(singleRide.transferCount, 0, "no transfer edges traversed on a single-ride journey");
 
@@ -131,10 +131,10 @@ assert.equal(singleRide.transferCount, 0, "no transfer edges traversed on a sing
 // Both hops are exactly 260km (compare-subway-a/b's ride edge matches the Shinkansen trunk's
 // distance exactly), so this isolates line-type speed from trip length directly, with no derived
 // rate: same distance, different effective speed.
-const shinkansenLeg = await provider.describeLeg(nearTokyoForShinkansen, nearNagoya, "transit");
-const equalDistanceSubwayLeg = await provider.describeLeg(nearCompareA, nearCompareB, "transit");
+const shinkansenPath = await provider.describePath(nearTokyoForShinkansen, nearNagoya, "transit");
+const equalDistanceSubwayPath = await provider.describePath(nearCompareA, nearCompareB, "transit");
 assert.ok(
-  shinkansenLeg.durationSeconds < equalDistanceSubwayLeg.durationSeconds,
+  shinkansenPath.durationSeconds < equalDistanceSubwayPath.durationSeconds,
   "a Shinkansen hop is faster than an equal-distance subway hop"
 );
 
@@ -146,15 +146,15 @@ assert.ok(nearestStops.some((s) => s.id === "decoy-near-akihabara"), "the farthe
 assert.equal(nearestStops[0]?.id, "loop-akihabara", "the nearest stop in range is Akihabara, not the farther decoy");
 
 // ── No station in range: falls back to a haversine-as-walking estimate, visibly marked ──
-const noStationLeg = await provider.describeLeg(isolated, nearAkihabara, "transit");
-assert.equal(noStationLeg.lineNames, undefined, "an unrouted walking estimate carries no line names");
-assert.equal(noStationLeg.transferCount, undefined, "an unrouted walking estimate carries no transfer count");
-assert.ok(noStationLeg.durationSeconds > 0, "still reports a usable (walking-estimate) duration");
+const noStationPath = await provider.describePath(isolated, nearAkihabara, "transit");
+assert.equal(noStationPath.lineNames, undefined, "an unrouted walking estimate carries no line names");
+assert.equal(noStationPath.transferCount, undefined, "an unrouted walking estimate carries no transfer count");
+assert.ok(noStationPath.durationSeconds > 0, "still reports a usable (walking-estimate) duration");
 
-// ── costMatrix backs the same provider surface in bulk, consistent with describeLeg ──
+// ── costMatrix backs the same provider surface in bulk, consistent with describePath ──
 const matrix = await provider.costMatrix([nearAkihabara, nearOtemachi, isolated], "transit");
 assert.equal(matrix.length, 3, "one row per point");
-assert.equal(matrix[0][1].durationSeconds, multiLine.durationSeconds, "costMatrix agrees with describeLeg for the same pair");
+assert.equal(matrix[0][1].durationSeconds, multiLine.durationSeconds, "costMatrix agrees with describePath for the same pair");
 assert.ok(matrix[0][2].durationSeconds > 0, "an isolated point still gets a walking-estimate cost in the matrix");
 assert.equal(matrix[0][0].distanceMeters, 0, "a point costed against itself is zero");
 

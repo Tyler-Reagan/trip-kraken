@@ -57,13 +57,13 @@ assert.ok(!["ap", "dp", "lo"].some((id) => day1.includes(id)), "anchors are not 
 assert.deepEqual(day1, ["s1", "s2"], "stops ordered arrival → … → departure");
 
 // Travel-day routing (ADR-0005): a hotel-change day routes from where you woke (A) toward where you
-// sleep (B). Lodging A night 1, lodging B night 2 (far apart); two stops on the leg between them.
+// sleep (B). Lodging A night 1, lodging B night 2 (far apart); two stops on the Path between them.
 const { days: travelPlan } = await optimizeItinerary(
   [
     { id: "la", lat: 35.0, lng: 139.0 }, // lodging A (night 1)
     { id: "lb", lat: 35.0, lng: 140.0 }, // lodging B (night 2)
     { id: "a1", lat: 35.0, lng: 139.05 }, // near A → Day 1
-    { id: "m1", lat: 35.0, lng: 139.6 }, // A's side of the leg → earlier on Day 2
+    { id: "m1", lat: 35.0, lng: 139.6 }, // A's side of the Path → earlier on Day 2
     { id: "m2", lat: 35.0, lng: 139.8 }, // B's side → later on Day 2
   ],
   2,
@@ -182,7 +182,7 @@ const countingProvider: TravelCostProvider = {
     costMatrixCalls++;
     return haversineProvider.costMatrix(points, mode, opts);
   },
-  describeLeg: haversineProvider.describeLeg,
+  describePath: haversineProvider.describePath,
 };
 await solve({
   locations: [

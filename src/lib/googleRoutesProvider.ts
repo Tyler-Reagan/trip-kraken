@@ -1,6 +1,6 @@
 /**
  * Google Routes API provider (ADR-0018) — the first real `TravelCostProvider` implementation.
- * `costMatrix()` calls `computeRouteMatrix`; `describeLeg()` calls `computeRoutes` for one
+ * `costMatrix()` calls `computeRouteMatrix`; `describePath()` calls `computeRoutes` for one
  * point-to-point journey with display-only detail (line names, transfer count — ADR-0018 keeps
  * these out of the objective). Reuses `GOOGLE_MAPS_API_KEY` (places.ts) — Routes API is a separate
  * Google Cloud API that must be individually enabled/billed on the same project (see the ADR-0018
@@ -20,7 +20,7 @@
  * speculative mode-specific branching.
  */
 
-import { dedupeConsecutive, type Point, type TravelCost, type TravelCostProvider, type LegDetail, type TravelMode } from "@/lib/travelCost";
+import { dedupeConsecutive, type Point, type TravelCost, type TravelCostProvider, type PathDetail, type TravelMode } from "@/lib/travelCost";
 
 const MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
 const ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
@@ -164,15 +164,15 @@ type ComputeRoutesResponse = {
 type PolylineResponse = { routes?: Array<{ polyline?: { encodedPolyline?: string } }> };
 
 /**
- * Encoded polyline for one leg (discovery route scope, #102) — a separate call from
- * `describeLeg` because along-route discovery needs only the corridor shape, not
- * distance/duration/transit detail, and callers compute it once per leg to reuse
+ * Encoded polyline for one Path (discovery route scope, #102) — a separate call from
+ * `describePath` because along-route discovery needs only the corridor shape, not
+ * distance/duration/transit detail, and callers compute it once per Path to reuse
  * across several category searches (routing stays a separate seam, ADR-0018/0019).
  *
- * Returns `null` when Google has no route for this leg/mode. Unlike routing (which fails
+ * Returns `null` when Google has no route for this Path/mode. Unlike routing (which fails
  * loudly — ADR-0018 — because a missing cost would corrupt the optimizer), a missing
  * discovery corridor is an ordinary outcome: the caller falls back to another mode (e.g. a
- * short urban leg has no transit route but is a walk). Genuine API/HTTP errors still throw.
+ * short urban Path has no transit route but is a walk). Genuine API/HTTP errors still throw.
  */
 export async function computeRoutePolyline(from: Point, to: Point, mode: TravelMode): Promise<string | null> {
   const googleMode = GOOGLE_TRAVEL_MODE[mode];
@@ -205,7 +205,7 @@ export const googleRoutesProvider: TravelCostProvider = {
     return computeFullMatrix(points, googleMode, departureTime);
   },
 
-  async describeLeg(from, to, mode, opts): Promise<LegDetail> {
+  async describePath(from, to, mode, opts): Promise<PathDetail> {
     const googleMode = GOOGLE_TRAVEL_MODE[mode];
     const departureTime = mode === "transit" ? opts?.departureTime : undefined;
 
@@ -232,7 +232,7 @@ export const googleRoutesProvider: TravelCostProvider = {
     }
     const data = (await res.json()) as ComputeRoutesResponse;
     const route = data.routes?.[0];
-    if (!route) throw new Error("Google Routes API: no route found for this leg");
+    if (!route) throw new Error("Google Routes API: no route found for this Path");
 
     const distanceMeters = route.distanceMeters ?? 0;
     const durationSeconds = route.duration ? toSeconds(route.duration) : 0;
@@ -241,8 +241,9 @@ export const googleRoutesProvider: TravelCostProvider = {
 
     // Google has no transfer-count field (confirmed against the API docs); derive it from
     // consecutive TRANSIT-mode steps — walking/waiting steps in between don't count as transfers.
+    // `route.legs` is Google's own response field (their "leg", not our domain Path) — left as-is.
     const transitSteps = (route.legs ?? [])
-      .flatMap((leg) => leg.steps ?? [])
+      .flatMap((apiLeg) => apiLeg.steps ?? [])
       .filter((s) => s.travelMode === "TRANSIT");
     const lineNames = transitSteps
       .map((s) => s.transitDetails?.transitLine?.nameShort ?? s.transitDetails?.transitLine?.name)

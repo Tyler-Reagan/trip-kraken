@@ -38,9 +38,10 @@ export interface TravelCostOptions {
   departureTime?: Date;
 }
 
-/** Display-only transit detail for one leg (ADR-0018) — never consumed by the objective; a
- * provider/mode with nothing to add (walking, driving, haversine) omits the optional fields. */
-export interface LegDetail extends TravelCost {
+/** Display-only transit detail for one Path (ADR-0018, ADR-0021) — never consumed by the
+ * objective; a provider/mode with nothing to add (walking, driving, haversine) omits the
+ * optional fields. */
+export interface PathDetail extends TravelCost {
   transferCount?: number;
   lineNames?: string[];
 }
@@ -48,13 +49,13 @@ export interface LegDetail extends TravelCost {
 export interface TravelCostProvider {
   /** Fetch every pairwise cost in one round trip (ADR-0004), for sequencing's inner loops. */
   costMatrix(points: Point[], mode: TravelMode, opts?: TravelCostOptions): Promise<TravelCost[][]>;
-  /** One point-to-point journey with display detail (ADR-0018) — for the final plan's legs only;
+  /** One point-to-point journey with display detail (ADR-0018) — for the final plan's Paths only;
    * called lazily at display time, never inside sequencing's construction/refinement loops. */
-  describeLeg(from: Point, to: Point, mode: TravelMode, opts?: TravelCostOptions): Promise<LegDetail>;
+  describePath(from: Point, to: Point, mode: TravelMode, opts?: TravelCostOptions): Promise<PathDetail>;
 }
 
 /** Collapses only consecutive duplicate line names — a line ridden twice non-consecutively is a
- * real second ride, not a naming artifact. Shared by every `describeLeg` that derives an ordered
+ * real second ride, not a naming artifact. Shared by every `describePath` that derives an ordered
  * line-name list from a sequence of steps (`googleRoutesProvider.ts`, `osmTransitProvider.ts`). */
 export function dedupeConsecutive(names: string[]): string[] {
   return names.filter((name, i) => name !== names[i - 1]);
@@ -108,7 +109,7 @@ export const haversineProvider: TravelCostProvider = {
   async costMatrix(points) {
     return points.map((p) => points.map((q) => haversineCost(p, q)));
   },
-  async describeLeg(from, to) {
+  async describePath(from, to) {
     return haversineCost(from, to);
   },
 };

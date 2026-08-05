@@ -91,7 +91,7 @@ await assert.rejects(
   "no-route condition throws"
 );
 
-// ── describeLeg: transit steps → transferCount + deduped line names, display-only fields ──
+// ── describePath: transit steps → transferCount + deduped line names, display-only fields ──
 mockFetch(() => ({
   routes: [
     {
@@ -110,20 +110,20 @@ mockFetch(() => ({
     },
   ],
 }));
-const leg = await googleRoutesProvider.describeLeg(P(35.68, 139.76), P(35.71, 139.79), "transit");
-assert.equal(leg.durationSeconds, 1800, "leg duration mapped");
-assert.equal(leg.transferCount, 1, "two transit steps = one transfer");
-assert.deepEqual(leg.lineNames, ["Yamanote Line", "Ginza Line"], "line names in ride order");
+const path = await googleRoutesProvider.describePath(P(35.68, 139.76), P(35.71, 139.79), "transit");
+assert.equal(path.durationSeconds, 1800, "Path duration mapped");
+assert.equal(path.transferCount, 1, "two transit steps = one transfer");
+assert.deepEqual(path.lineNames, ["Yamanote Line", "Ginza Line"], "line names in ride order");
 
-// ── describeLeg: non-transit mode omits transit-only fields ──
+// ── describePath: non-transit mode omits transit-only fields ──
 mockFetch(() => ({ routes: [{ distanceMeters: 400, duration: "300s" }] }));
-const walkLeg = await googleRoutesProvider.describeLeg(P(0, 0), P(0, 0.01), "walking");
-assert.equal(walkLeg.transferCount, undefined, "walking has no transfer count");
-assert.equal(walkLeg.lineNames, undefined, "walking has no line names");
+const walkPath = await googleRoutesProvider.describePath(P(0, 0), P(0, 0.01), "walking");
+assert.equal(walkPath.transferCount, undefined, "walking has no transfer count");
+assert.equal(walkPath.lineNames, undefined, "walking has no line names");
 
-// ── describeLeg: no route found throws ──
+// ── describePath: no route found throws ──
 mockFetch(() => ({ routes: [] }));
-await assert.rejects(() => googleRoutesProvider.describeLeg(P(0, 0), P(0, 0), "driving"), /no route found/, "empty routes throws");
+await assert.rejects(() => googleRoutesProvider.describePath(P(0, 0), P(0, 0), "driving"), /no route found/, "empty routes throws");
 
 // ── computeRoutePolyline: encoded polyline extracted, minimal field mask ──
 mockFetch((_url, init) => {

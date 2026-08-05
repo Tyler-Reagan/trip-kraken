@@ -41,7 +41,7 @@ type ProviderOption = { id: string; label: string };
 
 /**
  * The discovery tray (#134): a fixed footer rail shared by Nearby (stop-anchored) and
- * Along-the-way (consecutive-leg corridor) search — the successor to the side-drawer pair.
+ * Along-the-way (consecutive-Path corridor) search — the successor to the side-drawer pair.
  * Scope is chosen from the day card's triggers, never here; the tray only shows it and lets
  * the two modes' last scopes be tab-switched. Results browse horizontally and are draggable
  * onto day cards (the shell's edge-paging carries them to unmounted days).
@@ -229,7 +229,7 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
     >
       <div className="max-w-6xl mx-auto px-4 py-2 space-y-2">
         {/* Header: mode tabs + scope + close. A tab without a scope is disabled — scope is
-            chosen from the day card's per-stop / per-leg triggers, never here. */}
+            chosen from the day card's per-stop / per-Path triggers, never here. */}
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex rounded-lg border border-line-strong overflow-hidden text-xs shrink-0">
             <button
@@ -245,7 +245,7 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
             <button
               onClick={() => routeSearch && setDiscoveryMode("route")}
               disabled={!routeSearch}
-              title={routeSearch ? undefined : "Use “Along the way” between two stops to pick a leg"}
+              title={routeSearch ? undefined : "Use “Along the way” between two stops to pick a path"}
               className={`px-2.5 py-1 font-medium transition-colors disabled:opacity-40 ${
                 mode === "route" ? "bg-ink text-canvas" : "bg-surface-2 text-sub hover:bg-surface-3"
               }`}
@@ -363,7 +363,7 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
           <div className="flex items-center justify-center h-24 text-sm text-faint text-center">
             {mode === "nearby"
               ? "No results. Try a larger radius or adjust filters."
-              : "Nothing along this leg. Try a different search or adjust filters."}
+              : "Nothing along this path. Try a different search or adjust filters."}
           </div>
         ) : (
           <div className="flex gap-2 overflow-x-auto pb-2 min-h-[6.5rem]">

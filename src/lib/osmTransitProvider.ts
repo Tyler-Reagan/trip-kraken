@@ -1,11 +1,11 @@
 /**
  * The OSM-Japan `TravelCostProvider` (ADR-0019, issue #85) — real transit costs from the
  * station/line graph (`transitGraph.ts`/`transitGraphStore.ts`): a Dijkstra-style shortest path
- * with a per-transfer cost, backing both `costMatrix` (optimizer bulk) and `describeLeg` (per-Leg
- * display). Implements `TravelCostProvider` unchanged — no caller (`solve`, `buildDistanceLookup`,
- * `optimize`) has to change to accommodate it (ADR-0019's registry, issue #86, is what will
- * eventually select this provider for a Japan+transit Trip; this module has no opinion on `mode`
- * itself, since it only ever has one kind of journey to offer).
+ * with a per-transfer cost, backing both `costMatrix` (optimizer bulk) and `describePath`
+ * (per-Path display, ADR-0021). Implements `TravelCostProvider` unchanged — no caller (`solve`,
+ * `buildDistanceLookup`, `optimize`) has to change to accommodate it (ADR-0019's registry,
+ * issue #86, is what will eventually select this provider for a Japan+transit Trip; this
+ * module has no opinion on `mode` itself, since it only ever has one kind of journey to offer).
  *
  * No runtime network I/O: `createOsmTransitProvider(graph, spatialIndex)` binds to an
  * already-loaded graph (the future registry, issue #86, supplies `transitGraphStore.ts`'s
@@ -16,15 +16,15 @@
  * `STATION_SNAP_RADIUS_METERS` via a walk edge (distance ÷ walk speed) — not just the nearest, so
  * the search can still pick whichever entry line is actually shortest. A point with no stop node
  * in range falls back to haversine-as-walking, a plain `TravelCost` with no
- * `transferCount`/`lineNames` — the existing `LegDetail` convention already used by
+ * `transferCount`/`lineNames` — the existing `PathDetail` convention already used by
  * `haversineProvider`/`googleRoutesProvider` for "nothing transit to report", so the fallback is
- * visibly an estimate rather than masquerading as a routed transit Leg. A pair that both snap but
- * turn out disconnected in the graph is a different failure (nationwide rail should be one
+ * visibly an estimate rather than masquerading as a routed transit Path. A pair that both snap
+ * but turn out disconnected in the graph is a different failure (nationwide rail should be one
  * connected component) and throws rather than silently walking instead — ADR-0017/0018's
  * fail-loud precedent, not a station-snapping fallback case.
  */
 
-import { haversineMeters, dedupeConsecutive, type Point, type TravelCost, type TravelCostProvider, type LegDetail } from "@/lib/travelCost";
+import { haversineMeters, dedupeConsecutive, type Point, type TravelCost, type TravelCostProvider, type PathDetail } from "@/lib/travelCost";
 import type { TransitGraph, StopNode, LineType, SpatialIndex } from "@/lib/transitGraph";
 
 /** Effective speed per line type (ADR-0019's coarse duration model) — one number per type
@@ -202,7 +202,7 @@ function shortestPath(
   return results;
 }
 
-function stepsToLegDetail(steps: Step[]): { transferCount: number; lineNames: string[] } {
+function stepsToPathDetail(steps: Step[]): { transferCount: number; lineNames: string[] } {
   const lineNames = steps.filter((s): s is RideStep => s.kind === "ride").map((s) => s.lineName);
   const transferCount = steps.filter((s) => s.kind === "transfer").length;
   return { transferCount, lineNames: dedupeConsecutive(lineNames) };
@@ -222,7 +222,7 @@ function snapWithWalkCost(
   });
 }
 
-async function routeLeg(graph: TransitGraph, spatialIndex: SpatialIndex, from: Point, to: Point): Promise<LegDetail> {
+async function routePath(graph: TransitGraph, spatialIndex: SpatialIndex, from: Point, to: Point): Promise<PathDetail> {
   if (haversineMeters(from, to) === 0) return { distanceMeters: 0, durationSeconds: 0 };
 
   const fromSnaps = snapWithWalkCost(spatialIndex, from);
@@ -246,11 +246,11 @@ async function routeLeg(graph: TransitGraph, spatialIndex: SpatialIndex, from: P
   }
 
   if (!best) {
-    throw new Error("osmTransitProvider: no path found between snapped stations for this Leg");
+    throw new Error("osmTransitProvider: no route found between snapped stations for this Path");
   }
 
   const result = raw.get(best.toStopId)!;
-  const { transferCount, lineNames } = stepsToLegDetail(result.steps);
+  const { transferCount, lineNames } = stepsToPathDetail(result.steps);
   return {
     distanceMeters: best.totalDistance,
     durationSeconds: best.totalMinutes * 60,
@@ -268,14 +268,14 @@ export function createOsmTransitProvider(graph: TransitGraph, spatialIndex: Spat
       for (const from of points) {
         const row: TravelCost[] = [];
         for (const to of points) {
-          row.push(await routeLeg(graph, spatialIndex, from, to));
+          row.push(await routePath(graph, spatialIndex, from, to));
         }
         matrix.push(row);
       }
       return matrix;
     },
-    async describeLeg(from, to) {
-      return routeLeg(graph, spatialIndex, from, to);
+    async describePath(from, to) {
+      return routePath(graph, spatialIndex, from, to);
     },
   };
 }
