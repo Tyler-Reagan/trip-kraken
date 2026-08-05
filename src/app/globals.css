@@ -133,3 +133,32 @@
     @apply w-8 h-8 flex items-center justify-center rounded-md;
   }
 }
+
+/* react-moveable resize handles on the floating map window (#128). The default control is a loud
+   blue widget; this makes it a quiet affordance instead — hairline dots that sit *at rest* nearly
+   invisible and only come up to the brand accent when the window is hovered, so the window reads as
+   a clean card until you actually reach for an edge.
+
+   Always-visible, not hover-revealed: moveable's control box is `pointer-events: none` except on
+   the handles themselves, so a `:hover` on the box never fires — hover-to-reveal leaves them
+   permanently invisible (and ungrabbable). So they stay on, just small and quiet: a hairline dot
+   that firms up to the brand accent only on its own hover. */
+.tk-map-moveable {
+  --moveable-color: transparent; /* kill the control-box outline entirely */
+}
+.tk-map-moveable .moveable-control.moveable-direction {
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  margin-left: -3.5px;
+  border: 1.5px solid #3fa5a0;
+  background: var(--surface);
+  border-radius: 9999px;
+  opacity: 0.6;
+  transition: opacity 0.12s ease;
+}
+/* opacity only — moveable owns each handle's inline `transform` for positioning, so a stylesheet
+   transform here would be overridden and do nothing. */
+.tk-map-moveable .moveable-control.moveable-direction:hover {
+  opacity: 1;
+}

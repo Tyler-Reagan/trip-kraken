@@ -7,7 +7,8 @@ import { CSS } from "@dnd-kit/utilities";
 import type { DerivedDay, ScheduledStop, Lodging, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import { dayColorCss, dayTextColor } from "@/lib/dayColors";
-import { GripVertical, Route, Search, Trash2 } from "lucide-react";
+import { metrosOf } from "@/lib/tripMetros";
+import { Crosshair, GripVertical, MapPin, Route, Search, Trash2 } from "lucide-react";
 import { dayDropId } from "./DayNavigator";
 
 interface Props {
@@ -40,7 +41,9 @@ function formatHoursSubtext(loc: Location, dayOfWeek: number): string {
 }
 
 export default function DayCard({ day, draggingStop, draggingLocation, stopDragId }: Props) {
+  const trip = useTripStore((s) => s.trip);
   const setDayLabel = useTripStore((s) => s.setDayLabel);
+  const focusMap = useTripStore((s) => s.focusMap);
   const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
   const [editingLabel, setEditingLabel] = useState(false);
   const [label, setLabel] = useState(day.label ?? "");
@@ -58,6 +61,14 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
   const anyHasDuration = day.stops.some((s) => s.location.visitDuration !== null);
   const isLightDay = anyHasDuration && totalMinutes < LIGHT_DAY_THRESHOLD && day.stops.length > 0;
   const nearbyAnchorLoc: Location | null = day.startAnchor ?? day.stops[0]?.location ?? null;
+  // The metros this day touches, ordered by first appearance in the day's stops and uncapped
+  // (#128 decision 6), read off the one shared cluster source — a badge click fits the metro
+  // across the *whole* trip, not just this day's share of it (decision 2).
+  const metros = (trip ? metrosOf(trip) : [])
+    .map((m) => ({ metro: m, at: day.stops.findIndex((s) => m.locationIds.has(s.location.id)) }))
+    .filter((m) => m.at >= 0)
+    .sort((a, b) => a.at - b.at)
+    .map((m) => m.metro);
 
   const dateStr = new Date(day.date + "T00:00:00").toLocaleDateString("en-US", {
     weekday: "short",
@@ -86,6 +97,17 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
             <span className="text-base font-semibold text-ink">Day {day.dayNumber}</span>
           </span>
           <span className="text-meta text-faint shrink-0">{dateStr}</span>
+          {metros.map((metro) => (
+            <button
+              key={metro.id}
+              onClick={() => focusMap({ tier: "metro", metroId: metro.id })}
+              title={`Show ${metro.label} on the map — all ${metro.stopCount} stop${metro.stopCount !== 1 ? "s" : ""} across the trip`}
+              className="shrink-0 flex items-center gap-1 rounded-full border border-line-strong px-1.5 py-0.5 text-[11px] text-sub hover:text-ink hover:bg-surface-2 transition-colors"
+            >
+              <MapPin className="w-3 h-3 text-faint" />
+              {metro.label}
+            </button>
+          ))}
           {editingLabel ? (
             <input
               autoFocus
@@ -249,6 +271,7 @@ function StopRow({ id, stop, index, dayNumber, dayOfWeek, date }: StopRowProps) 
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
   const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
+  const focusMap = useTripStore((s) => s.focusMap);
 
   const loc = stop.location;
   const isHighlighted = highlightedLocationId === loc.id;
@@ -305,6 +328,17 @@ function StopRow({ id, stop, index, dayNumber, dayOfWeek, date }: StopRowProps) 
         <p className="text-numeral text-faint mt-0.5">{hoursText} · {durText}</p>
       </div>
       <div className="shrink-0 flex items-center gap-0.5 hover-reveal transition-opacity">
+        {/* Map link (#128 decision 7): flyTo this stop, opening the map if it's closed. Disabled
+            without coordinates, same convention as Search beside it. */}
+        <button
+          onClick={(e) => { e.stopPropagation(); focusMap({ tier: "stop", locationId: loc.id }); }}
+          disabled={loc.lat === null}
+          title={loc.lat === null ? "No coordinates — run Enrich first" : "Show this stop on the map"}
+          aria-label="Show on map"
+          className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          <Crosshair className="w-4 h-4" />
+        </button>
         <button
           onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, date); }}
           disabled={loc.lat === null}

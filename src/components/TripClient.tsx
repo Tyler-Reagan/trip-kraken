@@ -35,6 +35,8 @@ export default function TripClient({ trip: initial }: Props) {
       activeSurface: initial.placements.length > 0 ? "itinerary" : "places",
       activeDayNumber: 1,
       mapPopupOpen: false,
+      focusTarget: null,
+      autoFocusArmed: true,
       discoveryMode: null,
       nearbySearchLocation: null,
       routeSearch: null,
