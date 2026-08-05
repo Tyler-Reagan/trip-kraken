@@ -3,7 +3,7 @@
 import { Info, X } from "lucide-react";
 
 /**
- * ADR-0019's accepted v1 limitation, surfaced to the user (#88): a transit Leg's timing is a
+ * ADR-0019's accepted v1 limitation, surfaced to the user (#88): a transit Path's timing is a
  * coarse estimate (per-line-type effective speed + a flat transfer allowance), not schedule-exact.
  * A Day with generous timing is unaffected; a Day resting on a tight last-train connection could
  * be called feasible when the real timetable disagrees — the one place the plan could be

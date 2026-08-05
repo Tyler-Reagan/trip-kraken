@@ -21,7 +21,7 @@ export type DiscoveryMode = "anchored" | "unanchored" | "alongRoute";
 export type DiscoveryScope =
   | { kind: "anchor"; lat: number; lng: number; radius?: number }
   | { kind: "none" }
-  | { kind: "route"; polyline: string }; // encoded polyline; caller computes it once per leg
+  | { kind: "route"; polyline: string }; // encoded polyline; caller computes it once per Path
 
 export interface DiscoveryQuery {
   /** Free text. Required for "none"/"route" scopes (validated at the routes);

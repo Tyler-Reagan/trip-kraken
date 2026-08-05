@@ -39,9 +39,9 @@ const osmJapanProvider: TravelCostProvider = {
     const { graph, spatialIndex } = getTransitGraph();
     return createOsmTransitProvider(graph, spatialIndex).costMatrix(points, mode, opts);
   },
-  async describeLeg(from, to, mode, opts) {
+  async describePath(from, to, mode, opts) {
     const { graph, spatialIndex } = getTransitGraph();
-    return createOsmTransitProvider(graph, spatialIndex).describeLeg(from, to, mode, opts);
+    return createOsmTransitProvider(graph, spatialIndex).describePath(from, to, mode, opts);
   },
 };
 

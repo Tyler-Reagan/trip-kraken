@@ -11,8 +11,8 @@
  *    derived from OSM's `stop_area`/`stop_area_group` (with a proximity+name fallback), by the
  *    ingestion pipeline, not by this module.
  *
- * Two edge kinds, both graph-internal — distinct from the domain `Leg` (a travel segment
- * between Placements) and never exposed as one:
+ * Two edge kinds, both graph-internal — distinct from the domain `Path` (a travel segment
+ * between Placements, ADR-0021) and never exposed as one:
  *  - Ride edges: consecutive stop nodes on one line, carrying the real inter-station distance.
  *  - Transfer edges: stop nodes within one cluster (the interchange walk).
  */

@@ -6,15 +6,15 @@ import { resolvePrimaryMode } from "@/lib/travelMode";
 import type { Point, TravelMode } from "@/lib/travelCost";
 
 /**
- * The discovery corridor for a leg. Tries the trip's actual travel mode first, then falls back to
+ * The discovery corridor for a Path. Tries the trip's actual travel mode first, then falls back to
  * walking, then driving, taking the first mode Google returns a route for.
  *
  * Keeping the trip's mode first preserves a real transit corridor where Google provides one (the
  * US/EU). It notably does NOT in Japan — the Routes API has no Japan transit data at all, which is
  * exactly why this repo carries its own OSM-Japan transit graph (ADR-0019) for *routing*. Wiring
  * that graph into the *discovery* corridor would be the faithful rail-based fix, but until then a
- * Japanese transit leg falls back to a road/walking band as a geographic proxy — which is also
- * what the short-urban-leg case needs (Google often has no transit route for a hop that's a walk).
+ * Japanese transit Path falls back to a road/walking band as a geographic proxy — which is also
+ * what the short-urban-Path case needs (Google often has no transit route for a hop that's a walk).
  * ADR-0009 leaves polyline computation to the caller; this is that caller policy. Returns null only
  * when no mode yields a corridor.
  */
@@ -31,10 +31,10 @@ async function corridorPolyline(from: Point, to: Point, primary: TravelMode): Pr
 
 /**
  * Along-route Places discovery (#102, chunk 3): a free-text query scoped to the
- * corridor between two of the trip's Locations. Computes the leg's polyline via the
+ * corridor between two of the trip's Locations. Computes the Path's polyline via the
  * Routes API, then delegates to the discovery provider's route scope — the polyline
  * is a per-request derivation, not persisted (a caller searching several categories
- * on the same leg would reuse it client-side across calls, per #102).
+ * on the same Path would reuse it client-side across calls, per #102).
  */
 export async function GET(
   req: NextRequest,
