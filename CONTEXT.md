@@ -51,11 +51,32 @@ _Avoid_: stop, visit, waypoint, item
 A date in the Trip; clusters the Placements that fall on it and may carry a label. Derived
 from the Trip's date range, not an entity in its own right.
 
-**Leg**:
-The travel segment between consecutive Placements (or between a Day's Anchor and its first
-or last Placement) within a Day — the unit travel cost, transit detail, and directions
-operate on. Derived from the Plan, never stored.
-_Avoid_: hop, segment, edge
+**Path**:
+The one travel primitive (ADR-0021), on the edge axis the way Location is the one place
+primitive on the node axis: the travel segment between consecutive Placements (or between a
+Day's Anchor and its first or last Placement) within a Day — the unit travel cost, transit
+detail, and directions operate on. Derived from the Plan, never stored. Atomic per edge: a
+transit Path is the composite door-to-door journey (walk to the station, ride, walk from —
+ADR-0018 §3), not decomposed into sub-Paths.
+_Avoid_: leg, hop, segment, edge
+
+**kind (Path)**:
+What a Path's travel was — `rail` · `bus` · `walking` · `driving` · `bicycle`. Optional: a
+Path whose Basis is `straightLine` had no route computed, so it has no honest kind to report.
+Contrast with Travel mode: kind is *reported* per Path; Travel mode is *chosen* per Trip.
+
+**Operator**:
+The entity operating a Path — a rail or bus company. Not a property of a rail line: a
+through-service can change Operator partway along one line, so Operator belongs to the Path,
+not the line. Walking never has one; driving may not.
+_Avoid_: network, company, agency
+
+**Basis (Path)**:
+How a Path's cost was arrived at — `railNetwork` (traversal of the rail graph) ·
+`routingService` (a routing provider's own answer) · `straightLine` (no route computed).
+Carries no reason: the fact that matters is whether real topology was used, not why it
+wasn't.
+_Avoid_: fallback, degraded
 
 **Anchor (derived)**:
 A Location that bookends a Day, *projected* from a constraint-field — the lodging you sleep
@@ -91,24 +112,37 @@ _Avoid_: nearby search, suggestions
 
 **Rail graph**:
 The offline-ingested structure a regional transit provider (e.g. Japan) routes over —
-stations and lines from OpenStreetMap, real distances, no timetables. An implementation
-detail of one `TravelCostProvider`, not domain vocabulary; a Trip never references it
-directly.
+stations and rail lines from OpenStreetMap, real inter-station distances, no timetables, no
+route geometry (ADR-0019 §"Duration model"; geometry capture is a separate, later question —
+see ADR-0021). An implementation detail of one `TravelCostProvider`, not domain vocabulary; a
+Trip never references it directly.
 
 **Stop node** (rail graph):
-One line's presence at one station — a busy interchange is several stop nodes. Distinct
+One rail line's presence at one station — a busy interchange is several stop nodes. Distinct
 from Placement; not a scheduled thing.
 
 **Station cluster** (rail graph):
-A grouping of stop nodes that represent one physical interchange, used to find transfers
-between lines and operators.
+What a person means by "a station": a grouping of stop nodes that represent one physical
+interchange, used to find transfers between rail lines and Operators.
+
+**Rail line**:
+The named service whose ordered stops the rail graph traverses — `JR山手線`, `のぞみ` —
+carrying a type (subway · commuter · limited express · shinkansen) that sets its effective
+speed. A Path reports the rail lines ridden, in order. Makes no Operator claim of its own,
+since a line may span more than one Operator where through-services run. OSM models one as a
+`route=*` relation; that tag name is not this project's vocabulary.
+_Avoid_: route, service, train
 
 **Ride edge / transfer edge** (rail graph):
 Graph-internal connections the rail graph's shortest-path search traverses — a ride edge
-between consecutive stops on one line, a transfer edge between stop nodes in one station
-cluster. Implementation concepts of the rail graph only; never used for a Leg, which stays
+between consecutive stops on one rail line, a transfer edge between stop nodes in one station
+cluster. Implementation concepts of the rail graph only; never used for a Path, which stays
 the domain unit of travel between Placements.
 
 **Travel mode**:
 How a Trip gets around — one of a Trip-level allowed set (transit, driving, walking,
-bicycle), resolved to a single primary mode the optimizer runs on.
+bicycle) the user permits, resolved today to a single primary mode the optimizer runs on
+(ADR-0019). Contrast with Path kind: Travel mode is *chosen* per Trip and coarser (`transit`
+covers both `rail` and `bus`); Path kind is *reported* per Path, after the fact. Not
+currently a per-Path filter — a Trip allowing both transit and driving still gets a plan in
+one mode, not a mix; that arrives with true multimodal routing, not before.
