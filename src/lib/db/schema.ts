@@ -18,7 +18,7 @@
 
 import { sql } from "drizzle-orm";
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
-import type { TravelMode } from "@/lib/travelCost";
+import type { TravelMode } from "@/lib/pathProvider";
 
 export const trip = sqliteTable("Trip", {
   id: text("id").primaryKey(),

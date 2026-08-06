@@ -1,5 +1,5 @@
 import type { NearbyPlace } from "@/types";
-import { haversineMeters } from "./travelCost";
+import { haversineMeters } from "./geo";
 
 /**
  * Places API (New) client (migrated off the deprecated legacy endpoints, #102).

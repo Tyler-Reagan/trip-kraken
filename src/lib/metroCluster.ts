@@ -15,7 +15,7 @@
  * the other's shape first.
  */
 
-import { haversineMeters, type Point } from "@/lib/travelCost";
+import { haversineMeters, type Point } from "@/lib/geo";
 
 /** Distance below which two locations count as the same metro rather than distinct destinations.
  * Wide enough to span one metro's spread (central city to its suburbs) but well under the gap

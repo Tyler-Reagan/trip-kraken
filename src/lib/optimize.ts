@@ -9,8 +9,8 @@
 import { getTripWithDetails, setPlacements } from "@/lib/db";
 import { solve, type FeasibilityViolation } from "@/lib/solver";
 import type { LocationInput, StayPlan, Unplaced } from "@/lib/optimizer";
-import { hasValidCoords } from "@/lib/travelCost";
-import { selectTravelCostProvider } from "@/lib/travelCostRegistry";
+import { hasValidCoords } from "@/lib/geo";
+import { selectPathProvider } from "@/lib/travelCostRegistry";
 import { resolvePrimaryMode } from "@/lib/travelMode";
 import { isActivity, isLodging, dayNumberOf, addDaysIso, numDaysOf, type Location, type TripWithDetails } from "@/types";
 
@@ -70,7 +70,7 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
   // is single-region by domain invariant, so no all-points scan is needed (ADR-0019).
   const mode = resolvePrimaryMode(trip.allowedModes);
   const representativePoints = inputLocations.filter(hasValidCoords);
-  const provider = selectTravelCostProvider(representativePoints, mode);
+  const provider = selectPathProvider(representativePoints, mode);
 
   const itinerary = await solve({
     locations: inputLocations,

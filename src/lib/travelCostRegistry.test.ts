@@ -1,6 +1,6 @@
 /**
  * Provider-selection registry tests (issue #86, Seam 4). Standalone (no test runner): run with
- * `tsx src/lib/travelCostRegistry.test.ts`. Direct assertions on the pure `selectTravelCostProvider`
+ * `tsx src/lib/travelCostRegistry.test.ts`. Direct assertions on the pure `selectPathProvider`
  * function — precedence, region/mode gating, and the "errors propagate, no fallthrough" contract —
  * per issue #81's Seam 4 spec: "Japan + transit → OSM-Japan; non-Japan → Google; no key →
  * haversine; precedence order; a selected provider that throws propagates (no fallthrough)."
@@ -8,9 +8,9 @@
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { haversineProvider } from "./travelCost";
+import { haversineProvider } from "./pathProvider";
 import { googleRoutesProvider } from "./googleRoutesProvider";
-import { selectTravelCostProvider, getTravelCostProviderById } from "./travelCostRegistry";
+import { selectPathProvider, getPathProviderById } from "./travelCostRegistry";
 import { DEFAULT_GRAPH_PATH } from "./transitGraphStore";
 
 // tsx compiles this file to CJS (no "type": "module" in package.json), which doesn't support
@@ -39,31 +39,31 @@ function withApiKey<T>(value: string | undefined, fn: () => T): T {
 
 // ── Japan + transit selects OSM-Japan ──
 withApiKey("test-key", () => {
-  const provider = selectTravelCostProvider([TOKYO], "transit");
-  assert.equal(provider, getTravelCostProviderById("osm-japan"), "Japan + transit selects the OSM-Japan provider");
+  const provider = selectPathProvider([TOKYO], "transit");
+  assert.equal(provider, getPathProviderById("osm-japan"), "Japan + transit selects the OSM-Japan provider");
 });
 
 // ── Non-Japan selects Google when a key is present ──
 withApiKey("test-key", () => {
-  const provider = selectTravelCostProvider([PARIS], "transit");
+  const provider = selectPathProvider([PARIS], "transit");
   assert.equal(provider, googleRoutesProvider, "non-Japan selects Google when an API key is present");
 });
 
 // ── Japan but a non-transit mode does not select the transit-only OSM-Japan provider ──
 withApiKey("test-key", () => {
-  const provider = selectTravelCostProvider([TOKYO], "driving");
+  const provider = selectPathProvider([TOKYO], "driving");
   assert.equal(provider, googleRoutesProvider, "Japan + driving falls through to Google, not OSM-Japan");
 });
 
 // ── No API key at all falls to haversine, the always-applicable floor ──
 withApiKey(undefined, () => {
-  const provider = selectTravelCostProvider([PARIS], "transit");
+  const provider = selectPathProvider([PARIS], "transit");
   assert.equal(provider, haversineProvider, "no API key falls back to the haversine floor");
 });
 
 // ── Precedence: OSM-Japan beats Google even when a key is present for the same query ──
 withApiKey("test-key", () => {
-  const provider = selectTravelCostProvider([TOKYO], "transit");
+  const provider = selectPathProvider([TOKYO], "transit");
   assert.notEqual(provider, googleRoutesProvider, "OSM-Japan takes precedence over Google for Japan + transit");
 });
 
@@ -72,14 +72,14 @@ withApiKey("test-key", () => {
 // file (issue #88's manual eval ingested one): temporarily hides it, mirroring
 // transitGraphStore.test.ts's own backup/restore pattern around its singleton test — this must
 // never clobber a real ingested graph. Safe to do here: nothing earlier in this file calls
-// costMatrix/describePath on the OSM-Japan provider, so getTransitGraph()'s cache is never
+// costMatrix/describeJourney on the OSM-Japan provider, so getTransitGraph()'s cache is never
 // populated before this point in this process.
 const hadRealGraph = fs.existsSync(DEFAULT_GRAPH_PATH);
 const backupPath = `${DEFAULT_GRAPH_PATH}.bak-${Date.now()}`;
 if (hadRealGraph) fs.renameSync(DEFAULT_GRAPH_PATH, backupPath);
 try {
   await assert.rejects(
-    () => selectTravelCostProvider([TOKYO], "transit").costMatrix([TOKYO], "transit"),
+    () => selectPathProvider([TOKYO], "transit").costMatrix([TOKYO], "transit"),
     /transit graph not ingested/,
     "a selected provider's error propagates instead of falling through to a lower-precedence provider"
   );

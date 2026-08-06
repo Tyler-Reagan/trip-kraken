@@ -3,7 +3,8 @@ import { getLocationCoords, getTripWithDetails } from "@/lib/db";
 import { getDiscoveryProvider, modeForScope, scoreAndSort } from "@/lib/discovery";
 import { computeRoutePolyline } from "@/lib/googleRoutesProvider";
 import { resolvePrimaryMode } from "@/lib/travelMode";
-import type { Point, TravelMode } from "@/lib/travelCost";
+import type { TravelMode } from "@/lib/pathProvider";
+import type { Point } from "@/lib/geo";
 
 /**
  * The discovery corridor for a Path. Tries the trip's actual travel mode first, then falls back to

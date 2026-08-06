@@ -23,7 +23,7 @@
  * "named, shared module"); this file owns the algorithm — clustering and sequencing — and calls
  * that module to score candidates rather than encoding penalties itself.
  *
- * Travel cost for sequencing (ADR-0004) comes from a `TravelCostProvider` (`travelCost.ts`), fetched
+ * Travel cost for sequencing (ADR-0004) comes from a `PathProvider` (`pathProvider.ts`), fetched
  * as one upfront `costMatrix` per optimize run — shared with solver.ts's feasibility pass via its
  * `precomputedDist` param (#82) — rather than queried pair-by-pair inside the construction loops,
  * or fetched a second time for feasibility. That's the only async part:
@@ -46,15 +46,9 @@ import {
   dayBudgetPenaltyKm,
   DEFAULT_VISIT_MINS,
 } from "@/lib/objective";
-import {
-  haversineProvider,
-  buildDistanceLookup,
-  haversineKm,
-  hasValidCoords,
-  type DistanceLookup,
-  type TravelMode,
-  type TravelCostProvider,
-} from "@/lib/travelCost";
+import { haversineKm, hasValidCoords } from "@/lib/geo";
+import { haversineProvider, type TravelMode, type PathProvider } from "@/lib/pathProvider";
+import { buildDistanceLookup, type DistanceLookup } from "@/lib/travelMatrix";
 import { clusterByMetro } from "@/lib/metroCluster";
 
 // No per-location travel-mode data exists yet; every sequencing query uses one mode until that
@@ -119,7 +113,7 @@ export async function optimizeItinerary(
   dayBudgetMinutes?: number,
   dayStartMins = 9 * 60,   // assumed start-of-day for time-window simulation (default 09:00)
   edges: EdgeAnchors = {},
-  provider: TravelCostProvider = haversineProvider,
+  provider: PathProvider = haversineProvider,
   /** The run's travel mode (ADR-0019 #86) — the orchestrator resolves a Trip's allowed-mode set to
    * one mode and passes it in via `solve()`; direct/test callers default to `DEFAULT_MODE`. */
   mode: TravelMode = DEFAULT_MODE,

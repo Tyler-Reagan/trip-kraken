@@ -6,7 +6,7 @@
  * from one projection rule over the constraint fields, the rule the repository and optimizer share.
  */
 
-import type { TravelMode } from "@/lib/travelCost";
+import type { TravelMode } from "@/lib/pathProvider";
 
 /** A calendar date "YYYY-MM-DD". A plain string, never a `Date` — date-only facts must not drift
  *  across timezones, and ISO date strings sort and compare chronologically as-is. */

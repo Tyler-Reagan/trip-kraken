@@ -1,26 +1,33 @@
 /**
- * Google Routes API provider (ADR-0018) — the first real `TravelCostProvider` implementation.
- * `costMatrix()` calls `computeRouteMatrix`; `describePath()` calls `computeRoutes` for one
- * point-to-point journey with display-only detail (line names, transfer count — ADR-0018 keeps
- * these out of the objective). Reuses `GOOGLE_MAPS_API_KEY` (places.ts) — Routes API is a separate
+ * Google Routes API provider (ADR-0018) — the first real `PathProvider` implementation.
+ * `costMatrix()` calls `computeRouteMatrix`; `describeJourney()` calls `computeRoutes` for one
+ * A-to-B journey. Reuses `GOOGLE_MAPS_API_KEY` (places.ts) — Routes API is a separate
  * Google Cloud API that must be individually enabled/billed on the same project (see the ADR-0018
  * implementation notes for the console steps).
  *
  * Fails loudly (ADR-0018 #4): any HTTP error, per-element error status, or "no route" condition
  * throws — never a silent fallback to haversine.
  *
- * Waypoints are sent as lat/lng, not Google `placeId`s: `Point` (travelCost.ts) doesn't carry a
- * placeId today, and every committed Location's coordinates are already Google-canonical (ADR-0009
- * enrichment), so lat/lng is equivalent precision without widening the provider interface's shared
- * `Point` type for this one implementation.
+ * Waypoints are sent as lat/lng, not Google `placeId`s: `Point` doesn't carry a placeId today, and
+ * every committed Location's coordinates are already Google-canonical (ADR-0009 enrichment), so
+ * lat/lng is equivalent precision without widening the provider interface's shared `Point` type
+ * for this one implementation.
  *
  * `departureTime` is only forwarded to Google when `mode === "transit"`: the API only accepts a
  * past `departureTime` for TRANSIT (rejects it for DRIVE/WALK/BICYCLE), and ADR-0018 §1 already
  * scoped time-of-day sensitivity to transit only — so the guard is real API behavior, not
  * speculative mode-specific branching.
+ *
+ * `describeJourney`'s transit result is currently a single `UnknownPath` (ADR-0022, revised): this
+ * provider doesn't request `transitDetails.transitLine.vehicle.type` yet, so it has genuine line
+ * names with no derivable `rail`/`bus`/`other` kind to attach them to — under the new taxonomy
+ * there is no member for that. Requesting `vehicle.type` and binning it (17 Google values → three
+ * kinds) is #146/P3 of the ADR-0022 refactor, not this slice.
  */
 
-import { dedupeConsecutive, type Point, type TravelCost, type TravelCostProvider, type PathDetail, type TravelMode } from "@/lib/travelCost";
+import { makeTravelCost, type Path, type PathEndpoint, type TravelCost } from "@/types/path";
+import type { Point } from "@/lib/geo";
+import type { PathProvider, TravelMode } from "@/lib/pathProvider";
 
 const MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
 const ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
@@ -137,10 +144,7 @@ async function computeFullMatrix(
         }
         const i = originBatch[el.originIndex];
         const j = destBatch[el.destinationIndex];
-        matrix[i][j] = {
-          distanceMeters: el.distanceMeters ?? 0,
-          durationSeconds: el.duration ? toSeconds(el.duration) : 0,
-        };
+        matrix[i][j] = makeTravelCost(el.distanceMeters ?? 0, el.duration ? toSeconds(el.duration) : 0, "routingService");
       }
     }
   }
@@ -152,21 +156,15 @@ type ComputeRoutesResponse = {
   routes?: Array<{
     distanceMeters?: number;
     duration?: string;
-    legs?: Array<{
-      steps?: Array<{
-        travelMode?: string;
-        transitDetails?: { transitLine?: { nameShort?: string; name?: string } };
-      }>;
-    }>;
   }>;
 };
 
 type PolylineResponse = { routes?: Array<{ polyline?: { encodedPolyline?: string } }> };
 
 /**
- * Encoded polyline for one Path (discovery route scope, #102) — a separate call from
- * `describePath` because along-route discovery needs only the corridor shape, not
- * distance/duration/transit detail, and callers compute it once per Path to reuse
+ * Encoded polyline for one Journey (discovery route scope, #102) — a separate call from
+ * `describeJourney` because along-route discovery needs only the corridor shape, not
+ * distance/duration, and callers compute it once per Journey to reuse
  * across several category searches (routing stays a separate seam, ADR-0018/0019).
  *
  * Returns `null` when Google has no route for this Path/mode. Unlike routing (which fails
@@ -197,7 +195,16 @@ export async function computeRoutePolyline(from: Point, to: Point, mode: TravelM
   return data.routes?.[0]?.polyline?.encodedPolyline ?? null;
 }
 
-export const googleRoutesProvider: TravelCostProvider = {
+/** Maps a resolved `TravelMode` to the `Path` kind Google's answer for it can honestly claim.
+ * `transit` maps to no kind — see the module doc: without `vehicle.type` in the field mask, a
+ * transit result has genuine content (distance, duration) but no derivable rail/bus/other kind. */
+const KIND_FOR_MODE: Partial<Record<TravelMode, "walking" | "driving" | "bicycle">> = {
+  walking: "walking",
+  driving: "driving",
+  bicycle: "bicycle",
+};
+
+export const googleRoutesProvider: PathProvider = {
   async costMatrix(points, mode, opts) {
     if (points.length === 0) return [];
     const googleMode = GOOGLE_TRAVEL_MODE[mode];
@@ -205,7 +212,7 @@ export const googleRoutesProvider: TravelCostProvider = {
     return computeFullMatrix(points, googleMode, departureTime);
   },
 
-  async describePath(from, to, mode, opts): Promise<PathDetail> {
+  async describeJourney(from: PathEndpoint, to: PathEndpoint, mode, opts): Promise<Path[]> {
     const googleMode = GOOGLE_TRAVEL_MODE[mode];
     const departureTime = mode === "transit" ? opts?.departureTime : undefined;
 
@@ -221,8 +228,7 @@ export const googleRoutesProvider: TravelCostProvider = {
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey(),
-        "X-Goog-FieldMask":
-          "routes.distanceMeters,routes.duration,routes.legs.steps.travelMode,routes.legs.steps.transitDetails.transitLine.nameShort,routes.legs.steps.transitDetails.transitLine.name",
+        "X-Goog-FieldMask": "routes.distanceMeters,routes.duration",
       },
       body: JSON.stringify(body),
     });
@@ -232,28 +238,15 @@ export const googleRoutesProvider: TravelCostProvider = {
     }
     const data = (await res.json()) as ComputeRoutesResponse;
     const route = data.routes?.[0];
-    if (!route) throw new Error("Google Routes API: no route found for this Path");
+    if (!route) throw new Error("Google Routes API: no route found for this Journey");
 
-    const distanceMeters = route.distanceMeters ?? 0;
-    const durationSeconds = route.duration ? toSeconds(route.duration) : 0;
+    const travelCost = makeTravelCost(
+      route.distanceMeters ?? 0,
+      route.duration ? toSeconds(route.duration) : 0,
+      "routingService"
+    );
 
-    if (googleMode !== "TRANSIT") return { distanceMeters, durationSeconds };
-
-    // Google has no transfer-count field (confirmed against the API docs); derive it from
-    // consecutive TRANSIT-mode steps — walking/waiting steps in between don't count as transfers.
-    // `route.legs` is Google's own response field (their "leg", not our domain Path) — left as-is.
-    const transitSteps = (route.legs ?? [])
-      .flatMap((apiLeg) => apiLeg.steps ?? [])
-      .filter((s) => s.travelMode === "TRANSIT");
-    const lineNames = transitSteps
-      .map((s) => s.transitDetails?.transitLine?.nameShort ?? s.transitDetails?.transitLine?.name)
-      .filter((name): name is string => !!name);
-
-    return {
-      distanceMeters,
-      durationSeconds,
-      transferCount: Math.max(0, transitSteps.length - 1),
-      lineNames: dedupeConsecutive(lineNames),
-    };
+    const kind = KIND_FOR_MODE[mode];
+    return [kind ? { kind, from, to, travelCost } : { from, to, travelCost }];
   },
 };

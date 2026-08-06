@@ -91,39 +91,23 @@ await assert.rejects(
   "no-route condition throws"
 );
 
-// ── describePath: transit steps → transferCount + deduped line names, display-only fields ──
-mockFetch(() => ({
-  routes: [
-    {
-      distanceMeters: 8000,
-      duration: "1800s",
-      legs: [
-        {
-          steps: [
-            { travelMode: "WALK" },
-            { travelMode: "TRANSIT", transitDetails: { transitLine: { nameShort: "Yamanote Line" } } },
-            { travelMode: "WALK" },
-            { travelMode: "TRANSIT", transitDetails: { transitLine: { nameShort: "Ginza Line" } } },
-          ],
-        },
-      ],
-    },
-  ],
-}));
-const path = await googleRoutesProvider.describePath(P(35.68, 139.76), P(35.71, 139.79), "transit");
-assert.equal(path.durationSeconds, 1800, "Path duration mapped");
-assert.equal(path.transferCount, 1, "two transit steps = one transfer");
-assert.deepEqual(path.lineNames, ["Yamanote Line", "Ginza Line"], "line names in ride order");
+// ── describeJourney: transit has genuine cost but no derivable kind (ADR-0022 P1 — no
+//    vehicle.type in the field mask yet, so a transit journey reports UnknownPath) ──
+mockFetch(() => ({ routes: [{ distanceMeters: 8000, duration: "1800s" }] }));
+const journey = await googleRoutesProvider.describeJourney(P(35.68, 139.76), P(35.71, 139.79), "transit");
+assert.equal(journey.length, 1, "single-element Path[] — decomposition unimplemented");
+assert.equal(journey[0].kind, undefined, "no vehicle.type requested yet, so no honest kind to report");
+assert.equal(journey[0].travelCost.durationSeconds, 1800, "Path duration mapped");
+assert.equal(journey[0].travelCost.basisOfCost, "routingService", "still a real routed cost, despite the unknown kind");
 
-// ── describePath: non-transit mode omits transit-only fields ──
+// ── describeJourney: walking mode gets a definite kind, since the mode itself was honored ──
 mockFetch(() => ({ routes: [{ distanceMeters: 400, duration: "300s" }] }));
-const walkPath = await googleRoutesProvider.describePath(P(0, 0), P(0, 0.01), "walking");
-assert.equal(walkPath.transferCount, undefined, "walking has no transfer count");
-assert.equal(walkPath.lineNames, undefined, "walking has no line names");
+const walkJourney = await googleRoutesProvider.describeJourney(P(0, 0), P(0, 0.01), "walking");
+assert.equal(walkJourney[0].kind, "walking", "walking mode maps to WalkingPath");
 
-// ── describePath: no route found throws ──
+// ── describeJourney: no route found throws ──
 mockFetch(() => ({ routes: [] }));
-await assert.rejects(() => googleRoutesProvider.describePath(P(0, 0), P(0, 0), "driving"), /no route found/, "empty routes throws");
+await assert.rejects(() => googleRoutesProvider.describeJourney(P(0, 0), P(0, 0), "driving"), /no route found/, "empty routes throws");
 
 // ── computeRoutePolyline: encoded polyline extracted, minimal field mask ──
 mockFetch((_url, init) => {
