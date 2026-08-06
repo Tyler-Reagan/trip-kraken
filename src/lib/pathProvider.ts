@@ -12,16 +12,15 @@
  * centroid is a synthetic averaged point, not a real place, so "how do I travel to this made-up
  * point" isn't a meaningful provider query. Clustering stays on its own local distance math.
  *
- * `TravelMode` is parked here as scaffolding, not a settled shape: ADR-0022's P2 slice dissolves it
- * into `PathKind` end-to-end (provider selection becomes `appliesTo(points, kinds)`, and
- * `describeJourney`'s `mode` parameter becomes a willing-kinds set). Until then this is the one
- * remaining two-enums-for-one-axis seam the ADR flagged.
+ * `kinds` (ADR-0022 P2) is a **willingness set**, not a constraint (ADR-0022, revised) — the
+ * orchestrator (`optimize.ts`) threads a Trip's whole `allowedPathKinds` through, unresolved, and
+ * each provider decides for itself how to spend it: a provider limited to one query per request
+ * (Google's matrix takes exactly one `travelMode`) picks its own single kind by a documented
+ * precedence; a provider with only one kind to offer (OSM-Japan) ignores the set entirely.
  */
 
-import { type Path, type PathEndpoint, type Point, type TravelCost, makeTravelCost } from "@/types/path";
+import { type Path, type PathEndpoint, type PathKind, type Point, type TravelCost, makeTravelCost } from "@/types/path";
 import { haversineMeters } from "@/lib/geo";
-
-export type TravelMode = "walking" | "driving" | "transit" | "bicycle";
 
 export interface PathProviderOptions {
   /** Representative departure datetime (ADR-0018) — timetables are calendar-dependent, so a real
@@ -32,12 +31,12 @@ export interface PathProviderOptions {
 
 export interface PathProvider {
   /** Fetch every pairwise cost in one round trip (ADR-0004), for sequencing's inner loops. */
-  costMatrix(points: Point[], mode: TravelMode, opts?: PathProviderOptions): Promise<TravelCost[][]>;
+  costMatrix(points: Point[], kinds: PathKind[], opts?: PathProviderOptions): Promise<TravelCost[][]>;
   /** One A-to-B journey as its constituent Paths (ADR-0021, ADR-0022) — for the final plan's
    * display only; called lazily at display time, never inside sequencing's construction/refinement
    * loops. Every provider currently returns a single-element array (decomposition unimplemented,
    * P1 of the ADR-0022 refactor); a straight-line fallback is always exactly one `UnknownPath`. */
-  describeJourney(from: PathEndpoint, to: PathEndpoint, mode: TravelMode, opts?: PathProviderOptions): Promise<Path[]>;
+  describeJourney(from: PathEndpoint, to: PathEndpoint, kinds: PathKind[], opts?: PathProviderOptions): Promise<Path[]>;
 }
 
 // Average city travel speed for estimating durations (20 km/h) — unchanged from the pre-O2 constant.

@@ -18,7 +18,7 @@
 
 import { sql } from "drizzle-orm";
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
-import type { TravelMode } from "@/lib/pathProvider";
+import type { PathKind } from "@/types/path";
 
 export const trip = sqliteTable("Trip", {
   id: text("id").primaryKey(),
@@ -31,12 +31,13 @@ export const trip = sqliteTable("Trip", {
   // A day's optional label, keyed by date. Days are a derived clustering of Placements, not an
   // entity, so the only thing a day "owns" — a label — rides here (locked decision, ADR-0015).
   dayLabels: text("dayLabels", { mode: "json" }).$type<Record<string, string>>(),
-  // The Trip's allowed travel modes (ADR-0019 §mode) — resolved to a single primary mode by
-  // `resolvePrimaryMode` (travelCostRegistry.ts) at optimize time, replacing the old hardcoded
-  // `DEFAULT_MODE` constant. Nullable rather than DB-defaulted: `resolvePrimaryMode` already
-  // treats an unset Trip as the default set (which includes transit), so there is no meaningful
-  // "unset" state to distinguish at the schema level.
-  allowedModes: text("allowedModes", { mode: "json" }).$type<TravelMode[]>(),
+  // The Trip's willing Path kinds (ADR-0019 §mode, renamed by ADR-0022 P2) — a set threaded
+  // through `solve()` unresolved (ADR-0022, revised: willingness, not a constraint), with
+  // `resolvePrimaryPathKind` (pathKind.ts) used only by the narrower callers that need one
+  // representative kind. Nullable rather than DB-defaulted: an unset Trip already resolves to
+  // `DEFAULT_ALLOWED_PATH_KINDS` (which includes rail+bus), so there is no meaningful "unset"
+  // state to distinguish at the schema level.
+  allowedPathKinds: text("allowedPathKinds", { mode: "json" }).$type<PathKind[]>(),
   // Whether the user has dismissed ADR-0019's estimated-transit-timing caveat (#130) — persisted
   // so it stays dismissed across reloads instead of reappearing on every page mount.
   transitCaveatDismissed: integer("transitCaveatDismissed", { mode: "boolean" }).notNull().default(false),

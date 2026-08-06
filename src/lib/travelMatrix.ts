@@ -6,8 +6,8 @@
  * provider module (`pathProvider.ts`) it sits between.
  */
 
-import type { Point, TravelCost } from "@/types/path";
-import type { PathProvider, PathProviderOptions, TravelMode } from "@/lib/pathProvider";
+import type { Point, PathKind, TravelCost } from "@/types/path";
+import type { PathProvider, PathProviderOptions } from "@/lib/pathProvider";
 
 export interface DistanceLookup {
   km(aId: string, bId: string): number;
@@ -23,11 +23,11 @@ export interface DistanceLookup {
 export async function buildDistanceLookup(
   provider: PathProvider,
   points: (Point & { id: string })[],
-  mode: TravelMode,
+  kinds: PathKind[],
   opts?: PathProviderOptions
 ): Promise<DistanceLookup> {
   const index = new Map(points.map((p, i) => [p.id, i]));
-  const matrix = await provider.costMatrix(points, mode, opts);
+  const matrix = await provider.costMatrix(points, kinds, opts);
 
   const cellOf = (aId: string, bId: string): TravelCost => {
     const i = index.get(aId);

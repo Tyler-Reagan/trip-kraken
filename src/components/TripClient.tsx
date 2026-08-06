@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { numDaysOf, type TripWithDetails } from "@/types";
 import { useTripStore } from "@/store/tripStore";
-import { resolvePrimaryMode } from "@/lib/travelMode";
+import { resolvePrimaryPathKind } from "@/lib/pathKind";
 import OptimizeModal from "./OptimizeModal";
 import LocationInspector from "./LocationInspector";
 import InspectorPopover from "./InspectorPopover";
@@ -66,9 +66,11 @@ export default function TripClient({ trip: initial }: Props) {
 
   const hasPlan = trip.placements.length > 0;
   // ADR-0019's accepted v1 limitation only applies when transit is actually in play (#88) — a
-  // driving/walking-only Trip never touches an estimated-timing transit provider.
+  // driving/walking-only Trip never touches an estimated-timing transit provider. `transit` split
+  // into `rail`/`bus` (ADR-0022 P2); either still means "transit-like."
+  const primaryKind = resolvePrimaryPathKind(trip.allowedPathKinds);
   const showTransitCaveat =
-    hasPlan && !trip.transitCaveatDismissed && resolvePrimaryMode(trip.allowedModes) === "transit";
+    hasPlan && !trip.transitCaveatDismissed && (primaryKind === "rail" || primaryKind === "bus");
   const pendingCount = trip.locations.filter((l) => l.enrichmentStatus === "pending").length;
   const failedCount = trip.locations.filter((l) => l.enrichmentStatus === "failed").length;
   const numDays = numDaysOf(trip.startDate, trip.endDate);

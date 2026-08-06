@@ -2,29 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import { getLocationCoords, getTripWithDetails } from "@/lib/db";
 import { getDiscoveryProvider, modeForScope, scoreAndSort } from "@/lib/discovery";
 import { computeRoutePolyline } from "@/lib/googleRoutesProvider";
-import { resolvePrimaryMode } from "@/lib/travelMode";
-import type { TravelMode } from "@/lib/pathProvider";
-import type { Point } from "@/types/path";
+import { resolvePrimaryPathKind } from "@/lib/pathKind";
+import type { Point, PathKind } from "@/types/path";
 
 /**
- * The discovery corridor for a Path. Tries the trip's actual travel mode first, then falls back to
- * walking, then driving, taking the first mode Google returns a route for.
+ * The discovery corridor for a Path. Tries the trip's actual primary kind first, then falls back
+ * to walking, then driving, taking the first kind Google returns a route for.
  *
- * Keeping the trip's mode first preserves a real transit corridor where Google provides one (the
+ * Keeping the trip's kind first preserves a real transit corridor where Google provides one (the
  * US/EU). It notably does NOT in Japan — the Routes API has no Japan transit data at all, which is
  * exactly why this repo carries its own OSM-Japan transit graph (ADR-0019) for *routing*. Wiring
  * that graph into the *discovery* corridor would be the faithful rail-based fix, but until then a
  * Japanese transit Path falls back to a road/walking band as a geographic proxy — which is also
  * what the short-urban-Path case needs (Google often has no transit route for a hop that's a walk).
  * ADR-0009 leaves polyline computation to the caller; this is that caller policy. Returns null only
- * when no mode yields a corridor.
+ * when no kind yields a corridor.
  */
-async function corridorPolyline(from: Point, to: Point, primary: TravelMode): Promise<string | null> {
-  const seen = new Set<TravelMode>();
-  for (const mode of [primary, "walking", "driving"] as TravelMode[]) {
-    if (seen.has(mode)) continue;
-    seen.add(mode);
-    const polyline = await computeRoutePolyline(from, to, mode);
+async function corridorPolyline(from: Point, to: Point, primary: PathKind): Promise<string | null> {
+  const seen = new Set<PathKind>();
+  for (const kind of [primary, "walking", "driving"] as PathKind[]) {
+    if (seen.has(kind)) continue;
+    seen.add(kind);
+    const polyline = await computeRoutePolyline(from, to, kind);
     if (polyline) return polyline;
   }
   return null;
@@ -79,7 +78,7 @@ export async function GET(
     const polyline = await corridorPolyline(
       { lat: from.lat, lng: from.lng },
       { lat: to.lat, lng: to.lng },
-      resolvePrimaryMode(trip.allowedModes)
+      resolvePrimaryPathKind(trip.allowedPathKinds)
     );
     if (!polyline) {
       return NextResponse.json({ error: "No route between these stops" }, { status: 422 });

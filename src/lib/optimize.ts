@@ -11,7 +11,7 @@ import { solve, type FeasibilityViolation } from "@/lib/solver";
 import type { LocationInput, StayPlan, Unplaced } from "@/lib/optimizer";
 import { hasValidCoords } from "@/lib/geo";
 import { selectPathProvider } from "@/lib/travelCostRegistry";
-import { resolvePrimaryMode } from "@/lib/travelMode";
+import { DEFAULT_ALLOWED_PATH_KINDS } from "@/lib/pathKind";
 import { isActivity, isLodging, dayNumberOf, addDaysIso, numDaysOf, type Location, type TripWithDetails } from "@/types";
 
 export type OptimizeOptions = {
@@ -64,13 +64,14 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
   const dayBudgetMinutes =
     typeof opts.dayBudgetHours === "number" && opts.dayBudgetHours > 0 ? opts.dayBudgetHours * 60 : undefined;
 
-  // Resolve the Trip's allowed-mode set to a single primary mode and select the applicable
-  // provider once, up front (ADR-0019 #86) — solve() itself stays provider- and mode-agnostic.
-  // The representative point is whichever input location has real coordinates first; an itinerary
-  // is single-region by domain invariant, so no all-points scan is needed (ADR-0019).
-  const mode = resolvePrimaryMode(trip.allowedModes);
+  // Select the applicable provider once, up front (ADR-0019 #86), from the Trip's whole
+  // allowed-kinds *set* — unresolved (ADR-0022, revised): willingness is not a constraint, so
+  // solve() and the provider it's given both receive the set, not one collapsed mode. The
+  // representative point is whichever input location has real coordinates first; an itinerary is
+  // single-region by domain invariant, so no all-points scan is needed (ADR-0019).
+  const kinds = trip.allowedPathKinds && trip.allowedPathKinds.length > 0 ? trip.allowedPathKinds : DEFAULT_ALLOWED_PATH_KINDS;
   const representativePoints = inputLocations.filter(hasValidCoords);
-  const provider = selectPathProvider(representativePoints, mode);
+  const provider = selectPathProvider(representativePoints, kinds);
 
   const itinerary = await solve({
     locations: inputLocations,
@@ -78,7 +79,7 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
     stays,
     dayBudgetMinutes,
     startDate: trip.startDate,
-    mode,
+    kinds,
     provider,
   });
 
