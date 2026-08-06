@@ -1,11 +1,12 @@
 /**
- * The OSM-Japan `TravelCostProvider` (ADR-0019, issue #85) — real transit costs from the
+ * The OSM-Japan `PathProvider` (ADR-0019, issue #85) — real transit costs from the
  * station/line graph (`transitGraph.ts`/`transitGraphStore.ts`): a Dijkstra-style shortest path
- * with a per-transfer cost, backing both `costMatrix` (optimizer bulk) and `describePath`
- * (per-Path display, ADR-0021). Implements `TravelCostProvider` unchanged — no caller (`solve`,
- * `buildDistanceLookup`, `optimize`) has to change to accommodate it (ADR-0019's registry,
- * issue #86, is what will eventually select this provider for a Japan+transit Trip; this
- * module has no opinion on `mode` itself, since it only ever has one kind of journey to offer).
+ * with a per-transfer cost, backing both `costMatrix` (optimizer bulk) and `describeJourney`
+ * (per-Journey display, ADR-0021/ADR-0022). Implements `PathProvider` unchanged — no caller
+ * (`solve`, `buildDistanceLookup`, `optimize`) has to change to accommodate it (ADR-0019's
+ * registry, issue #86, is what will eventually select this provider for a Japan+transit Trip;
+ * this module has no opinion on `mode` itself, since it only ever has one kind of journey to
+ * offer).
  *
  * No runtime network I/O: `createOsmTransitProvider(graph, spatialIndex)` binds to an
  * already-loaded graph (the future registry, issue #86, supplies `transitGraphStore.ts`'s
@@ -15,16 +16,24 @@
  * Station-snapping + fallback (ADR-0019): a point connects to every stop node within
  * `STATION_SNAP_RADIUS_METERS` via a walk edge (distance ÷ walk speed) — not just the nearest, so
  * the search can still pick whichever entry line is actually shortest. A point with no stop node
- * in range falls back to haversine-as-walking, a plain `TravelCost` with no
- * `transferCount`/`lineNames` — the existing `PathDetail` convention already used by
- * `haversineProvider`/`googleRoutesProvider` for "nothing transit to report", so the fallback is
- * visibly an estimate rather than masquerading as a routed transit Path. A pair that both snap
- * but turn out disconnected in the graph is a different failure (nationwide rail should be one
- * connected component) and throws rather than silently walking instead — ADR-0017/0018's
- * fail-loud precedent, not a station-snapping fallback case.
+ * in range falls back to haversine-as-walking, reported as `UnknownPath` (Basis of cost
+ * `straightLine`, ADR-0022): it was computed *as* a walk but never routed *as* one, so it cannot
+ * honestly claim `kind: "walking"`. A pair that both snap but turn out disconnected in the graph
+ * is a different failure (nationwide rail should be one connected component) and throws rather
+ * than silently walking instead — ADR-0017/0018's fail-loud precedent, not a station-snapping
+ * fallback case.
+ *
+ * `describeJourney` returns a single-element `Path[]` (ADR-0022 P1): a real journey may cross
+ * several lines/Operators, which should decompose into several single-kind Paths, but
+ * decomposition itself isn't implemented yet. Until then a routed multi-line journey still
+ * reports `kind: "rail"` with every ridden line's name joined into one string — an honest but
+ * lossy placeholder (the per-shift transfer detail this loses is exactly what decomposition
+ * restores), not a claim that the journey was actually one continuous ride.
  */
 
-import { haversineMeters, dedupeConsecutive, type Point, type TravelCost, type TravelCostProvider, type PathDetail } from "@/lib/travelCost";
+import { haversineMeters } from "@/lib/geo";
+import { makeTravelCost, type Path, type PathEndpoint, type Point, type TravelCost } from "@/types/path";
+import type { PathProvider } from "@/lib/pathProvider";
 import type { TransitGraph, StopNode, LineType, SpatialIndex } from "@/lib/transitGraph";
 
 /** Effective speed per line type (ADR-0019's coarse duration model) — one number per type
@@ -52,7 +61,7 @@ function minutesForMeters(distanceMeters: number, speedKmh: number): number {
 
 function haversineWalkingCost(from: Point, to: Point): TravelCost {
   const distanceMeters = haversineMeters(from, to);
-  return { distanceMeters, durationSeconds: minutesForMeters(distanceMeters, WALK_SPEED_KMH) * 60 };
+  return makeTravelCost(distanceMeters, minutesForMeters(distanceMeters, WALK_SPEED_KMH) * 60, "straightLine");
 }
 
 type RideStep = { kind: "ride"; lineName: string };
@@ -202,10 +211,14 @@ function shortestPath(
   return results;
 }
 
-function stepsToPathDetail(steps: Step[]): { transferCount: number; lineNames: string[] } {
-  const lineNames = steps.filter((s): s is RideStep => s.kind === "ride").map((s) => s.lineName);
-  const transferCount = steps.filter((s) => s.kind === "transfer").length;
-  return { transferCount, lineNames: dedupeConsecutive(lineNames) };
+/** Every ridden line's name, collapsed and joined into one string — the pre-decomposition
+ * placeholder described in the module doc. Collapses only consecutive repeats (a line ridden
+ * twice non-consecutively is a real second ride, not a naming artifact); `undefined` when no ride
+ * step occurred at all (the route resolved from station-access walking alone). */
+function joinedLineNameOf(steps: Step[]): string | undefined {
+  const rideNames = steps.filter((s): s is RideStep => s.kind === "ride").map((s) => s.lineName);
+  const deduped = rideNames.filter((name, i) => name !== rideNames[i - 1]);
+  return deduped.length > 0 ? deduped.join(" / ") : undefined;
 }
 
 /** One point's snapped stop nodes plus the walk-access cost to each, or `null` when nothing is
@@ -222,12 +235,20 @@ function snapWithWalkCost(
   });
 }
 
-async function routePath(graph: TransitGraph, spatialIndex: SpatialIndex, from: Point, to: Point): Promise<PathDetail> {
-  if (haversineMeters(from, to) === 0) return { distanceMeters: 0, durationSeconds: 0 };
+/** The graph search's result before it's shaped into a `TravelCost`/`Path` — `lineName` present
+ * only when the route actually rode a line (`joinedLineNameOf`'s `undefined` case: the route
+ * resolved from station-access walking alone, so it's not honestly `kind: "rail"` either). */
+interface JourneyResult {
+  travelCost: TravelCost;
+  lineName?: string;
+}
+
+async function routeJourney(graph: TransitGraph, spatialIndex: SpatialIndex, from: Point, to: Point): Promise<JourneyResult> {
+  if (haversineMeters(from, to) === 0) return { travelCost: makeTravelCost(0, 0, "straightLine") };
 
   const fromSnaps = snapWithWalkCost(spatialIndex, from);
   const toSnaps = snapWithWalkCost(spatialIndex, to);
-  if (!fromSnaps || !toSnaps) return haversineWalkingCost(from, to);
+  if (!fromSnaps || !toSnaps) return { travelCost: haversineWalkingCost(from, to) };
 
   const adjacency = buildAdjacency(graph);
   const toStopIds = new Set(toSnaps.map((s) => s.stop.id));
@@ -246,36 +267,35 @@ async function routePath(graph: TransitGraph, spatialIndex: SpatialIndex, from: 
   }
 
   if (!best) {
-    throw new Error("osmTransitProvider: no route found between snapped stations for this Path");
+    throw new Error("osmTransitProvider: no route found between snapped stations for this Journey");
   }
 
   const result = raw.get(best.toStopId)!;
-  const { transferCount, lineNames } = stepsToPathDetail(result.steps);
   return {
-    distanceMeters: best.totalDistance,
-    durationSeconds: best.totalMinutes * 60,
-    transferCount,
-    lineNames,
+    travelCost: makeTravelCost(best.totalDistance, best.totalMinutes * 60, "railNetwork"),
+    lineName: joinedLineNameOf(result.steps),
   };
 }
 
-/** Builds a `TravelCostProvider` bound to a given graph + spatial index — the seam that lets tests
+/** Builds a `PathProvider` bound to a given graph + spatial index — the seam that lets tests
  * inject a small hand-built fixture instead of the real ingested `db/transit-japan.db`. */
-export function createOsmTransitProvider(graph: TransitGraph, spatialIndex: SpatialIndex): TravelCostProvider {
+export function createOsmTransitProvider(graph: TransitGraph, spatialIndex: SpatialIndex): PathProvider {
   return {
     async costMatrix(points) {
       const matrix: TravelCost[][] = [];
       for (const from of points) {
         const row: TravelCost[] = [];
         for (const to of points) {
-          row.push(await routePath(graph, spatialIndex, from, to));
+          row.push((await routeJourney(graph, spatialIndex, from, to)).travelCost);
         }
         matrix.push(row);
       }
       return matrix;
     },
-    async describePath(from, to) {
-      return routePath(graph, spatialIndex, from, to);
+    async describeJourney(from: PathEndpoint, to: PathEndpoint): Promise<Path[]> {
+      const { travelCost, lineName } = await routeJourney(graph, spatialIndex, from, to);
+      if (lineName === undefined) return [{ from, to, travelCost }];
+      return [{ kind: "rail", from, to, travelCost, lineName }];
     },
   };
 }

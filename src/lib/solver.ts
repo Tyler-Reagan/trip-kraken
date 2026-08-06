@@ -31,13 +31,9 @@ import {
   type Unplaced,
 } from "@/lib/optimizer";
 import { windowPenaltyKm, dayBudgetPenaltyKm, DEFAULT_VISIT_MINS } from "@/lib/objective";
-import {
-  haversineProvider,
-  buildDistanceLookup,
-  hasValidCoords,
-  type TravelCostProvider,
-  type TravelMode,
-} from "@/lib/travelCost";
+import { hasValidCoords } from "@/lib/geo";
+import { haversineProvider, type PathProvider, type TravelMode } from "@/lib/pathProvider";
+import { buildDistanceLookup } from "@/lib/travelMatrix";
 import type { IsoDate } from "@/types";
 
 export interface OptimizationProblem {
@@ -50,7 +46,7 @@ export interface OptimizationProblem {
   /** Defaults to the straight-line haversine provider (ADR-0004). Explicit here — rather than
    * each of solve() and optimizeItinerary independently hardcoding the same import — so both
    * halves of one optimize run are guaranteed to score against the same cost model. */
-  provider?: TravelCostProvider;
+  provider?: PathProvider;
   /** The trip's first date (ADR-0018) — combined with dayStartMins into one representative
    * departure datetime, fetched once per optimize run for time-of-day-dependent providers.
    * Undefined skips time-of-day entirely (providers that ignore it, like haversine, don't need it). */

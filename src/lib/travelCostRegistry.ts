@@ -1,7 +1,7 @@
 /**
  * Provider-selection registry (ADR-0019, issue #86) — the piece that actually turns on the
  * OSM-Japan provider (issue #85) for a real optimize run. An ordered list of
- * `TravelCostProvider`s, each carrying an `appliesTo(points, mode)` predicate; the first entry
+ * `PathProvider`s (ADR-0022), each carrying an `appliesTo(points, mode)` predicate; the first entry
  * whose predicate matches wins. Precedence: OSM-Japan (Japan + transit) → Google (global default,
  * when an API key is present) → haversine (the floor, always applies) — mirrors
  * `discovery.ts`'s existing provider-list + `applies`/region-gating pattern.
@@ -17,7 +17,8 @@
  * `solve()` itself never imports this registry.
  */
 
-import { haversineProvider, type Point, type TravelCostProvider, type TravelMode } from "@/lib/travelCost";
+import { haversineProvider, type PathProvider, type TravelMode } from "@/lib/pathProvider";
+import type { Point } from "@/types/path";
 import { googleRoutesProvider } from "@/lib/googleRoutesProvider";
 import { createOsmTransitProvider } from "@/lib/osmTransitProvider";
 import { getTransitGraph } from "@/lib/transitGraphStore";
@@ -25,8 +26,8 @@ import { inJapan } from "@/lib/discovery";
 
 interface RegistryEntry {
   id: string;
-  provider: TravelCostProvider;
-  /** `points` is the full point set for signature symmetry with `selectTravelCostProvider`, but
+  provider: PathProvider;
+  /** `points` is the full point set for signature symmetry with `selectPathProvider`, but
    * only `points[0]` (the representative point) is ever examined — see the module doc. */
   appliesTo(points: Point[], mode: TravelMode): boolean;
 }
@@ -34,14 +35,14 @@ interface RegistryEntry {
 // Bound lazily to the real ingested graph singleton (`getTransitGraph()`) — resolved per call, not
 // at module load or at `appliesTo` time, so a missing graph file's loud error surfaces only when
 // this provider is actually queried, never merely by importing the registry.
-const osmJapanProvider: TravelCostProvider = {
+const osmJapanProvider: PathProvider = {
   async costMatrix(points, mode, opts) {
     const { graph, spatialIndex } = getTransitGraph();
     return createOsmTransitProvider(graph, spatialIndex).costMatrix(points, mode, opts);
   },
-  async describePath(from, to, mode, opts) {
+  async describeJourney(from, to, mode, opts) {
     const { graph, spatialIndex } = getTransitGraph();
-    return createOsmTransitProvider(graph, spatialIndex).describePath(from, to, mode, opts);
+    return createOsmTransitProvider(graph, spatialIndex).describeJourney(from, to, mode, opts);
   },
 };
 
@@ -66,9 +67,9 @@ const REGISTRY: readonly RegistryEntry[] = [
 ];
 
 /** Looks up a registry entry's provider instance by id — lets tests assert *which* provider
- * `selectTravelCostProvider` returned (e.g. confirming OSM-Japan precedence over Google) without
+ * `selectPathProvider` returned (e.g. confirming OSM-Japan precedence over Google) without
  * the registry needing to expose its internal entries directly. */
-export function getTravelCostProviderById(id: string): TravelCostProvider | undefined {
+export function getPathProviderById(id: string): PathProvider | undefined {
   return REGISTRY.find((e) => e.id === id)?.provider;
 }
 
@@ -76,7 +77,7 @@ export function getTravelCostProviderById(id: string): TravelCostProvider | unde
  * mode. `REGISTRY`'s last entry (haversine) always applies, so this never falls through to the
  * `?? ` default in practice — it's there only to satisfy TypeScript's control-flow analysis over
  * `Array.prototype.find`, not a real runtime fallback path. */
-export function selectTravelCostProvider(points: Point[], mode: TravelMode): TravelCostProvider {
+export function selectPathProvider(points: Point[], mode: TravelMode): PathProvider {
   const entry = REGISTRY.find((e) => e.appliesTo(points, mode));
   return (entry ?? REGISTRY[REGISTRY.length - 1]).provider;
 }

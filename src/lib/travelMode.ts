@@ -7,7 +7,7 @@
  * has no such dependency.
  */
 
-import type { TravelMode } from "@/lib/travelCost";
+import type { TravelMode } from "@/lib/pathProvider";
 
 /** A Trip's allowed-mode set, most-preferred first — transit already blends walking internally,
  * so most allowed-mode combinations collapse to this single primary mode the optimizer runs on. */

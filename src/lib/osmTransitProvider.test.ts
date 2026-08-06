@@ -1,7 +1,7 @@
 /**
- * OSM-Japan `TravelCostProvider` tests (issue #85, Seam 1). Standalone (no test runner): run with
+ * OSM-Japan `PathProvider` tests (issue #85, Seam 1). Standalone (no test runner): run with
  * `tsx src/lib/osmTransitProvider.test.ts`. Exercises the provider purely through its public
- * `TravelCostProvider` interface (`costMatrix`/`describePath`) against a small hand-built graph
+ * `PathProvider` interface (`costMatrix`/`describeJourney`) against a small hand-built graph
  * fixture — no runtime network I/O, so the fixture is a graph, not an HTTP mock (unlike
  * googleRoutesProvider.test.ts, which mocks `global.fetch`).
  *
@@ -117,24 +117,27 @@ const nearCompareA = P(35.0001, 139.0001); // ~10m from compare-subway-a
 const nearCompareB = P(35.0001, 141.0001); // ~10m from compare-subway-b
 const isolated = P(36.5, 140.5); // far from every stop node in the fixture
 
-// ── Multi-line journey: Akihabara -> Otemachi crosses the Tokyo interchange (loop -> spur) ──
-const multiLine = await provider.describePath(nearAkihabara, nearOtemachi, "transit");
-assert.deepEqual(multiLine.lineNames, ["Loop Line", "Spur Subway"], "reports both real line names in ride order");
-assert.equal(multiLine.transferCount, 1, "one transfer edge traversed at the Tokyo interchange");
+// ── Multi-line journey: Akihabara -> Otemachi crosses the Tokyo interchange (loop -> spur).
+//    Decomposition isn't implemented yet (ADR-0022 P1), so this is still a single Path — kind
+//    "rail" with both ridden lines joined into one placeholder lineName, not yet split at the
+//    interchange into two single-line Paths. ──
+const multiLine = await provider.describeJourney(nearAkihabara, nearOtemachi, "transit");
+assert.equal(multiLine.length, 1, "single-element Path[] — decomposition unimplemented");
+assert.equal(multiLine[0].kind, "rail", "a routed journey reports the rail kind");
+assert.equal((multiLine[0] as { lineName: string }).lineName, "Loop Line / Spur Subway", "both ridden lines joined, pre-decomposition");
 
-// ── Single-ride journey: Akihabara -> Kanda stays on one line, zero transfers ──
-const singleRide = await provider.describePath(nearAkihabara, nearKanda, "transit");
-assert.deepEqual(singleRide.lineNames, ["Loop Line"], "single-line journey reports just that line");
-assert.equal(singleRide.transferCount, 0, "no transfer edges traversed on a single-ride journey");
+// ── Single-ride journey: Akihabara -> Kanda stays on one line ──
+const singleRide = await provider.describeJourney(nearAkihabara, nearKanda, "transit");
+assert.equal((singleRide[0] as { lineName: string }).lineName, "Loop Line", "single-line journey reports just that line");
 
 // ── Shinkansen vs. subway: an equal-distance hop is faster on the Shinkansen ──
 // Both hops are exactly 260km (compare-subway-a/b's ride edge matches the Shinkansen trunk's
 // distance exactly), so this isolates line-type speed from trip length directly, with no derived
 // rate: same distance, different effective speed.
-const shinkansenPath = await provider.describePath(nearTokyoForShinkansen, nearNagoya, "transit");
-const equalDistanceSubwayPath = await provider.describePath(nearCompareA, nearCompareB, "transit");
+const shinkansenJourney = await provider.describeJourney(nearTokyoForShinkansen, nearNagoya, "transit");
+const equalDistanceSubwayJourney = await provider.describeJourney(nearCompareA, nearCompareB, "transit");
 assert.ok(
-  shinkansenPath.durationSeconds < equalDistanceSubwayPath.durationSeconds,
+  shinkansenJourney[0].travelCost.durationSeconds < equalDistanceSubwayJourney[0].travelCost.durationSeconds,
   "a Shinkansen hop is faster than an equal-distance subway hop"
 );
 
@@ -145,16 +148,17 @@ const nearestStops = snapStations(spatialIndex, nearAkihabara);
 assert.ok(nearestStops.some((s) => s.id === "decoy-near-akihabara"), "the farther decoy is in range too");
 assert.equal(nearestStops[0]?.id, "loop-akihabara", "the nearest stop in range is Akihabara, not the farther decoy");
 
-// ── No station in range: falls back to a haversine-as-walking estimate, visibly marked ──
-const noStationPath = await provider.describePath(isolated, nearAkihabara, "transit");
-assert.equal(noStationPath.lineNames, undefined, "an unrouted walking estimate carries no line names");
-assert.equal(noStationPath.transferCount, undefined, "an unrouted walking estimate carries no transfer count");
-assert.ok(noStationPath.durationSeconds > 0, "still reports a usable (walking-estimate) duration");
+// ── No station in range: falls back to a haversine-as-walking estimate, reported as UnknownPath
+//    (Basis of cost straightLine) — computed as a walk, but never routed as one (ADR-0022) ──
+const noStationJourney = await provider.describeJourney(isolated, nearAkihabara, "transit");
+assert.equal(noStationJourney[0].kind, undefined, "an unrouted walking estimate has no honest kind");
+assert.equal(noStationJourney[0].travelCost.basisOfCost, "straightLine", "no route was computed");
+assert.ok(noStationJourney[0].travelCost.durationSeconds > 0, "still reports a usable (walking-estimate) duration");
 
-// ── costMatrix backs the same provider surface in bulk, consistent with describePath ──
+// ── costMatrix backs the same provider surface in bulk, consistent with describeJourney ──
 const matrix = await provider.costMatrix([nearAkihabara, nearOtemachi, isolated], "transit");
 assert.equal(matrix.length, 3, "one row per point");
-assert.equal(matrix[0][1].durationSeconds, multiLine.durationSeconds, "costMatrix agrees with describePath for the same pair");
+assert.equal(matrix[0][1].durationSeconds, multiLine[0].travelCost.durationSeconds, "costMatrix agrees with describeJourney for the same pair");
 assert.ok(matrix[0][2].durationSeconds > 0, "an isolated point still gets a walking-estimate cost in the matrix");
 assert.equal(matrix[0][0].distanceMeters, 0, "a point costed against itself is zero");
 

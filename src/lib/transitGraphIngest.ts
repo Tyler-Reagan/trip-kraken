@@ -21,7 +21,7 @@
  * in this graph (`osmTransitProvider.ts`).
  */
 
-import { haversineMeters } from "@/lib/travelCost";
+import { haversineMeters } from "@/lib/geo";
 import {
   createGraph,
   type TransitGraph,

@@ -5,7 +5,7 @@ import { trip, location, placement } from "./schema";
 import type { TripWithDetails, Location, Placement, IsoDate } from "@/types";
 import type { LocationEnrichment } from "@/lib/places";
 import type { ParsedBooking } from "@/lib/bookingImport";
-import type { TravelMode } from "@/lib/travelCost";
+import type { TravelMode } from "@/lib/pathProvider";
 import { reorderPlacements, insertPlacement } from "@/lib/placementOrdering";
 import { dedupeName } from "@/lib/dedupeName";
 

@@ -17,7 +17,7 @@
  *  - Transfer edges: stop nodes within one cluster (the interchange walk).
  */
 
-import { haversineMeters } from "./travelCost";
+import { haversineMeters } from "./geo";
 
 /** A line's physical service class (issue #85's duration model) — the key into the OSM-transit
  * provider's per-type effective-speed table. Sourced from OSM route-relation tags by ingestion

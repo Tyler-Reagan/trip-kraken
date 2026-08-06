@@ -14,7 +14,7 @@
 
 import type { NearbyPlace } from "@/types";
 import { searchAlongRoute, searchNearby, searchText } from "./places";
-import { haversineMeters } from "./travelCost";
+import { haversineMeters } from "./geo";
 
 export type DiscoveryMode = "anchored" | "unanchored" | "alongRoute";
 

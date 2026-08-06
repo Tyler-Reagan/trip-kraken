@@ -97,23 +97,24 @@ assert.equal(itinerary.days.length, 1, "one day plan for one day's worth of stop
 const stopIds = itinerary.days[0].locationIds;
 assert.equal(stopIds.length, 3, "all three activities are placed");
 
-// Walk the solved day's consecutive stops through describePath — the same lazy, display-time call
-// optimize.ts's caller would make for the plan's Paths (ADR-0018, ADR-0021) — and confirm at least
-// one consecutive pair reports real line names and a real transfer count, not haversine's plain numbers.
-const byId = new Map(locations.map((l) => [l.id, l]));
+// Walk the solved day's consecutive stops through describeJourney — the same lazy, display-time
+// call optimize.ts's caller would make for the plan's Paths (ADR-0018, ADR-0021, ADR-0022) — and
+// confirm at least one consecutive pair reports a real rail-routed cost, not haversine's plain
+// straight-line numbers.
+const byId = new Map(locations.map((l) => [l.id, { locationId: l.id, lat: l.lat, lng: l.lng }]));
 let sawRealTransitPath = false;
 for (let i = 0; i < stopIds.length - 1; i++) {
   const from = byId.get(stopIds[i])!;
   const to = byId.get(stopIds[i + 1])!;
-  const path = await provider.describePath(from, to, "transit");
-  if (path.lineNames && path.lineNames.length > 0) {
+  const journey = await provider.describeJourney(from, to, "transit");
+  if (journey[0].kind === "rail") {
     sawRealTransitPath = true;
-    assert.ok(path.transferCount !== undefined, "a real transit Path also reports a transfer count");
+    assert.equal(journey[0].travelCost.basisOfCost, "railNetwork", "a real transit Path is routed, not estimated");
   }
 }
 assert.ok(
   sawRealTransitPath,
-  "the solved plan's Paths demonstrably carry real transit line names once a graph file is present (#86)"
+  "the solved plan's Paths demonstrably use real rail routing once a graph file is present (#86)"
 );
 
 fs.rmSync(dir, { recursive: true, force: true });

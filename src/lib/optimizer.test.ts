@@ -18,7 +18,8 @@ import * as schema from "@/lib/db/schema";
 import { optimizeItinerary } from "@/lib/optimizer";
 import { solve } from "@/lib/solver";
 import { optimizeTrip } from "@/lib/optimize";
-import { haversineProvider, type TravelCostProvider } from "@/lib/travelCost";
+import { haversineProvider, type PathProvider, type PathProviderOptions, type TravelMode } from "@/lib/pathProvider";
+import type { Point } from "@/types/path";
 import { createTripWithLocations, createLocation, setLodgingDates, updateLocation, getTripWithDetails } from "@/lib/db";
 import { isActivity } from "@/types";
 
@@ -177,12 +178,12 @@ assert.equal(
 // Regression (#82): solve() must fetch the costMatrix once and reuse it for both sequencing and
 // the feasibility-violation pass — not once per phase (Seam 3, docs/optimizer-rebuild.md).
 let costMatrixCalls = 0;
-const countingProvider: TravelCostProvider = {
-  async costMatrix(points, mode, opts) {
+const countingProvider: PathProvider = {
+  async costMatrix(points: Point[], mode: TravelMode, opts?: PathProviderOptions) {
     costMatrixCalls++;
     return haversineProvider.costMatrix(points, mode, opts);
   },
-  describePath: haversineProvider.describePath,
+  describeJourney: haversineProvider.describeJourney,
 };
 await solve({
   locations: [
