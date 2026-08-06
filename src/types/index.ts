@@ -6,7 +6,7 @@
  * from one projection rule over the constraint fields, the rule the repository and optimizer share.
  */
 
-import type { TravelMode } from "@/lib/pathProvider";
+import type { PathKind } from "@/types/path";
 
 /** A calendar date "YYYY-MM-DD". A plain string, never a `Date` — date-only facts must not drift
  *  across timezones, and ISO date strings sort and compare chronologically as-is. */
@@ -84,7 +84,7 @@ export type TripWithDetails = {
   startDate: IsoDate; // the single required temporal axis (ADR-0015 §3)
   endDate: IsoDate;
   dayLabels: Record<IsoDate, string> | null; // a day's optional label; days are not an entity
-  allowedModes: TravelMode[] | null; // ADR-0019 §mode; unset resolves to the default set (transit included)
+  allowedPathKinds: PathKind[] | null; // ADR-0019 §mode / ADR-0022 P2; unset resolves to the default set (rail+bus included)
   transitCaveatDismissed: boolean; // whether the estimated-transit-timing caveat (#130) has been dismissed
   createdAt: Date;
   updatedAt: Date;

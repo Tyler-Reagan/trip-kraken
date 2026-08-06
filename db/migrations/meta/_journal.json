@@ -22,6 +22,13 @@
       "when": 1784231479645,
       "tag": "0002_stormy_bulldozer",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1786000000000,
+      "tag": "0003_allowed_path_kinds",
+      "breakpoints": true
     }
   ]
 }

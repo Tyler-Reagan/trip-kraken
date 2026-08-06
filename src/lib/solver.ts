@@ -15,15 +15,16 @@
  * `precomputedDist`, reusing the same lookup for the violation pass below — a real routing
  * provider is queried/billed once per optimize run, not twice.
  *
- * `mode` (ADR-0019 #86) is just threaded through to both fetches — `solve()` doesn't resolve a
- * Trip's allowed-mode set or select a provider itself; the orchestrator (`optimize.ts`) does both
- * before calling in, so `solve()` stays provider- and mode-agnostic (this file's `DEFAULT_MODE`
- * import is only a same-module fallback for callers, like tests, that don't pass one).
+ * `kinds` (ADR-0019 #86, ADR-0022 P2) is just threaded through to both fetches, unresolved —
+ * `solve()` doesn't collapse a Trip's allowed-kinds set or select a provider itself; the
+ * orchestrator (`optimize.ts`) does both before calling in, so `solve()` stays provider- and
+ * kind-agnostic (this file's `DEFAULT_KINDS` import is only a same-module fallback for callers,
+ * like tests, that don't pass one).
  */
 
 import {
   optimizeItinerary,
-  DEFAULT_MODE,
+  DEFAULT_KINDS,
   type LocationInput,
   type StayPlan,
   type EdgeAnchors,
@@ -32,7 +33,8 @@ import {
 } from "@/lib/optimizer";
 import { windowPenaltyKm, dayBudgetPenaltyKm, DEFAULT_VISIT_MINS } from "@/lib/objective";
 import { hasValidCoords } from "@/lib/geo";
-import { haversineProvider, type PathProvider, type TravelMode } from "@/lib/pathProvider";
+import { haversineProvider, type PathProvider } from "@/lib/pathProvider";
+import type { PathKind } from "@/types/path";
 import { buildDistanceLookup } from "@/lib/travelMatrix";
 import type { IsoDate } from "@/types";
 
@@ -51,10 +53,10 @@ export interface OptimizationProblem {
    * departure datetime, fetched once per optimize run for time-of-day-dependent providers.
    * Undefined skips time-of-day entirely (providers that ignore it, like haversine, don't need it). */
   startDate?: IsoDate;
-  /** The resolved primary mode for this optimize run (ADR-0019 #86) — the orchestrator resolves a
-   * Trip's allowed-mode set to one mode before calling in. Defaults to `DEFAULT_MODE` for callers
-   * (tests, direct use) that don't need per-Trip mode resolution. */
-  mode?: TravelMode;
+  /** The willing Path kinds for this optimize run (ADR-0019 #86, ADR-0022 P2) — the orchestrator
+   * passes a Trip's whole `allowedPathKinds` set through, unresolved. Defaults to `DEFAULT_KINDS`
+   * for callers (tests, direct use) that don't need per-Trip resolution. */
+  kinds?: PathKind[];
 }
 
 /** A feasibility rule violated by the solved itinerary (ADR-0016's gate tier). `locationId` is
@@ -86,7 +88,7 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
     edges = {},
     provider = haversineProvider,
     startDate,
-    mode = DEFAULT_MODE,
+    kinds = DEFAULT_KINDS,
   } = problem;
 
   // One representative departure datetime for the whole run (ADR-0018): the trip's first date at
@@ -97,7 +99,7 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
   // One costMatrix fetch for the whole run (#82), shared between sequencing and the feasibility
   // pass below — passed into optimizeItinerary as precomputedDist so it doesn't fetch its own.
   const validForDist = locations.filter(hasValidCoords);
-  const dist = await buildDistanceLookup(provider, validForDist, mode, { departureTime });
+  const dist = await buildDistanceLookup(provider, validForDist, kinds, { departureTime });
 
   const { days, unplaced } = await optimizeItinerary(
     locations,
@@ -107,7 +109,7 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
     dayStartMins,
     edges,
     provider,
-    mode,
+    kinds,
     departureTime,
     dist
   );

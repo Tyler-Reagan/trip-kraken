@@ -47,13 +47,14 @@ import {
   DEFAULT_VISIT_MINS,
 } from "@/lib/objective";
 import { haversineKm, hasValidCoords } from "@/lib/geo";
-import { haversineProvider, type TravelMode, type PathProvider } from "@/lib/pathProvider";
+import { haversineProvider, type PathProvider } from "@/lib/pathProvider";
+import type { PathKind } from "@/types/path";
 import { buildDistanceLookup, type DistanceLookup } from "@/lib/travelMatrix";
 import { clusterByMetro } from "@/lib/metroCluster";
 
-// No per-location travel-mode data exists yet; every sequencing query uses one mode until that
-// changes (a category-A quality improvement, docs/optimizer-rebuild.md — not this slice).
-export const DEFAULT_MODE: TravelMode = "walking";
+// No per-location travel-mode data exists yet; every sequencing query uses one kind set until
+// that changes (a category-A quality improvement, docs/optimizer-rebuild.md — not this slice).
+export const DEFAULT_KINDS: PathKind[] = ["walking"];
 
 export interface LocationInput {
   id: string;
@@ -114,9 +115,10 @@ export async function optimizeItinerary(
   dayStartMins = 9 * 60,   // assumed start-of-day for time-window simulation (default 09:00)
   edges: EdgeAnchors = {},
   provider: PathProvider = haversineProvider,
-  /** The run's travel mode (ADR-0019 #86) — the orchestrator resolves a Trip's allowed-mode set to
-   * one mode and passes it in via `solve()`; direct/test callers default to `DEFAULT_MODE`. */
-  mode: TravelMode = DEFAULT_MODE,
+  /** The run's willing Path kinds (ADR-0019 #86, ADR-0022 P2) — the orchestrator threads a Trip's
+   * whole `allowedPathKinds` set through via `solve()`, unresolved; direct/test callers default
+   * to `DEFAULT_KINDS`. */
+  kinds: PathKind[] = DEFAULT_KINDS,
   /** Representative departure datetime (ADR-0018), forwarded to the provider's costMatrix call.
    * Undefined for providers/callers that don't model time-of-day. */
   departureTime?: Date,
@@ -226,7 +228,7 @@ export async function optimizeItinerary(
   // (stops + all lodging/edge anchors) — every haversine/travel query below reads it synchronously.
   // Reuses the caller's lookup when one is passed in (#82) instead of fetching a second costMatrix.
   const validForDist = locations.filter(hasValidCoords);
-  const dist = precomputedDist ?? (await buildDistanceLookup(provider, validForDist, mode, { departureTime }));
+  const dist = precomputedDist ?? (await buildDistanceLookup(provider, validForDist, kinds, { departureTime }));
 
   // Fewer locations than days: one per day, anchored at that day's lodging. Greedily prefers each
   // location's own eligible days (when masked) over plain positional order, so a coverage mask is

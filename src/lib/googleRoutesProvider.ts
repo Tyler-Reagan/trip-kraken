@@ -13,30 +13,44 @@
  * lat/lng is equivalent precision without widening the provider interface's shared `Point` type
  * for this one implementation.
  *
- * `departureTime` is only forwarded to Google when `mode === "transit"`: the API only accepts a
- * past `departureTime` for TRANSIT (rejects it for DRIVE/WALK/BICYCLE), and ADR-0018 §1 already
- * scoped time-of-day sensitivity to transit only — so the guard is real API behavior, not
- * speculative mode-specific branching.
+ * `departureTime` is only forwarded to Google when the resolved Google mode is TRANSIT: the API
+ * only accepts a past `departureTime` for TRANSIT (rejects it for DRIVE/WALK/BICYCLE), and
+ * ADR-0018 §1 already scoped time-of-day sensitivity to transit only — so the guard is real API
+ * behavior, not speculative mode-specific branching.
  *
- * `describeJourney`'s transit result is currently a single `UnknownPath` (ADR-0022, revised): this
- * provider doesn't request `transitDetails.transitLine.vehicle.type` yet, so it has genuine line
- * names with no derivable `rail`/`bus`/`other` kind to attach them to — under the new taxonomy
- * there is no member for that. Requesting `vehicle.type` and binning it (17 Google values → three
- * kinds) is #146/P3 of the ADR-0022 refactor, not this slice.
+ * `kinds` (ADR-0022 P2) is a willingness *set*; Google's matrix/routes calls take exactly one
+ * `travelMode` per request, so this provider collapses the set to one representative `PathKind`
+ * via `resolvePrimaryPathKind` (`pathKind.ts`) before mapping it onto Google's vocabulary
+ * (`GOOGLE_MODE_FOR_KIND`). Forwarding the full transit subset as `transitPreferences.
+ * allowedTravelModes`, rather than just picking one, is deferred to #146 — not this slice.
+ *
+ * `describeJourney`'s result is currently a single `UnknownPath` whenever the resolved kind is
+ * `rail`/`bus`/`other` (ADR-0022, revised): this provider doesn't request
+ * `transitDetails.transitLine.vehicle.type` yet, so a transit result has genuine content
+ * (distance, duration) but no derivable rail/bus/other kind to attach it to. Requesting
+ * `vehicle.type` and binning it (17 Google values → three kinds) is #146/P3 of the ADR-0022
+ * refactor, not this slice.
  */
 
-import { makeTravelCost, type Path, type PathEndpoint, type TravelCost } from "@/types/path";
+import { makeTravelCost, type Path, type PathEndpoint, type PathKind, type TravelCost } from "@/types/path";
 import type { Point } from "@/lib/geo";
-import type { PathProvider, TravelMode } from "@/lib/pathProvider";
+import type { PathProvider } from "@/lib/pathProvider";
+import { resolvePrimaryPathKind } from "@/lib/pathKind";
 
 const MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
 const ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
 
-const GOOGLE_TRAVEL_MODE: Record<TravelMode, string> = {
+/** Maps one `PathKind` to Google's `travelMode` enum. `rail`/`bus`/`other` all fold onto
+ * `TRANSIT` — Google has no separate top-level mode for them, only `transitPreferences` *within*
+ * TRANSIT (ADR-0022's rail/bus split is a request-side filter Google supports, per the module
+ * doc; not wired up here). */
+const GOOGLE_MODE_FOR_KIND: Record<PathKind, string> = {
   walking: "WALK",
   driving: "DRIVE",
   bicycle: "BICYCLE",
-  transit: "TRANSIT",
+  rail: "TRANSIT",
+  bus: "TRANSIT",
+  other: "TRANSIT",
 };
 
 // Google's per-request cap on origins × destinations (elements) — tighter for TRANSIT than the
@@ -167,13 +181,13 @@ type PolylineResponse = { routes?: Array<{ polyline?: { encodedPolyline?: string
  * distance/duration, and callers compute it once per Journey to reuse
  * across several category searches (routing stays a separate seam, ADR-0018/0019).
  *
- * Returns `null` when Google has no route for this Path/mode. Unlike routing (which fails
+ * Returns `null` when Google has no route for this Path/kind. Unlike routing (which fails
  * loudly — ADR-0018 — because a missing cost would corrupt the optimizer), a missing
- * discovery corridor is an ordinary outcome: the caller falls back to another mode (e.g. a
+ * discovery corridor is an ordinary outcome: the caller falls back to another kind (e.g. a
  * short urban Path has no transit route but is a walk). Genuine API/HTTP errors still throw.
  */
-export async function computeRoutePolyline(from: Point, to: Point, mode: TravelMode): Promise<string | null> {
-  const googleMode = GOOGLE_TRAVEL_MODE[mode];
+export async function computeRoutePolyline(from: Point, to: Point, kind: PathKind): Promise<string | null> {
+  const googleMode = GOOGLE_MODE_FOR_KIND[kind];
   const res = await fetch(ROUTES_URL, {
     method: "POST",
     headers: {
@@ -195,26 +209,26 @@ export async function computeRoutePolyline(from: Point, to: Point, mode: TravelM
   return data.routes?.[0]?.polyline?.encodedPolyline ?? null;
 }
 
-/** Maps a resolved `TravelMode` to the `Path` kind Google's answer for it can honestly claim.
- * `transit` maps to no kind — see the module doc: without `vehicle.type` in the field mask, a
- * transit result has genuine content (distance, duration) but no derivable rail/bus/other kind. */
-const KIND_FOR_MODE: Partial<Record<TravelMode, "walking" | "driving" | "bicycle">> = {
-  walking: "walking",
-  driving: "driving",
-  bicycle: "bicycle",
-};
+/** Whether a resolved kind is one Google collapses onto `TRANSIT` — a type predicate (not a plain
+ * `Set.has`) so the non-transit branch below narrows `PathKind` down to the three kinds `Path`
+ * actually accepts a bare `kind` field for. */
+function isTransitBucketKind(k: PathKind): k is "rail" | "bus" | "other" {
+  return k === "rail" || k === "bus" || k === "other";
+}
 
 export const googleRoutesProvider: PathProvider = {
-  async costMatrix(points, mode, opts) {
+  async costMatrix(points, kinds, opts) {
     if (points.length === 0) return [];
-    const googleMode = GOOGLE_TRAVEL_MODE[mode];
-    const departureTime = mode === "transit" ? opts?.departureTime : undefined;
+    const primary = resolvePrimaryPathKind(kinds);
+    const googleMode = GOOGLE_MODE_FOR_KIND[primary];
+    const departureTime = googleMode === "TRANSIT" ? opts?.departureTime : undefined;
     return computeFullMatrix(points, googleMode, departureTime);
   },
 
-  async describeJourney(from: PathEndpoint, to: PathEndpoint, mode, opts): Promise<Path[]> {
-    const googleMode = GOOGLE_TRAVEL_MODE[mode];
-    const departureTime = mode === "transit" ? opts?.departureTime : undefined;
+  async describeJourney(from: PathEndpoint, to: PathEndpoint, kinds, opts): Promise<Path[]> {
+    const primary = resolvePrimaryPathKind(kinds);
+    const googleMode = GOOGLE_MODE_FOR_KIND[primary];
+    const departureTime = googleMode === "TRANSIT" ? opts?.departureTime : undefined;
 
     const body: Record<string, unknown> = {
       origin: toWaypoint(from),
@@ -246,7 +260,8 @@ export const googleRoutesProvider: PathProvider = {
       "routingService"
     );
 
-    const kind = KIND_FOR_MODE[mode];
-    return [kind ? { kind, from, to, travelCost } : { from, to, travelCost }];
+    // A transit-bucket kind was requested but not derivable from the response yet (see module
+    // doc) — the resolved kind is otherwise exactly what was asked for and got.
+    return [isTransitBucketKind(primary) ? { from, to, travelCost } : { kind: primary, from, to, travelCost }];
   },
 };

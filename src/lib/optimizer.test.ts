@@ -18,7 +18,8 @@ import * as schema from "@/lib/db/schema";
 import { optimizeItinerary } from "@/lib/optimizer";
 import { solve } from "@/lib/solver";
 import { optimizeTrip } from "@/lib/optimize";
-import { haversineProvider, type PathProvider, type PathProviderOptions, type TravelMode } from "@/lib/pathProvider";
+import { haversineProvider, type PathProvider, type PathProviderOptions } from "@/lib/pathProvider";
+import type { PathKind } from "@/types/path";
 import type { Point } from "@/lib/geo";
 import { createTripWithLocations, createLocation, setLodgingDates, updateLocation, getTripWithDetails } from "@/lib/db";
 import { isActivity } from "@/types";
@@ -179,9 +180,9 @@ assert.equal(
 // the feasibility-violation pass — not once per phase (Seam 3, docs/optimizer-rebuild.md).
 let costMatrixCalls = 0;
 const countingProvider: PathProvider = {
-  async costMatrix(points: Point[], mode: TravelMode, opts?: PathProviderOptions) {
+  async costMatrix(points: Point[], kinds: PathKind[], opts?: PathProviderOptions) {
     costMatrixCalls++;
-    return haversineProvider.costMatrix(points, mode, opts);
+    return haversineProvider.costMatrix(points, kinds, opts);
   },
   describeJourney: haversineProvider.describeJourney,
 };
@@ -264,16 +265,16 @@ migrate(db, { migrationsFolder: path.join(process.cwd(), "db", "migrations") });
 (globalThis as unknown as { _drizzle?: typeof db })._drizzle = db;
 
 // 3-day trip; lodging H across all nights; three activities with coords; one excluded. Pinned to
-// walking (ADR-0019 #86): this test is about placement/DB mechanics, not provider selection, and
-// its Tokyo-area coordinates would otherwise resolve to the OSM-Japan transit provider by default
-// (transit is the default primary mode) — which requires a real ingested `db/transit-japan.db`
-// this test environment doesn't have.
+// walking (ADR-0019 #86, ADR-0022 P2): this test is about placement/DB mechanics, not provider
+// selection, and its Tokyo-area coordinates would otherwise resolve to the OSM-Japan transit
+// provider by default (rail is in the default allowed-kinds set) — which requires a real ingested
+// `db/transit-japan.db` this test environment doesn't have.
 const trip = createTripWithLocations({
   name: "Opt trip",
   sourceUrl: "",
   startDate: "2026-06-24",
   endDate: "2026-06-26",
-  allowedModes: ["walking"],
+  allowedPathKinds: ["walking"],
   locations: [
     { name: "H", lat: 35.0, lng: 139.0 },
     { name: "X", lat: 35.01, lng: 139.01 },

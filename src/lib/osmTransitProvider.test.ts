@@ -121,21 +121,21 @@ const isolated = P(36.5, 140.5); // far from every stop node in the fixture
 //    Decomposition isn't implemented yet (ADR-0022 P1), so this is still a single Path — kind
 //    "rail" with both ridden lines joined into one placeholder lineName, not yet split at the
 //    interchange into two single-line Paths. ──
-const multiLine = await provider.describeJourney(nearAkihabara, nearOtemachi, "transit");
+const multiLine = await provider.describeJourney(nearAkihabara, nearOtemachi, ["rail"]);
 assert.equal(multiLine.length, 1, "single-element Path[] — decomposition unimplemented");
 assert.equal(multiLine[0].kind, "rail", "a routed journey reports the rail kind");
 assert.equal((multiLine[0] as { lineName: string }).lineName, "Loop Line / Spur Subway", "both ridden lines joined, pre-decomposition");
 
 // ── Single-ride journey: Akihabara -> Kanda stays on one line ──
-const singleRide = await provider.describeJourney(nearAkihabara, nearKanda, "transit");
+const singleRide = await provider.describeJourney(nearAkihabara, nearKanda, ["rail"]);
 assert.equal((singleRide[0] as { lineName: string }).lineName, "Loop Line", "single-line journey reports just that line");
 
 // ── Shinkansen vs. subway: an equal-distance hop is faster on the Shinkansen ──
 // Both hops are exactly 260km (compare-subway-a/b's ride edge matches the Shinkansen trunk's
 // distance exactly), so this isolates line-type speed from trip length directly, with no derived
 // rate: same distance, different effective speed.
-const shinkansenJourney = await provider.describeJourney(nearTokyoForShinkansen, nearNagoya, "transit");
-const equalDistanceSubwayJourney = await provider.describeJourney(nearCompareA, nearCompareB, "transit");
+const shinkansenJourney = await provider.describeJourney(nearTokyoForShinkansen, nearNagoya, ["rail"]);
+const equalDistanceSubwayJourney = await provider.describeJourney(nearCompareA, nearCompareB, ["rail"]);
 assert.ok(
   shinkansenJourney[0].travelCost.durationSeconds < equalDistanceSubwayJourney[0].travelCost.durationSeconds,
   "a Shinkansen hop is faster than an equal-distance subway hop"
@@ -150,13 +150,13 @@ assert.equal(nearestStops[0]?.id, "loop-akihabara", "the nearest stop in range i
 
 // ── No station in range: falls back to a haversine-as-walking estimate, reported as UnknownPath
 //    (Basis of cost straightLine) — computed as a walk, but never routed as one (ADR-0022) ──
-const noStationJourney = await provider.describeJourney(isolated, nearAkihabara, "transit");
+const noStationJourney = await provider.describeJourney(isolated, nearAkihabara, ["rail"]);
 assert.equal(noStationJourney[0].kind, undefined, "an unrouted walking estimate has no honest kind");
 assert.equal(noStationJourney[0].travelCost.basisOfCost, "straightLine", "no route was computed");
 assert.ok(noStationJourney[0].travelCost.durationSeconds > 0, "still reports a usable (walking-estimate) duration");
 
 // ── costMatrix backs the same provider surface in bulk, consistent with describeJourney ──
-const matrix = await provider.costMatrix([nearAkihabara, nearOtemachi, isolated], "transit");
+const matrix = await provider.costMatrix([nearAkihabara, nearOtemachi, isolated], ["rail"]);
 assert.equal(matrix.length, 3, "one row per point");
 assert.equal(matrix[0][1].durationSeconds, multiLine[0].travelCost.durationSeconds, "costMatrix agrees with describeJourney for the same pair");
 assert.ok(matrix[0][2].durationSeconds > 0, "an isolated point still gets a walking-estimate cost in the matrix");

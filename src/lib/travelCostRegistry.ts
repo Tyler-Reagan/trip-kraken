@@ -1,10 +1,15 @@
 /**
- * Provider-selection registry (ADR-0019, issue #86) — the piece that actually turns on the
- * OSM-Japan provider (issue #85) for a real optimize run. An ordered list of
- * `PathProvider`s (ADR-0022), each carrying an `appliesTo(points, mode)` predicate; the first entry
- * whose predicate matches wins. Precedence: OSM-Japan (Japan + transit) → Google (global default,
+ * Provider-selection registry (ADR-0019, issue #86; `kinds` per ADR-0022 P2) — the piece that
+ * actually turns on the OSM-Japan provider (issue #85) for a real optimize run. An ordered list of
+ * `PathProvider`s, each carrying an `appliesTo(points, kinds)` predicate; the first entry whose
+ * predicate matches wins. Precedence: OSM-Japan (Japan + rail willing) → Google (global default,
  * when an API key is present) → haversine (the floor, always applies) — mirrors
  * `discovery.ts`'s existing provider-list + `applies`/region-gating pattern.
+ *
+ * `kinds` is the Trip's whole willingness *set*, unresolved — `appliesTo` tests intersection, not
+ * equality, so a Trip willing to use rail among other kinds still lets OSM-Japan apply even though
+ * rail isn't its only allowed kind. Collapsing the set to one query mode is each selected
+ * provider's own concern (`googleRoutesProvider.ts`), not the registry's.
  *
  * Selection is by applicability, not try-and-fallback (ADR-0018 §4): once a provider is selected,
  * its errors propagate — a missing `db/transit-japan.db` throws loudly (`transitGraphStore.ts`)
@@ -17,7 +22,8 @@
  * `solve()` itself never imports this registry.
  */
 
-import { haversineProvider, type PathProvider, type TravelMode } from "@/lib/pathProvider";
+import { haversineProvider, type PathProvider } from "@/lib/pathProvider";
+import type { PathKind } from "@/types/path";
 import type { Point } from "@/lib/geo";
 import { googleRoutesProvider } from "@/lib/googleRoutesProvider";
 import { createOsmTransitProvider } from "@/lib/osmTransitProvider";
@@ -29,20 +35,20 @@ interface RegistryEntry {
   provider: PathProvider;
   /** `points` is the full point set for signature symmetry with `selectPathProvider`, but
    * only `points[0]` (the representative point) is ever examined — see the module doc. */
-  appliesTo(points: Point[], mode: TravelMode): boolean;
+  appliesTo(points: Point[], kinds: PathKind[]): boolean;
 }
 
 // Bound lazily to the real ingested graph singleton (`getTransitGraph()`) — resolved per call, not
 // at module load or at `appliesTo` time, so a missing graph file's loud error surfaces only when
 // this provider is actually queried, never merely by importing the registry.
 const osmJapanProvider: PathProvider = {
-  async costMatrix(points, mode, opts) {
+  async costMatrix(points, kinds, opts) {
     const { graph, spatialIndex } = getTransitGraph();
-    return createOsmTransitProvider(graph, spatialIndex).costMatrix(points, mode, opts);
+    return createOsmTransitProvider(graph, spatialIndex).costMatrix(points, kinds, opts);
   },
-  async describeJourney(from, to, mode, opts) {
+  async describeJourney(from, to, kinds, opts) {
     const { graph, spatialIndex } = getTransitGraph();
-    return createOsmTransitProvider(graph, spatialIndex).describeJourney(from, to, mode, opts);
+    return createOsmTransitProvider(graph, spatialIndex).describeJourney(from, to, kinds, opts);
   },
 };
 
@@ -50,13 +56,13 @@ const REGISTRY: readonly RegistryEntry[] = [
   {
     id: "osm-japan",
     provider: osmJapanProvider,
-    appliesTo: (points, mode) => mode === "transit" && points.length > 0 && inJapan(points[0].lat, points[0].lng),
+    appliesTo: (points, kinds) => kinds.includes("rail") && points.length > 0 && inJapan(points[0].lat, points[0].lng),
   },
   {
     id: "google",
     provider: googleRoutesProvider,
     // Global default whenever the API key is configured (ADR-0019) — Google covers drive/walk/bike
-    // routing everywhere, not just transit, so this doesn't gate on `mode`.
+    // routing everywhere, not just transit, so this doesn't gate on `kinds`.
     appliesTo: () => !!process.env.GOOGLE_MAPS_API_KEY,
   },
   {
@@ -73,11 +79,11 @@ export function getPathProviderById(id: string): PathProvider | undefined {
   return REGISTRY.find((e) => e.id === id)?.provider;
 }
 
-/** Picks the first applicable provider for this optimize run's representative point + resolved
- * mode. `REGISTRY`'s last entry (haversine) always applies, so this never falls through to the
+/** Picks the first applicable provider for this optimize run's representative point + willing
+ * kinds. `REGISTRY`'s last entry (haversine) always applies, so this never falls through to the
  * `?? ` default in practice — it's there only to satisfy TypeScript's control-flow analysis over
  * `Array.prototype.find`, not a real runtime fallback path. */
-export function selectPathProvider(points: Point[], mode: TravelMode): PathProvider {
-  const entry = REGISTRY.find((e) => e.appliesTo(points, mode));
+export function selectPathProvider(points: Point[], kinds: PathKind[]): PathProvider {
+  const entry = REGISTRY.find((e) => e.appliesTo(points, kinds));
   return (entry ?? REGISTRY[REGISTRY.length - 1]).provider;
 }

@@ -35,7 +35,7 @@ mockFetch((_url, init) => {
 });
 const matrix = await googleRoutesProvider.costMatrix(
   [P(35.68, 139.76), P(35.71, 139.79)],
-  "transit",
+  ["rail"],
   { departureTime: new Date("2026-08-01T09:00:00Z") }
 );
 assert.equal(calls, 1, "small matrix fits one request");
@@ -49,7 +49,7 @@ mockFetch((_url, init) => {
   assert.equal(body.departureTime, undefined, "walking never sends departureTime");
   return [{ originIndex: 0, destinationIndex: 0, status: {}, condition: "ROUTE_EXISTS", distanceMeters: 100, duration: "60s" }];
 });
-await googleRoutesProvider.costMatrix([P(0, 0)], "walking", { departureTime: new Date() });
+await googleRoutesProvider.costMatrix([P(0, 0)], ["walking"], { departureTime: new Date() });
 
 // ── costMatrix: tiling — 11 points at the 10x10 TRANSIT cap needs 4 request chunks ──
 calls = 0;
@@ -65,7 +65,7 @@ mockFetch((_url, init) => {
   return elements;
 });
 const elevenPoints = Array.from({ length: 11 }, (_, i) => P(i, i));
-const tiled = await googleRoutesProvider.costMatrix(elevenPoints, "transit");
+const tiled = await googleRoutesProvider.costMatrix(elevenPoints, ["rail"]);
 assert.equal(calls, 4, "11 points at 10x10 cap tiles into 2x2 = 4 chunk requests");
 assert.equal(tiled.length, 11, "full 11x11 matrix stitched");
 assert.equal(tiled[10][10].distanceMeters, 1, "far corner cell populated by the last chunk");
@@ -76,7 +76,7 @@ mockFetch(() => [
   { originIndex: 0, destinationIndex: 0, status: { code: 3, message: "invalid argument" }, distanceMeters: 0, duration: "0s" },
 ]);
 await assert.rejects(
-  () => googleRoutesProvider.costMatrix([P(0, 0)], "driving"),
+  () => googleRoutesProvider.costMatrix([P(0, 0)], ["driving"]),
   /invalid argument/,
   "per-element error status throws"
 );
@@ -86,28 +86,38 @@ mockFetch(() => [
   { originIndex: 0, destinationIndex: 0, status: {}, condition: "ROUTE_NOT_FOUND", distanceMeters: 0, duration: "0s" },
 ]);
 await assert.rejects(
-  () => googleRoutesProvider.costMatrix([P(0, 0)], "walking"),
+  () => googleRoutesProvider.costMatrix([P(0, 0)], ["walking"]),
   /ROUTE_NOT_FOUND/,
   "no-route condition throws"
 );
 
-// ── describeJourney: transit has genuine cost but no derivable kind (ADR-0022 P1 — no
-//    vehicle.type in the field mask yet, so a transit journey reports UnknownPath) ──
+// ── describeJourney: transit-bucket kinds have genuine cost but no derivable kind (ADR-0022 P1 —
+//    no vehicle.type in the field mask yet, so a rail/bus/other journey reports UnknownPath).
+//    ["rail"] and ["bus"] both resolve to the same Google TRANSIT request (ADR-0022 P2). ──
 mockFetch(() => ({ routes: [{ distanceMeters: 8000, duration: "1800s" }] }));
-const journey = await googleRoutesProvider.describeJourney(P(35.68, 139.76), P(35.71, 139.79), "transit");
+const journey = await googleRoutesProvider.describeJourney(P(35.68, 139.76), P(35.71, 139.79), ["rail"]);
 assert.equal(journey.length, 1, "single-element Path[] — decomposition unimplemented");
 assert.equal(journey[0].kind, undefined, "no vehicle.type requested yet, so no honest kind to report");
 assert.equal(journey[0].travelCost.durationSeconds, 1800, "Path duration mapped");
 assert.equal(journey[0].travelCost.basisOfCost, "routingService", "still a real routed cost, despite the unknown kind");
 
-// ── describeJourney: walking mode gets a definite kind, since the mode itself was honored ──
+const busJourney = await googleRoutesProvider.describeJourney(P(35.68, 139.76), P(35.71, 139.79), ["bus"]);
+assert.equal(busJourney[0].kind, undefined, "bus also folds onto Google's TRANSIT with no derivable kind yet");
+
+// ── describeJourney: willingness set with a non-transit primary gets a definite kind, since the
+//    resolved kind itself was honored ──
 mockFetch(() => ({ routes: [{ distanceMeters: 400, duration: "300s" }] }));
-const walkJourney = await googleRoutesProvider.describeJourney(P(0, 0), P(0, 0.01), "walking");
-assert.equal(walkJourney[0].kind, "walking", "walking mode maps to WalkingPath");
+const walkJourney = await googleRoutesProvider.describeJourney(P(0, 0), P(0, 0.01), ["walking"]);
+assert.equal(walkJourney[0].kind, "walking", "walking resolves to WalkingPath");
+
+// ── describeJourney: rail precedes walking in the resolution precedence ──
+mockFetch(() => ({ routes: [{ distanceMeters: 8000, duration: "1800s" }] }));
+const mixedJourney = await googleRoutesProvider.describeJourney(P(35.68, 139.76), P(35.71, 139.79), ["walking", "rail"]);
+assert.equal(mixedJourney[0].kind, undefined, "rail wins the precedence over walking, so still an unknown-kind transit result");
 
 // ── describeJourney: no route found throws ──
 mockFetch(() => ({ routes: [] }));
-await assert.rejects(() => googleRoutesProvider.describeJourney(P(0, 0), P(0, 0), "driving"), /no route found/, "empty routes throws");
+await assert.rejects(() => googleRoutesProvider.describeJourney(P(0, 0), P(0, 0), ["driving"]), /no route found/, "empty routes throws");
 
 // ── computeRoutePolyline: encoded polyline extracted, minimal field mask ──
 mockFetch((_url, init) => {
@@ -130,11 +140,11 @@ assert.equal(
 
 // ── HTTP failure throws (fail loudly) ──
 global.fetch = (async () => ({ ok: false, status: 403, text: async () => "PERMISSION_DENIED" }) as Response) as typeof fetch;
-await assert.rejects(() => googleRoutesProvider.costMatrix([P(0, 0), P(1, 1)], "transit"), /HTTP 403/, "non-ok HTTP response throws");
+await assert.rejects(() => googleRoutesProvider.costMatrix([P(0, 0), P(1, 1)], ["rail"]), /HTTP 403/, "non-ok HTTP response throws");
 
 // ── Missing API key throws before any network call ──
 delete process.env.GOOGLE_MAPS_API_KEY;
-await assert.rejects(() => googleRoutesProvider.costMatrix([P(0, 0), P(1, 1)], "transit"), /GOOGLE_MAPS_API_KEY/, "missing key throws");
+await assert.rejects(() => googleRoutesProvider.costMatrix([P(0, 0), P(1, 1)], ["rail"]), /GOOGLE_MAPS_API_KEY/, "missing key throws");
 process.env.GOOGLE_MAPS_API_KEY = "test-key";
 
 global.fetch = originalFetch;
