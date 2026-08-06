@@ -18,8 +18,8 @@
  * remaining two-enums-for-one-axis seam the ADR flagged.
  */
 
-import { type Path, type PathEndpoint, type Point, type TravelCost, makeTravelCost } from "@/types/path";
-import { haversineMeters } from "@/lib/geo";
+import { type Path, type PathEndpoint, type TravelCost, makeTravelCost } from "@/types/path";
+import { haversineMeters, type Point } from "@/lib/geo";
 
 export type TravelMode = "walking" | "driving" | "transit" | "bicycle";
 

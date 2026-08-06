@@ -25,7 +25,8 @@
  * kinds) is #146/P3 of the ADR-0022 refactor, not this slice.
  */
 
-import { makeTravelCost, type Path, type PathEndpoint, type Point, type TravelCost } from "@/types/path";
+import { makeTravelCost, type Path, type PathEndpoint, type TravelCost } from "@/types/path";
+import type { Point } from "@/lib/geo";
 import type { PathProvider, TravelMode } from "@/lib/pathProvider";
 
 const MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";

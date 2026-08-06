@@ -18,7 +18,7 @@
  */
 
 import { haversineProvider, type PathProvider, type TravelMode } from "@/lib/pathProvider";
-import type { Point } from "@/types/path";
+import type { Point } from "@/lib/geo";
 import { googleRoutesProvider } from "@/lib/googleRoutesProvider";
 import { createOsmTransitProvider } from "@/lib/osmTransitProvider";
 import { getTransitGraph } from "@/lib/transitGraphStore";

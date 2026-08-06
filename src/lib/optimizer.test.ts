@@ -19,7 +19,7 @@ import { optimizeItinerary } from "@/lib/optimizer";
 import { solve } from "@/lib/solver";
 import { optimizeTrip } from "@/lib/optimize";
 import { haversineProvider, type PathProvider, type PathProviderOptions, type TravelMode } from "@/lib/pathProvider";
-import type { Point } from "@/types/path";
+import type { Point } from "@/lib/geo";
 import { createTripWithLocations, createLocation, setLodgingDates, updateLocation, getTripWithDetails } from "@/lib/db";
 import { isActivity } from "@/types";
 
