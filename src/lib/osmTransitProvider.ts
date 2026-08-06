@@ -31,8 +31,8 @@
  * restores), not a claim that the journey was actually one continuous ride.
  */
 
-import { haversineMeters } from "@/lib/geo";
-import { makeTravelCost, type Path, type PathEndpoint, type Point, type TravelCost } from "@/types/path";
+import { haversineMeters, type Point } from "@/lib/geo";
+import { makeTravelCost, type Path, type PathEndpoint, type TravelCost } from "@/types/path";
 import type { PathProvider } from "@/lib/pathProvider";
 import type { TransitGraph, StopNode, LineType, SpatialIndex } from "@/lib/transitGraph";
 

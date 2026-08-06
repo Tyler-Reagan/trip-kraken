@@ -17,6 +17,10 @@
  * fidelity improving once decomposition itself is implemented.
  */
 
+// `Point` lives in `geo.ts`, which owns coordinates (ADR-0022's module table) — coordinates outlive
+// any one Path, and this module was declaring a second, identical copy of it.
+import type { Point } from "@/lib/geo";
+
 /** What a Path's travel was. `other` is travel that *was* routed but falls outside the kinds we
  * model (a ferry, a funicular) — distinct from the absence of `kind` on `UnknownPath`, which
  * means no route was computed at all. The same vocabulary a Trip's Allowed kinds are drawn from:
@@ -50,23 +54,27 @@ export function makeTravelCost(distanceMeters: number, durationSeconds: number, 
   return { distanceMeters, durationSeconds, basisOfCost, costAsMinutes: durationSeconds / 60 };
 }
 
-export interface Point {
-  lat: number;
-  lng: number;
-}
-
 /** A Path's endpoint, as identity plus coordinates — deliberately not a full `Location`.
  * Embedding one would put every field of enrichment on each end of every Path, and would make a
  * Path hold a snapshot that silently diverges the moment the Location is edited. `locationId` is
  * optional: an interchange endpoint created by decomposing a Journey is ephemeral, derived from
- * the Path rather than a real, persisted Location. */
+ * the Path rather than a real, persisted Location.
+ *
+ * `lat`/`lng` are the *requested* coordinates — the Location's own, not wherever a router snapped
+ * them to. A routed Path's snapped ends are already the first and last vertices of its `geometry`,
+ * so nothing needs a second field to carry them (#149 grill, 2026-08-05). */
 export interface PathEndpoint extends Point {
   locationId?: string;
 }
 
-/** GeoJSON LineString, or an encoded polyline (Google's format) — commits to the field, not to
- * one encoding. Which arm a given provider emits is that provider's decision (#142). */
-export type PathGeometry = GeoJSON.LineString | string;
+/** GeoJSON LineString — the one geometry encoding a Path speaks. Originally a union with an
+ * encoded-polyline `string`, narrowed per #149: OSRM emits GeoJSON natively, so no provider is
+ * forced into an encoded form, and a bare `string` cannot distinguish OSRM's `polyline`
+ * (precision 5) from its `polyline6` — indistinguishable, and silently wrong by a factor of ten if
+ * confused. Providers that speak polyline decode at their own boundary; `computeRoutePolyline`
+ * (`googleRoutesProvider.ts`) keeps its own `string` return for the discovery corridor, which is
+ * not a Path geometry. */
+export type PathGeometry = GeoJSON.LineString;
 
 export interface PathBase {
   from: PathEndpoint;
@@ -78,7 +86,11 @@ export interface PathBase {
 export type UnknownPath = PathBase & { kind?: undefined };
 export type RailPath = PathBase & { kind: "rail"; lineName: string; operator?: Operator };
 export type BusPath = PathBase & { kind: "bus"; lineName: string; operator?: Operator };
-export type OtherPath = PathBase & { kind: "other"; lineName: string; operator?: Operator };
+/** `lineName` is optional here alone: `other` is travel we deliberately don't model, and a ferry
+ * or funicular way in OSM routinely carries no name at all. The concept applies but the datum is
+ * often unknown — the same distinction that keeps `operator` optional on `rail`/`bus`. On those
+ * kinds a missing name is a data defect worth failing on; here it is normal (#149 grill). */
+export type OtherPath = PathBase & { kind: "other"; lineName?: string; operator?: Operator };
 export type WalkingPath = PathBase & { kind: "walking" };
 export type DrivingPath = PathBase & { kind: "driving"; operator?: Operator };
 export type BicyclePath = PathBase & { kind: "bicycle"; operator?: Operator };

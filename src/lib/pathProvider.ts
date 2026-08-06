@@ -19,8 +19,8 @@
  * precedence; a provider with only one kind to offer (OSM-Japan) ignores the set entirely.
  */
 
-import { type Path, type PathEndpoint, type PathKind, type Point, type TravelCost, makeTravelCost } from "@/types/path";
-import { haversineMeters } from "@/lib/geo";
+import { type Path, type PathEndpoint, type PathKind, type TravelCost, makeTravelCost } from "@/types/path";
+import { haversineMeters, type Point } from "@/lib/geo";
 
 export interface PathProviderOptions {
   /** Representative departure datetime (ADR-0018) — timetables are calendar-dependent, so a real

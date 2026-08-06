@@ -32,7 +32,8 @@
  * refactor, not this slice.
  */
 
-import { makeTravelCost, type Path, type PathEndpoint, type PathKind, type Point, type TravelCost } from "@/types/path";
+import { makeTravelCost, type Path, type PathEndpoint, type PathKind, type TravelCost } from "@/types/path";
+import type { Point } from "@/lib/geo";
 import type { PathProvider } from "@/lib/pathProvider";
 import { resolvePrimaryPathKind } from "@/lib/pathKind";
 

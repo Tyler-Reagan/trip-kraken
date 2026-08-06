@@ -6,7 +6,8 @@
  * provider module (`pathProvider.ts`) it sits between.
  */
 
-import type { Point, PathKind, TravelCost } from "@/types/path";
+import type { Point } from "@/lib/geo";
+import type { PathKind, TravelCost } from "@/types/path";
 import type { PathProvider, PathProviderOptions } from "@/lib/pathProvider";
 
 export interface DistanceLookup {

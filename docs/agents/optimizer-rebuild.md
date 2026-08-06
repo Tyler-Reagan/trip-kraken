@@ -257,3 +257,17 @@ This is a guess at slicing, not a locked plan — revisit if building O2 surface
   for exactly this reason (see the O3 follow-up commit log); fixing it properly means threading
   `anchor`/`endAnchor` through `twoOpt`'s cost and window-penalty calculations, which is a real
   algorithmic change to an already-tested path, not a mechanical one. Tracked for a future pass.
+- 2026-08-06 — **ADR-0022's Path taxonomy grilled, revised (a Path is one shift, not the
+  composite journey), and implemented as two stacked slices, P1 ([#147](https://github.com/Tyler-Reagan/trip-kraken/pull/147))
+  and P2 ([#148](https://github.com/Tyler-Reagan/trip-kraken/pull/148)) — `travelCost.ts` dissolved
+  into `geo.ts`/`types/path.ts`/`pathProvider.ts`/`travelMatrix.ts`, `describePath` →
+  `describeJourney(): Path[]`, `TravelMode` dissolved into `PathKind` end-to-end,
+  `allowedModes` → `allowedPathKinds` as an unresolved willingness set. **Both PRs are
+  intentionally held, not merged**, pending
+  [#149 — OSRM viability research](https://github.com/Tyler-Reagan/trip-kraken/issues/149): the
+  user is evaluating whether self-hosted OSRM should become the primary route-cost/optimization
+  engine (Google demoted to optional/auxiliary) *before* these land, since that decision may
+  reshape `PathProvider`/`TravelCost`'s idiomatic shape and it's cheaper to adjust unmerged
+  branches than merged code. This also means P3 (Google `vehicle.type` binning) is on hold — #149
+  may reorder or subsume it. #146 (the deferred cost/basisOfCost machinery this section already
+  tracked) is downstream of #149's outcome too. Resume by reading #149's findings first.
