@@ -5,8 +5,9 @@
 - **Supersedes:** —
 - **Superseded by:** —
 - **Amends:** ADR-0004 (defines `TravelCost`/`TravelCostProvider`), ADR-0018 (introduces the
-  display-detail shape this ADR dissolves), ADR-0021 (named Path's `kind` and Basis as glossary
-  terms; this ADR gives both a code shape, and corrects ADR-0021's scope on **Rail line**)
+  display-detail shape this ADR dissolves; the 2026-08-06 revision below additionally **reverses
+  ADR-0018 §3 at the Path level** — see that block), ADR-0021 (named Path's `kind` and Basis as
+  glossary terms; this ADR gives both a code shape, and corrects ADR-0021's scope on **Rail line**)
 - **Constrained by:** ADR-0009 / ADR-0015 (Location as one primitive narrowed by `kind` — the
   precedent this ADR mirrors onto the edge axis)
 - **Note:** Decided in the 2026-08-05 session that began as a grilling for
@@ -33,6 +34,93 @@ is what forced `PathDetail` to exist at all: `costMatrix` needed bare `TravelCos
 `describePath` needed cost plus detail, and extension was the only way to relate them.
 
 ## Decision
+
+> ### Revised 2026-08-06 — a Path is one *shift*, not the composite journey
+>
+> Grilling this ADR's own Consequences before implementing it overturned its atomicity rule.
+> The decision below is otherwise intact; this block states what changed and why, rather than
+> editing the prose to read as though it was always this way.
+>
+> **What changed.** A Path was defined here (following ADR-0018 §3) as the atomic, composite
+> door-to-door journey — walk to the station, ride, walk from — deliberately *not* decomposed.
+> It is now the opposite: **a Path ends at every discernible shift**, where a shift is a change
+> of kind, operator, or service — something the *traveler does*: get off, walk, board a different
+> vehicle. A contiguous ride through stations is one Path. An A→B journey is N Paths, access
+> walks included. Every Path is therefore single-kind by construction, which is the invariant the
+> union was built to guarantee and could not while a "rail" Path secretly contained walking.
+>
+> A seated **through-run that crosses operators is still one Path**, taking the *boarding*
+> operator: rider-continuity is the test, and splitting it would invent an interchange the
+> traveler never experiences. This retires this ADR's justification for putting Operator on the
+> Path rather than the line, and corrects CONTEXT.md accordingly. Fares across a through-run are
+> a known gap, deferred with the cost work — nothing computes fares today.
+>
+> **Field consequences.**
+> - `transferCount` is **deleted**. Within one shift it is always 0; transfers have migrated to
+>   the *gaps between* Paths, where transfer cost can eventually be modeled properly instead of
+>   as the flat `TRANSFER_MINUTES` constant buried in a graph edge weight.
+> - `lineNames: string[]` becomes `lineName: string`, required on the transit kinds — one Path,
+>   one service, one name.
+> - `dedupeConsecutive` is **deleted**, not rehomed to `pathProvider.ts` as the table below says.
+>   Its only purpose was collapsing repeated names across a multi-service journey.
+> - `operator` stays singular and optional, as originally decided — rescued by the decomposition
+>   rather than by the field.
+> - A third transit member, **`other`**, joins the union (below). No intermediate `TransitPath`:
+>   with `transferCount` gone the transit kinds share exactly two fields, so this ADR's original
+>   rejection of that layer holds more strongly, not less.
+> - `PathEndpoint.locationId` becomes **optional**. Interchange endpoints created by decomposition
+>   are ephemeral — derived from the Path, never persisted as Location rows. Persisting them would
+>   invert the rule that Paths are derived and never stored, and would make a routing artifact
+>   eligible to become the Trip's derived arrival/departure.
+> - `describePath` becomes **`describeJourney(from, to, kinds, opts): Promise<Path[]>`**. Only the
+>   provider knows where the shifts fell, so it returns the assembled chain; a caller stitching
+>   segments would be reconstructing information the provider had and discarded — this ADR's
+>   founding complaint. "Journey" is the A→B whole, "Path" the atom; the two now need different
+>   words.
+>
+> ```ts
+> type PathKind = "rail" | "bus" | "walking" | "driving" | "bicycle" | "other";
+>
+> type UnknownPath = PathBase & { kind?: undefined };
+> type RailPath    = PathBase & { kind: "rail";    lineName: string; operator?: Operator };
+> type BusPath     = PathBase & { kind: "bus";     lineName: string; operator?: Operator };
+> type OtherPath   = PathBase & { kind: "other";   lineName: string; operator?: Operator };
+> type WalkingPath = PathBase & { kind: "walking" };
+> type DrivingPath = PathBase & { kind: "driving"; operator?: Operator };
+> type BicyclePath = PathBase & { kind: "bicycle"; operator?: Operator };
+> ```
+>
+> **`other` is routed-but-unbinned, and is not `UnknownPath`.** They answer different questions:
+> `other` means the kind is known and outside our bins (a ferry); `UnknownPath` means no route was
+> computed and no kind is claimable. Collapsing them would make `kind` and `basisOfCost` redundant
+> and would leave a real ferry indistinguishable from a straight-line guess. This resolves the
+> fallback this ADR's Consequences required but never documented: Google's 17 vehicle types bin to
+> **rail** (COMMUTER_TRAIN, HEAVY_RAIL, HIGH_SPEED_TRAIN, METRO_RAIL, MONORAIL, RAIL, SUBWAY,
+> TRAM), **bus** (BUS, INTERCITY_BUS, TROLLEYBUS), and **other** (CABLE_CAR, FERRY, FUNICULAR,
+> GONDOLA_LIFT, SHARE_TAXI, OTHER). We bin rather than mirror Google's granularity, and specialize
+> a kind out of `other` only when something needs it.
+>
+> **ADR-0018 §3 survives for the matrix and dies for the Path.** Decomposition is a display-layer
+> concern. `costMatrix` remains N² scalar costs keyed by Location id, one `travelMode` per request,
+> and the optimizer never sees a Path. Making Paths the optimizer's currency would turn each edge
+> from a number into a set of alternative chains — that is #140's deferred multimodal routing plus
+> a category-B solver (`docs/agents/optimizer-rebuild.md`), explicitly not smuggled in here.
+>
+> **`allowedPathKinds` is a willingness set, not a constraint.** It states which kinds a traveler
+> is prepared to use; it does not filter results. Since Google's matrix takes exactly one
+> `travelMode`, the many-kinds→one-request collapse lives **inside each provider**, not in the
+> domain: `appliesTo(points, kinds)` tests set intersection for selection, and each provider spends
+> its one request as it sees fit. `travelMode.ts`/`resolvePrimaryMode` dissolve; `MODE_PRECEDENCE`
+> survives as a Google-provider implementation detail. `transit` disappearing as a user-facing
+> choice costs nothing today — no selector exists (#89 abandoned, PR #96 closed) — and willing-kind
+> selection returns as an input to route-cost optimization, not as a standalone checkbox.
+>
+> **Deferred, deliberately.** Whether `basisOfCost` is honest per matrix cell (the OSM-Japan
+> provider already mixes routed and straight-line cells within one matrix), what kind the
+> no-station-in-range fallback should claim (`UnknownPath` for now), where transfer time lives once
+> it is a gap, and how a day's travel total is summed — all belong to the reopened cost work and
+> its own ADR. Operator capture from OSM's `operator=*` tag waits for #142's graph-schema change
+> rather than paying for a re-ingest twice; `operator` ships declared and unpopulated.
 
 **Travel cost is composed into a Path, not inherited by it.** `PathBase` carries a
 `travelCost` field. `TravelCost` becomes a self-contained value object — the single shape the

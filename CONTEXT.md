@@ -53,17 +53,28 @@ from the Trip's date range, not an entity in its own right.
 
 **Path**:
 The one travel primitive (ADR-0021), on the edge axis the way Location is the one place
-primitive on the node axis: the travel segment between consecutive Placements (or between a
-Day's Anchor and its first or last Placement) within a Day — the unit travel cost, transit
-detail, and directions operate on. Derived from the Plan, never stored. Atomic per edge: a
-transit Path is the composite door-to-door journey (walk to the station, ride, walk from —
-ADR-0018 §3), not decomposed into sub-Paths.
+primitive on the node axis: one unbroken stretch of travel — the unit travel cost, transit
+detail, and directions operate on. Derived from the Plan, never stored. A Path ends at every
+**shift** — a change of kind, Operator, or service, meaning something the traveler *does*: get
+off, walk, board a different vehicle. A contiguous ride through stations is one Path; a seated
+through-run that crosses Operators is also one Path (ADR-0022, revised). Every Path is
+therefore of exactly one kind.
 _Avoid_: leg, hop, segment, edge
 
+**Journey**:
+The whole of getting from one Placement to the next (or between a Day's Anchor and its first or
+last Placement) — a chain of one or more Paths, access walks included. What a routing provider
+answers with. Not stored and not scored: the optimizer works from scalar Location-to-Location
+costs and never sees a Journey or a Path.
+_Avoid_: route, trip, leg
+
 **kind (Path)**:
-What a Path's travel was — `rail` · `bus` · `walking` · `driving` · `bicycle`. Optional: a
-Path whose Basis of cost is `straightLine` had no route computed, so it has no honest kind to
-report.
+What a Path's travel was — `rail` · `bus` · `walking` · `driving` · `bicycle` · `other`.
+`other` is travel that *was* routed but falls outside the kinds we model (a ferry, a funicular):
+we bin rather than mirror a provider's granularity, and specialize a kind out of `other` only
+when something needs it. Optional, and separately: a Path whose Basis of cost is `straightLine`
+had no route computed, so it has no honest kind to report at all — distinct from `other`, which
+knows what it was.
 The same vocabulary a Trip's Allowed kinds are drawn from: *chosen* per Trip, *reported* per
 Path (ADR-0022).
 
@@ -71,7 +82,8 @@ Path (ADR-0022).
 The entity operating a Path — whoever provides the travel *to* you rather than you providing
 it yourself. Always applies to rail and bus; conditionally to driving and bicycle (a taxi or
 bike-share has one, your own car does not); never to walking. A through-service can change
-Operator partway along one line, so it belongs to the Path, not to the line ridden.
+Operator mid-ride without the rider ever getting off — that stays one Path and reports the
+**boarding** Operator (ADR-0022, revised).
 _Avoid_: network, company, agency
 
 **Basis of cost**:
@@ -133,12 +145,14 @@ interchange, used to find transfers between services and Operators.
 Graph-internal connections the rail graph's shortest-path search traverses — a ride edge
 between consecutive stops on one service, a transfer edge between stop nodes in one station
 cluster. Implementation concepts of the rail graph only; never used for a Path, which stays
-the domain unit of travel between Placements.
+the domain's travel primitive.
 
 **Allowed kinds (Trip)**:
-Which Path kinds a Trip permits — a Trip-level set drawn from the same vocabulary a Path
-reports (ADR-0022), resolved today to a single primary kind the optimizer runs on (ADR-0019).
-One vocabulary, used in both directions: permitted per Trip, reported per Path. Not currently
-a per-Path filter — a Trip allowing both rail and driving still gets a plan in one kind, not a
-mix; that arrives with true multimodal routing, not before.
+Which Path kinds a traveler is *willing* to use — a Trip-level set drawn from the same
+vocabulary a Path reports (ADR-0022). A statement of willingness, not a filter: it never
+constrains what comes back. One vocabulary, used in both directions: permitted per Trip,
+reported per Path. A provider that can spend only one request per run (Google's matrix takes a
+single travel mode) collapses the set its own way — that collapse is the provider's business,
+not the domain's. So a Trip allowing both rail and driving still gets a plan in one kind, not a
+mix; a true blend arrives with multimodal routing, not before.
 _Avoid_: travel mode, mode, transit
