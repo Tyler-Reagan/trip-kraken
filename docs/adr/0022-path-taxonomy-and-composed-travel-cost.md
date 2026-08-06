@@ -122,6 +122,40 @@ is what forced `PathDetail` to exist at all: `costMatrix` needed bare `TravelCos
 > its own ADR. Operator capture from OSM's `operator=*` tag waits for #142's graph-schema change
 > rather than paying for a re-ingest twice; `operator` ships declared and unpopulated.
 
+> ### Amended 2026-08-06 — three field shapes, settled by the OSRM research
+>
+> Grilling [#149](https://github.com/Tyler-Reagan/trip-kraken/issues/149)'s findings
+> (`docs/research/osrm-viability-149.md`) before merging P1/P2 settled three shapes this ADR had
+> left looser than they needed to be. The taxonomy itself is **unchanged and vindicated**: OSRM's
+> `route` service emits steps tagged by travel mode, which group directly into "a Path ends at every
+> discernible shift" — an independent engine's output shape matching the revision above.
+>
+> - **`PathGeometry` narrows to `GeoJSON.LineString`.** The two-member union was chosen on the
+>   evidence that two encodings were already in play. OSRM removes that evidence — it emits GeoJSON
+>   natively, so no provider is *forced* into an encoded string. Meanwhile the string arm became
+>   actively unsafe: OSRM offers `polyline` (precision 5) *and* `polyline6`, indistinguishable as a
+>   bare `string` and wrong by a factor of ten if confused. A provider that speaks polyline decodes
+>   at its own boundary; one canonical shape lives inside. `computeRoutePolyline` keeps its own
+>   `string` return — the discovery corridor is not a Path geometry.
+> - **`lineName` becomes optional on `OtherPath` alone.** "One Path, one service, one name" holds
+>   for scheduled transit; `other` is travel we deliberately do not model, and OSM ferry and
+>   funicular ways routinely carry no name. Concept present, datum unknown — the same distinction
+>   that already keeps `operator` optional on `rail`/`bus`. Still required on `rail`/`bus`, where a
+>   missing name is a data defect worth failing on.
+> - **`Point` is deleted from `types/path.ts`.** The module table above already assigned it to
+>   `geo.ts`; the code declared it identically in both, and `pathProvider.ts` imported the wrong
+>   one. No re-export — that would recreate the ambiguity it relieves.
+>
+> **`PathEndpoint`'s `lat`/`lng` are the *requested* coordinates**, not wherever a router snapped
+> them. A `snapOffsetMeters` field was considered and rejected: a routed Path's snapped ends are
+> already the first and last vertices of its `geometry`, so the information exists without a second
+> field, and making the endpoints mean "snapped" would change what `from`/`to` denote for every
+> existing consumer in order to serve nothing that reads it.
+>
+> **No schema change.** Verified rather than assumed: `schema.ts` holds Trip, Location, and
+> Placement only — no cost, no geometry, no Path is persisted, so migration `0003` stands as
+> written. Paths remain derived and never stored.
+
 **Travel cost is composed into a Path, not inherited by it.** `PathBase` carries a
 `travelCost` field. `TravelCost` becomes a self-contained value object — the single shape the
 travel-cost library's interfaces collapse into — used verbatim as `TravelCost[][]` by
