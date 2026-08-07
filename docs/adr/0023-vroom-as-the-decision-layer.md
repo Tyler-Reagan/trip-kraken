@@ -205,6 +205,53 @@ number; under a hard day window it would consume real time we have no evidence i
 plans against today's behaviour. Inventing nothing is the honest default, and enrichment seeding
 duration from category is the real fix.
 
+> ### Amended 2026-08-07 — Prototype A's findings settle §5/§6, correct §6, and add a §8 note
+>
+> Prototype A ran (throwaway, `prototype/vroom-day-balance-a`, never merged; findings in
+> `docs/research/vroom-day-balance-a.md`). It settles the two sections this ADR named as gated and
+> revises §6's own guidance in one place.
+>
+> **§6's ladder is confirmed, but rung 1 and rung 2 are not independent alternatives — the
+> practical destination is both together.** On a 41-activity, 10-day, two-metro fixture, rung 1
+> alone (`max_tasks`) balances perfectly (CoV 0.11–0.16, zero empty days) but leaves 6–8 cross-metro
+> leaks — a fifth of jobs landing on the wrong metro's day. Rung 2 alone (`skills`) eliminates
+> leakage completely but does nothing for balance, because skills restrict *which* vehicle a job may
+> go to, not *how many* jobs pile onto the vehicles it's allowed to use. Combined, both defects
+> resolve simultaneously (max 4/day, 0 leaks, 1 empty day of 10) at a measured, bounded cost (7.9%
+> structurally unassigned — see below), holding identically across every `visitDuration` coverage
+> level tested. The rung ladder should be read as "climb until §1's problem (balance) *and* §7's
+> problem (leakage) both resolve," not as a single rung selected in isolation.
+>
+> **§6's `max_tasks` slack guidance is corrected: slack itself is the balance-quality knob, and
+> zero slack measurably outperforms any nonzero slack tested** (CoV 0.11–0.16 at slack 0; 0.52 at
+> slack 1; 0.67–0.72 at slack 2, with empty days reappearing at both). `max_tasks = ceil(placeable /
+> days) + slack` should default to slack 0, not a cushioned value.
+>
+> **A real interaction between §4 and §6 surfaced, not previously named.** Metro `skills` (§6) can
+> structurally exclude every instance of an archetype whose §4 semantic hours partition disjointly
+> from the metro-day partition — e.g. a weekend-only activity in a metro whose only lodging-covered
+> weekend falls entirely inside a different metro's leg. This is not a duration-data or
+> coverage-sizing artifact (confirmed: the same jobs dropped at every `visitDuration` coverage level
+> from 0% to 100%); it is structural to combining a per-day metro mask with weekday-scoped hours.
+> Worth checking for once real category-based hours (#153/#154) replace invented test data, not
+> assumed away.
+>
+> **§8 gains a deployment constraint.** Plan mode (`-c`) requires a glpk-linked VROOM build; the
+> reference Homebrew formula (`brew install vroom`, v1.15.0) is compiled **without** libglpk and
+> cannot run `-c` at all (`"VROOM compiled without libglpk installed."`, a compile-time condition,
+> not a missing runtime library). The prototype validated §8's mechanism and its "violations are
+> void under hard time windows" claim directly against a real solve, but only after building
+> `vroom-docker` from source pinned to `v1.15.0`. Whatever ships to production needs an explicitly
+> glpk-enabled build — PR 2's infrastructure work should name this rather than assume the reference
+> formula suffices.
+>
+> **§5's `0/1/2` priority banding is not contradicted, but remains unvalidated by measurement.** The
+> prototype's fixture had too much slack relative to demand (`max_tasks` × days exceeded assignable
+> jobs by enough margin) for the comparator's `priority_sum` tier to ever need to trade a job away —
+> no flip point was observed at any band from `1` to `100`. §5's choice still stands on the a priori
+> magnitude argument; it has not yet been confirmed or refuted by a fixture with real capacity
+> pressure.
+
 ## Alternatives considered
 
 - **Keep the two-phase heuristic and improve it.** Rejected: the defect is structural, not a tuning
@@ -262,9 +309,10 @@ duration from category is the real fix.
   `addDaysIso` already relies on, and honest because no epoch value reaches a user.
 - **`step.arrival` and `step.waiting_time` are carried through** as an optional per-stop array. They
   are free in the response, and re-deriving them later would mean re-solving.
-- **Prototype A gates this ADR's §5 and §6.** It must answer day-occupancy spread, unassigned count
-  under generous windows, cross-metro leakage, and whether a vehicle with both `start` and `end`
-  omitted is accepted, before translator code is written.
+- **Prototype A has run and settled the gate on §5 and §6** — see the 2026-08-07 amendment above and
+  `docs/research/vroom-day-balance-a.md`. Translator code (`src/lib/vroom/*`) may now be written
+  against rung "1+2" (§6) as the answer; §5's banding remains unvalidated by measurement but is not
+  contradicted.
 - **A bill comes due on cross-day sequencing.** VROOM's vehicles are unordered — nothing expresses
   "do not put the demanding hike the day after the overnight flight," or "make day 3 lighter." The
   lodging case is covered by per-vehicle anchors; pacing is not, and no alternative considered here
