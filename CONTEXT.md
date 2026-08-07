@@ -75,8 +75,11 @@ we bin rather than mirror a provider's granularity, and specialize a kind out of
 when something needs it. Optional, and separately: a Path whose Basis of cost is `straightLine`
 had no route computed, so it has no honest kind to report at all — distinct from `other`, which
 knows what it was.
-The same vocabulary a Trip's Allowed kinds are drawn from: *chosen* per Trip, *reported* per
-Path (ADR-0022).
+`kind` states facts, never preferences. It says what a Path **reports**, and — outside the
+domain, in the routing layer — what a provider is **able to answer for**. A Trip once carried an
+*allowed kinds* set expressing what a traveler was willing to use; nothing ever wrote it, and it
+is deleted (ADR-0024). The term returns only if a traveler-facing selector does.
+_Avoid_: travel mode, mode, transit, allowed kinds
 
 **Operator**:
 The entity operating a Path — whoever provides the travel *to* you rather than you providing
@@ -146,13 +149,3 @@ Graph-internal connections the rail graph's shortest-path search traverses — a
 between consecutive stops on one service, a transfer edge between stop nodes in one station
 cluster. Implementation concepts of the rail graph only; never used for a Path, which stays
 the domain's travel primitive.
-
-**Allowed kinds (Trip)**:
-Which Path kinds a traveler is *willing* to use — a Trip-level set drawn from the same
-vocabulary a Path reports (ADR-0022). A statement of willingness, not a filter: it never
-constrains what comes back. One vocabulary, used in both directions: permitted per Trip,
-reported per Path. A provider that can spend only one request per run (Google's matrix takes a
-single travel mode) collapses the set its own way — that collapse is the provider's business,
-not the domain's. So a Trip allowing both rail and driving still gets a plan in one kind, not a
-mix; a true blend arrives with multimodal routing, not before.
-_Avoid_: travel mode, mode, transit

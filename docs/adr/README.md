@@ -46,3 +46,8 @@ status to **Superseded by ADR-NNNN**.
 | [0017](0017-surface-feasibility-violations.md) | The solver's result surfaces feasibility violations, not just an arrangement | Accepted |
 | [0018](0018-transit-cost-time-policy-and-provider-shape.md) | Transit cost: time-of-day policy and provider shape | Accepted |
 | [0019](0019-japan-osm-transit-graph-provider.md) | Japan transit provider: OSM topology graph, no timetables (Phase 1) | Accepted |
+| [0020](0020-optimizer-eligible-day-masks-and-coverage.md) | Optimizer: eligible-day masks and per-metro coverage | Accepted |
+| [0021](0021-leg-renamed-to-path-travel-primitive.md) | Leg renamed to Path; Path is the travel primitive | Accepted |
+| [0022](0022-path-taxonomy-and-composed-travel-cost.md) | Path as a kind-narrowed union; travel cost composed, not inherited | Accepted |
+| [0023](0023-vroom-as-the-decision-layer.md) | VROOM is the Decision layer; the objective is the solver's | Accepted |
+| [0024](0024-osrm-facts-source-and-capability-dispatched-registry.md) | OSRM as primary road Facts; capability-dispatched provider registry | Accepted |
