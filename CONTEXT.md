@@ -135,6 +135,7 @@ stations and the named services running between them, from OpenStreetMap, with r
 inter-station distances, no timetables, and no stored geometry (ADR-0019 §"Duration model";
 geometry capture is a separate, open question). An implementation detail of one
 `PathProvider`, not domain vocabulary; a Trip never references it directly.
+_Not_ the only graph — see Road graph. Never say "the graph" unqualified.
 
 **Stop node** (rail graph):
 One named service's presence at one station — a busy interchange is several stop nodes.
@@ -149,3 +150,24 @@ Graph-internal connections the rail graph's shortest-path search traverses — a
 between consecutive stops on one service, a transfer edge between stop nodes in one station
 cluster. Implementation concepts of the rail graph only; never used for a Path, which stays
 the domain's travel primitive.
+
+**Road graph**:
+The offline-built structure a road routing provider traverses — one per travel profile
+(walking, driving, cycling), so "the road graph" is always three artifacts, not one. Like
+the Rail graph, an implementation detail of one `PathProvider` that a Trip never references.
+A journey whose endpoints fall outside the road graph's Extract is not an error: the
+provider declines those cells and they are answered `straightLine` instead.
+_Avoid_: the graph, the map, the routing data
+
+**OSM snapshot**:
+The dated OpenStreetMap publication (e.g. `260101`) that every graph is ultimately built
+from. It is the invariant Rail graph and Road graph must share — they are cut from
+*different Extracts of the same snapshot*, and a shared URL cannot express that because the
+two pipelines download different files. What must never drift is the date.
+_Avoid_: the OSM data, the download, the dump
+
+**Extract**:
+The regional slice of an OSM snapshot actually downloaded — the whole of Japan for rail,
+a sub-region for road. Which region and which snapshot are independent choices, and
+conflating them is what "the pinned URL" used to do.
+_Avoid_: region file, the pbf

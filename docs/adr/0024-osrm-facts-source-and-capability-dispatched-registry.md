@@ -169,6 +169,51 @@ separable concerns, and only the first is worth deferring.
 `computeRoutePolyline` survives untouched. Finding places along a route is not routing, and the
 discovery corridor is unrelated to this ADR.
 
+> ### Amended 2026-08-07 — PR 2's design session corrects §1's shared pin and the CI claim
+>
+> Standing up the infrastructure exposed two places where this ADR wrote down a *mechanism* and
+> meant an *invariant*, plus one claim that is now false.
+>
+> **§1's "the Geofabrik URL is hoisted into a shared, sourced file" is replaced by a shared OSM
+> snapshot.** The rail pipeline needs all of Japan (it filters down to a 9 MB graph regardless);
+> the road pipeline needs a sub-region, because `osrm-extract` on the full 2,370 MB Japan extract
+> exceeds the memory available to it. There is therefore no single URL to share. What must never
+> drift is the **date**: Geofabrik publishes the same dated snapshot across regions
+> (`japan-260101.osm.pbf` and `japan/kanto-260101.osm.pbf` both resolve), so a shared
+> `OSM_SNAPSHOT` composes into both paths and preserves the actual invariant this section was
+> reaching for — that road topology and rail topology came from the same day's OSM. Region and
+> snapshot are independent choices; the URL conflated them. `CONTEXT.md` gains **OSM snapshot**
+> and **Extract** as distinct terms, and **Road graph** alongside Rail graph.
+>
+> **Region-scoping is safe because of §4, not despite it.** A trip outside the road graph's
+> extract does not fail: OSRM returns no answer, `osrmProvider` declines those cells, and
+> `haversine` — terminal — fills them as `straightLine`. The degradation is per cell and honest.
+> The residual risk is diagnostic, not correctness: a trip wholly outside the extract silently
+> routes entirely by haversine while OSRM appears healthy, which is indistinguishable *from the
+> matrix's point of view* from OSRM being down. That is an argument for surfacing which provider
+> filled each cell, and it lands on the pipeline built in PR 3.
+>
+> **The Consequences' "plus CI" is withdrawn.** It was written on the assumption that
+> infrastructure implies a deployment to gate. Nothing is deployed, and where the routing services
+> will eventually run is deliberately undecided (ADR-0025), so CI here would build a from-source
+> solver on every push to verify containers that only ever run on one machine. A workflow that runs
+> `npm test` is worth having on its own merits and is unrelated to this ADR.
+>
+> **§1's provider choice is under re-examination.** This ADR rejected metered providers on Google
+> Routes' pricing without evaluating other hosted matrix APIs, which sits badly with the project's
+> preference for wrapping economical third-party providers and building only the genuine gap.
+> `docs/research/hosted-routing-alternatives.md` tests that. The capability-dispatched registry
+> (§3–§6) is unaffected either way — a hosted road provider is one more row with the same declared
+> kinds, which is the design working as intended.
+>
+> **Two facts about the VROOM container that §2's "at no cost" clause depends on.** No VROOM image
+> is published past `v1.14.0-rc.2`, so building `vroom-docker` from source pinned to `v1.15.0` is
+> forced rather than chosen. And keeping the compose ports aligned with `vroom-express`'s stock
+> `routingServers` map means the OSRM containers must *listen* on its numbering — car `5000`,
+> bike `5001`, foot `5002` — not merely be published there, since that map names host and port
+> together. Alignment done that way genuinely is free; a bind-mounted `config.yml` to achieve it
+> would not be, because the stock config is the thing that already permits plan mode.
+
 ## Alternatives considered
 
 - **Let VROOM query OSRM directly**, as `vroom-express`'s stock configuration expects and as the VROOM
