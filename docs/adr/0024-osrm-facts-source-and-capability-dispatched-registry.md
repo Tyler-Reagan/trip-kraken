@@ -199,12 +199,31 @@ discovery corridor is unrelated to this ADR.
 > solver on every push to verify containers that only ever run on one machine. A workflow that runs
 > `npm test` is worth having on its own merits and is unrelated to this ADR.
 >
-> **§1's provider choice is under re-examination.** This ADR rejected metered providers on Google
-> Routes' pricing without evaluating other hosted matrix APIs, which sits badly with the project's
-> preference for wrapping economical third-party providers and building only the genuine gap.
-> `docs/research/hosted-routing-alternatives.md` tests that. The capability-dispatched registry
-> (§3–§6) is unaffected either way — a hosted road provider is one more row with the same declared
-> kinds, which is the design working as intended.
+> **§1 is confirmed, but its reasoning is replaced.** This ADR rejected metered providers on Google
+> Routes' pricing, which sat badly with the project's preference for wrapping economical third-party
+> providers. `docs/research/hosted-routing-alternatives.md` tested that against every viable hosted
+> matrix API and reached the same conclusion on a stronger axis: **licence, not price.** Held to
+> ADR-0019's NAVITIME test, Mapbox ("shall not export, download, cache or store results from any
+> request to a Navigation API"), Stadia ("server-side caching is prohibited") and Google (§3.2.3(a)
+> names "distance matrix results" under No Scraping; the Routes exception covers lat/lng only) each
+> forbid precisely what §2 requires — a full N² matrix materialized server-side before the solver
+> knows which pairs it needs. GraphHopper is disqualified on a narrow reading of its silence, which
+> the research flags as its one judgement call. OpenRouteService alone passes, and its plan page has
+> no purchasable tier above the free one. Self-hosting is not the expensive option here; it is the
+> only one whose terms permit the architecture.
+>
+> **This is a live constraint on our own Google usage, not only on the alternatives.** §7 keeps
+> Google for `bus` at both altitudes, and ADR-0018's representative-time matrix is a pre-fetch by
+> construction. Nothing is persisted today, so this is a rule to respect going forward: a
+> `TravelCost` or `PathGeometry` derived from Google must not reach SQLite.
+>
+> **§2's "the door stays open at no cost" is corrected — the door opens onto self-hosted routers
+> only.** VROOM's `Server` struct carries host, port and path with no credential field, and
+> `ors_wrapper.cpp` emits no `Authorization` header; vroom-express only ever passes `-a host` and
+> `-p port`. Verified live: a hosted ORS endpoint returns `{"error": "Authorization field missing"}`.
+> Keeping the compose ports aligned with the stock `routingServers` map is still free and still
+> worth doing, but what it preserves is the option of pointing VROOM at *our own* OSRM, not at a
+> hosted provider.
 >
 > **Two facts about the VROOM container that §2's "at no cost" clause depends on.** No VROOM image
 > is published past `v1.14.0-rc.2`, so building `vroom-docker` from source pinned to `v1.15.0` is

@@ -1,6 +1,6 @@
 # ADR-0025: The app stays a BFF over HTTP services; what VROOM and OSRM change is where two upstream services run, not the shape of the deployment
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-08
 - **Supersedes:** —
 - **Superseded by:** —
@@ -85,14 +85,14 @@ environment. Only the third is attributable to this work.
   configuration, a graph built in CI and shipped as a volume. Rejected as building for a requirement
   that does not exist, and front-loading the most expensive parts to serve nobody. The auth gap
   means the result still could not be exposed publicly.
-- **Avoid the dependency instead, by using hosted routing providers.** Not rejected — **open**, and
-  the subject of active research (`docs/research/hosted-routing-alternatives.md`). ADR-0024 rejected
-  metered providers on Google's pricing specifically, without evaluating other hosted matrix APIs,
-  and the project's standing preference is to wrap economical third-party providers and build only
-  the genuine gap. If a hosted provider proves viable, the self-hosted footprint shrinks or
-  disappears and §4's graph-scope reasoning becomes moot. This ADR's core claim — that the app is a
-  BFF and the routing services are upstream of it — holds either way, which is why it is recorded
-  now rather than waiting.
+- **Avoid the dependency instead, by using hosted routing providers.** Researched and rejected on the
+  evidence — `docs/research/hosted-routing-alternatives.md`. The project's standing preference is to
+  wrap economical third-party providers and build only the genuine gap, so this was the alternative
+  that most deserved testing. It fails on licence rather than price: every hosted matrix API but one
+  forbids the server-side materialization of results that ADR-0024 §2 requires. Self-hosting is not
+  us over-building; it is the only arrangement whose terms permit the architecture. The one provider
+  that passes, OpenRouteService, is a supplement worth adding to the registry rather than a
+  replacement for the graph.
 - **Say nothing until deployment is real.** Rejected: the wrong inference is cheap to make and
   expensive to unmake. A future reader finding a compose file with no rationale is most likely to
   conclude the containers are an oversight to be cleaned up, or that the app must ship beside them.
