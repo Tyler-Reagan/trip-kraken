@@ -217,6 +217,35 @@ discovery corridor is unrelated to this ADR.
 > construction. Nothing is persisted today, so this is a rule to respect going forward: a
 > `TravelCost` or `PathGeometry` derived from Google must not reach SQLite.
 >
+> **§4's table gains a fifth row: hosted OpenRouteService, between `osrm` and `haversine`.**
+>
+> | # | id | kinds | gate |
+> | --- | --- | --- | --- |
+> | 1 | `osm-japan` | `rail` | in Japan; graph file present |
+> | 2 | `osrm` | `walking`, `driving`, `bicycle` | OSRM URLs configured |
+> | 3 | `google` | `bus` | API key configured |
+> | 4 | **`ors`** | `walking`, `driving`, `bicycle` | **ORS API key configured** |
+> | 5 | `haversine` | terminal | always |
+>
+> It earns the slot on four independent grounds. It is the only hosted candidate whose terms permit
+> §2. It is free. It is **global**, which closes the diagnostic gap this amendment opened above — a
+> trip wholly outside the region-scoped extract now falls to a real router before it falls to
+> straight lines, so "outside the graph" stops being indistinguishable from "the graph is down." And
+> its `foot-walking` / `foot-hiking` split offers a second opinion on OSRM's flat pedestrian speed,
+> which is Prototype B's question. It costs the design nothing, because §4 already built the
+> machinery: a provider that may decline a cell, walked in preference order, with `haversine`
+> terminal.
+>
+> It sits **below** `osrm` deliberately. A free service run by a research institute can withdraw
+> access, and the self-hosted graph is what guarantees we still answer. Two obligations ride along:
+> results are **CC-BY-SA 4.0** — a stronger claim than the ODbL position `osrm-viability-149.md` §6
+> established for our own graph, since share-alike asserted over query results has no Produced Work
+> carve-out, inert while undeployed but not if itineraries are ever published — and the attribution
+> string `© openrouteservice by HeiGIT`, which folds into
+> [#150](https://github.com/Tyler-Reagan/trip-kraken/issues/150) rather than adding a new obligation.
+> Its 3,500-element cap means two requests for a 60-point matrix. Building it is **PR 3's** work, not
+> PR 2's; no container is involved.
+>
 > **§2's "the door stays open at no cost" is corrected — the door opens onto self-hosted routers
 > only.** VROOM's `Server` struct carries host, port and path with no credential field, and
 > `ors_wrapper.cpp` emits no `Authorization` header; vroom-express only ever passes `-a host` and

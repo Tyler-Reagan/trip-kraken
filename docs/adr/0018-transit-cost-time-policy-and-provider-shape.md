@@ -109,6 +109,29 @@ actual trip's legs against a region-specific source. Until then, the
 regional-precedence mechanism (ADR-0011's "declare where they apply" contract) stays
 undesigned; haversine-vs-Google is plain config per ADR-0004.
 
+> ### Amended 2026-08-08 — §1's matrix may be held in memory, never persisted
+>
+> §1's representative-time matrix is, in Google's own vocabulary, a **pre-fetch**. Reading the terms
+> directly while researching alternatives to self-hosted routing
+> (`docs/research/hosted-routing-alternatives.md`) turned up that this is named, not incidental.
+> Google Maps Platform ToS §3.2.3(a), "No Scraping", forbids Customer to "(i) pre-fetch, index,
+> store, reshare, or rehost Google Maps Content outside the services; (ii) bulk download […]
+> **distance matrix results**", and §3.2.3(b) forbids caching except as the Service Specific Terms
+> permit. The only Routes API exception (Service Specific Terms §19.3) covers latitude and longitude
+> values for up to 30 days. Durations and distances are not covered.
+>
+> **§1 stands.** Fetching one matrix per optimize run, holding it in memory for that run, and
+> discarding it is not what the clause prohibits — the run is the request, and nothing leaves the
+> service boundary. What is now explicit is the boundary: **a `TravelCost` or `PathGeometry` derived
+> from Google must never be written to SQLite**, and the obvious optimization of caching a matrix
+> across optimize runs is unavailable for any Google-filled cell.
+>
+> Nothing is persisted today, so this is a rule to hold rather than a violation to repair — but it
+> was previously being held by accident. ADR-0024's per-cell `basisOfCost` makes it enforceable: the
+> cells this binds are exactly the ones stamped by the Google provider, and cells answered by
+> self-hosted OSRM or the rail graph carry no such restriction. See
+> [#158](https://github.com/Tyler-Reagan/trip-kraken/issues/158).
+
 ## Alternatives considered
 
 - **Exact time-dependent cost in the inner loop.** Rejected: circular (ordering ↔
