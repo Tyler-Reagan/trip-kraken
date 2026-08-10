@@ -262,6 +262,41 @@ discovery corridor is unrelated to this ADR.
 > together. Alignment done that way genuinely is free; a bind-mounted `config.yml` to achieve it
 > would not be, because the stock config is the thing that already permits plan mode.
 
+> ### Amended 2026-08-09 — the `bicycle` profile is dropped; `osrm` answers `walking` and `driving`
+>
+> §1 specifies three `osrm-routed` instances. **It ships two: `foot` and `car`.** §4's table changes
+> accordingly — the `osrm` row declares `walking`, `driving`.
+>
+> The reason is that bicycle is the only one of the three whose cost is a *different kind* of cost.
+> `foot.lua` and `car.lua` are used exactly as they ship inside the image: one container and one
+> graph build each, and nothing to maintain afterwards. Bicycle cannot be used as it ships, for the
+> reason §1 itself gives — stock `use_public_transport = true` makes any `railway` way traversable
+> as `mode.train` at a flat 10 km/h, so on a Japanese extract a cycling route returns fabricated
+> train segments with no line, operator or timetable, and ADR-0022 has no honest bin for them.
+>
+> §1's remedy was to vendor the profile with that flag flipped. Vendoring is what makes it
+> expensive: OSRM's profiles are Lua scripts compiled into the graph at `osrm-extract` time and
+> shipped *inside* the image, so a vendored copy is pinned to one image tag, must be re-taken and
+> re-patched whenever that tag moves, and fails in a way nothing tests for. That is real, recurring
+> maintenance in exchange for a capability **no caller in v2 requests**. Dropping the profile
+> removes the vendoring problem rather than reducing it.
+>
+> **The finding is kept on the record deliberately.** Re-adding bicycle is a small change and the
+> trap is invisible until someone reads a route response closely; anyone proposing it should have to
+> meet this paragraph first.
+>
+> **Hosted ORS keeps `bicycle` in its declaration, and that is not an inconsistency.** §3 defines
+> `kinds` as a statement of *competence*, and the two providers' competence is bounded by different
+> things: ORS's by what the service can answer, `osrm`'s by **which graphs we choose to build**. A
+> self-hosted provider's capability is a fact about our infrastructure, not about the software — a
+> distinction worth naming, because it is the reason this amendment touches one row and not both.
+>
+> **Not decided here, and now visible:** nothing in this ADR says *which* profile answers a given
+> matrix cell. §3 removed willingness, §4 fixes provider order, and neither states whether an
+> ordinary city-trip cell is a walking cell or a driving cell. Walking is the obvious default for the
+> trips being modelled, and `car` is built so the declaration is honest — but the selection rule
+> itself is owed by the PR that builds the composition pipeline.
+
 ## Alternatives considered
 
 - **Let VROOM query OSRM directly**, as `vroom-express`'s stock configuration expects and as the VROOM
