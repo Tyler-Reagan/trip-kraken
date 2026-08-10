@@ -1,0 +1,74 @@
+# PR 2 / ADR-0024 / ADR-0025: VROOM and OSRM, the app's two upstream HTTP services. This is the
+# entire deployment story for now — `docker compose up -d` plus `npm run dev` (ADR-0025). Neither
+# service is queried by the other: ADR-0024 §2 has the Facts layer always materialize the matrix
+# itself, because VROOM sends no `fallback_speed` and treats one unroutable pair as fatal to the
+# whole run, where a per-cell decline degrades gracefully.
+#
+# Build the road graphs first: scripts/build-osrm-graphs.sh (needs db/osrm/{foot,car}/road.osrm.*
+# to exist before `up`). See README.md for the full setup sequence.
+
+x-osrm: &osrm
+  # GHCR, not Docker Hub — osrm/osrm-backend on Hub stopped at v5.25.0 in 2021. The `-debian`
+  # suffix matters on arm64 hosts: the bare numeric tag resolves to an amd64-only image and would
+  # silently run under emulation. Keep this in sync with scripts/build-osrm-graphs.sh's
+  # OSRM_IMAGE — a graph built by one revision must be read by the same revision.
+  image: ghcr.io/project-osrm/osrm-backend:26.4.1-debian
+  restart: unless-stopped
+  # No healthcheck: block here. This image installs only libgcc-s1/libstdc++6 in its runtime
+  # stage — no curl, no wget — so it cannot probe itself. scripts/verify-infra.sh probes from the
+  # host instead, which is the stronger check anyway: a real /route query proves the graph loaded
+  # and is routable, where a port probe only proves a socket opened.
+
+services:
+  vroom:
+    build:
+      context: https://github.com/VROOM-Project/vroom-docker.git
+      args:
+        # No image is published past v1.14.0-rc.2, so building from source is forced, not
+        # chosen (#157). vroom-docker defaults to VROOM_RELEASE=master — never leave this
+        # unpinned, or the running solver is a different revision than everything in
+        # docs/research/vroom-day-balance-a.md was measured against. This build already links
+        # libglpk (its Dockerfile installs libglpk-dev/libglpk40), which is what makes plan
+        # mode (-c, ADR-0023 §8) possible at all.
+        VROOM_RELEASE: v1.15.0
+    restart: unless-stopped
+    ports:
+      # vroom-express listens on 3000 internally, same as `next dev` — remap on the host side
+      # only.
+      - "8080:3000"
+    # No config.yml mount. The stock config already has `override: ['c','g','l','t','x']`, so
+    # plan mode is permitted out of the box, and `routingServers` is dead config: ADR-0024 §2
+    # means we always supply VROOM's matrix ourselves, so it is never given a reason to call out
+    # to a router.
+    # HEALTHCHECK is inherited from vroom-docker's own Dockerfile
+    # (curl --fail http://localhost:3000/health) — nothing to add here.
+
+  osrm-car:
+    <<: *osrm
+    # The container listens on 5000 internally — vroom-express's stock routingServers map,
+    # kept aligned per ADR-0024 §2's "the door stays open" note (corrected by its 2026-08-09
+    # amendment): this preserves the option of pointing VROOM at our *own* OSRM later, not at a
+    # hosted router — VROOM's Server struct carries no credential field, so it cannot
+    # authenticate to one. Only the HOST-side publish moves, to 5010: macOS's AirPlay Receiver
+    # squats on host port 5000 by default (System Settings → General → AirDrop & Handoff, if
+    # you'd rather free it up and use 5000 here instead).
+    ports:
+      - "5010:5000"
+    volumes:
+      - ./db/osrm/car:/data:ro
+    command: >
+      osrm-routed --algorithm mld --max-table-size 1000 -p 5000 /data/road.osrm
+    # Both flags correct wrong defaults: the binary defaults to CH against OSRM's own README
+    # recommendation, and --max-table-size defaults to 100 *locations*, which a 60-stop trip
+    # exceeds.
+
+  osrm-foot:
+    <<: *osrm
+    # 5001 (bike's stock slot) is deliberately left unpublished — see ADR-0024's 2026-08-09
+    # amendment on why the bicycle profile is dropped.
+    ports:
+      - "5002:5002"
+    volumes:
+      - ./db/osrm/foot:/data:ro
+    command: >
+      osrm-routed --algorithm mld --max-table-size 1000 -p 5002 /data/road.osrm

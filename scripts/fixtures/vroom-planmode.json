@@ -1,0 +1,33 @@
+{
+  "vehicles": [
+    {
+      "id": 1,
+      "start_index": 0,
+      "end_index": 0,
+      "time_window": [0, 3600],
+      "steps": [
+        { "type": "start" },
+        { "type": "job", "id": 1 },
+        { "type": "end" }
+      ]
+    }
+  ],
+  "jobs": [
+    {
+      "id": 1,
+      "location_index": 1,
+      "time_windows": [[7200, 9000]]
+    }
+  ],
+  "matrices": {
+    "car": {
+      "durations": [
+        [0, 600],
+        [600, 0]
+      ]
+    }
+  },
+  "options": {
+    "c": true
+  }
+}

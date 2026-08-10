@@ -22,6 +22,10 @@ dev.log
 *.db-wal
 *.db-shm
 
+# OSRM road graphs (ADR-0024) — built locally by scripts/build-osrm-graphs.sh from a Geofabrik
+# extract; *.db above doesn't match .osrm.* so this needs its own rule.
+db/osrm/
+
 # Debug artifacts
 debug-screenshot.png
 debug-page.html

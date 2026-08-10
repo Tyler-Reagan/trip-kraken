@@ -96,7 +96,61 @@ The key needs the following APIs enabled in Google Cloud Console:
 - Geocoding API (fallback coordinate resolution)
 - Places API (Nearby Search, Text Search, Place Details)
 
-### 3. Run
+### 3. Start VROOM and OSRM
+
+Optimization (ADR-0023) and road travel cost (ADR-0024) depend on two self-hosted services,
+defined in `docker-compose.yml`. There is no hosted alternative: `docs/research/hosted-routing-alternatives.md`
+found that every hosted matrix API but one forbids the server-side matrix this app builds, in
+their own terms of service. This is the entire deployment story for now (ADR-0025) — nothing
+here is Vercel-shaped, and that is a deliberate, recorded posture, not an oversight.
+
+First, build the road graphs (one-time, re-run only when `scripts/osm-snapshot.env`'s pinned
+snapshot moves):
+
+```bash
+pnpm build:osrm-graphs
+```
+
+This downloads a pinned Kanto extract and runs `osrm-extract`/`osrm-partition`/`osrm-customize`
+for the `foot` and `car` profiles (`bicycle` was evaluated and dropped — see ADR-0024's
+2026-08-09 amendment). Needs Docker, ~1 GB of disk, and a few minutes on first run.
+
+Then bring the stack up:
+
+```bash
+docker compose up -d
+```
+
+This builds VROOM from source, pinned to `v1.15.0` — no published image exists past
+`v1.14.0-rc.2`, so this is forced rather than a choice, and it's a multi-minute build the first
+time. Add the three service URLs to `.env.local` (defaults shown match `docker-compose.yml`'s
+published ports):
+
+```env
+VROOM_URL=http://localhost:8080
+OSRM_FOOT_URL=http://localhost:5002
+OSRM_CAR_URL=http://localhost:5010
+```
+
+`osrm-car` publishes on host port `5010`, not the OSRM-standard `5000` its container listens on
+internally — macOS's AirPlay Receiver claims host port 5000 by default. Free it up in
+**System Settings → General → AirDrop & Handoff** if you'd rather use `5000`.
+
+Three independent names rather than one base URL, because a caller needs to say *which* service
+is unreachable — "the walking graph is unreachable" is a more useful error than "OSRM is down."
+
+Verify everything actually works, not just that the containers are running:
+
+```bash
+pnpm infra:verify
+```
+
+This checks VROOM's health endpoint, sends a real routing query to each OSRM instance, and —
+the check that matters most — POSTs a fixture built to violate a time window in VROOM's plan
+mode (`-c`) and confirms a violation comes back. A VROOM build without `libglpk` linked accepts
+plan-mode requests and silently ignores them, which only a check like this one catches.
+
+### 4. Run
 
 ```bash
 pnpm dev
