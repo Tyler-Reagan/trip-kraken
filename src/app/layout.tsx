@@ -39,6 +39,21 @@ export default function RootLayout({
           </div>
         </nav>
         <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+        <footer className="border-t border-line">
+          <div className="mx-auto max-w-6xl px-4 py-4 text-xs text-sub">
+            {/* ODbL §4.3 (#150). ADR-0019's rail graph already serves OSM-derived data;
+                ADR-0024's road graph and VROOM join once wired in (PR 3, PR 5) — the full
+                three-clause string from the ADR ships only once all three are true. */}
+            <a
+              href="https://www.openstreetmap.org/copyright"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-ink hover:underline"
+            >
+              © OpenStreetMap contributors
+            </a>
+          </div>
+        </footer>
       </body>
     </html>
   );

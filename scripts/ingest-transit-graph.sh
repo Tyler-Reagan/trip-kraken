@@ -11,9 +11,13 @@
 
 set -euo pipefail
 
-# Pinned, dated snapshot — reproducibility (ADR-0019). Bump this URL deliberately when
-# refreshing the graph; never point at a rolling "-latest" URL from automation.
-GEOFABRIK_URL="https://download.geofabrik.de/asia/japan-260101.osm.pbf"
+# Pinned, dated snapshot — reproducibility (ADR-0019), shared with build-osrm-graphs.sh via
+# osm-snapshot.env (ADR-0024's 2026-08-07 amendment: the two pipelines share a snapshot DATE,
+# not a URL — road needs a different region). Bump OSM_SNAPSHOT there, not here.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./osm-snapshot.env
+source "$SCRIPT_DIR/osm-snapshot.env"
+GEOFABRIK_URL="${GEOFABRIK_BASE}/${OSM_RAIL_REGION}-${OSM_SNAPSHOT}.osm.pbf"
 
 OUTPUT_DB="${1:-db/transit-japan.db}"
 WORK_DIR="$(mktemp -d)"
