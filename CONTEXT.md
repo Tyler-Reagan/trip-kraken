@@ -153,7 +153,7 @@ the domain's travel primitive.
 
 **Road graph**:
 The offline-built structure a road routing provider traverses — one per travel profile
-(walking, driving, cycling), so "the road graph" is always three artifacts, not one. Like
+(walking, driving), so "the road graph" is always two artifacts, not one. Like
 the Rail graph, an implementation detail of one `PathProvider` that a Trip never references.
 A journey whose endpoints fall outside the road graph's Extract is not an error: the
 provider declines those cells and they are answered `straightLine` instead.
@@ -168,6 +168,9 @@ _Avoid_: the OSM data, the download, the dump
 
 **Extract**:
 The regional slice of an OSM snapshot actually downloaded — the whole of Japan for rail,
-a sub-region for road. Which region and which snapshot are independent choices, and
-conflating them is what "the pinned URL" used to do.
+one sub-region or several merged together for road. Which regions and which snapshot are
+independent choices, and conflating them is what "the pinned URL" used to do. The regions a
+road Extract covers are the boundary of where road costs can be routed at all: outside it
+the provider declines and the cost is `straightLine`, so widening coverage means widening
+the Extract, never adding a weaker provider beneath the one that declined (ADR-0024).
 _Avoid_: region file, the pbf
