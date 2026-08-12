@@ -104,16 +104,28 @@ found that every hosted matrix API but one forbids the server-side matrix this a
 their own terms of service. This is the entire deployment story for now (ADR-0025) — nothing
 here is Vercel-shaped, and that is a deliberate, recorded posture, not an oversight.
 
-First, build the road graphs (one-time, re-run only when `scripts/osm-snapshot.env`'s pinned
+**Before the first build**, raise Docker Desktop's memory allocation to at least 12 GB
+(Settings → Resources). This is a prerequisite, not a troubleshooting step: the default (7.75 GB
+measured on a 16 GB host) is self-imposed, not a hardware ceiling, and the merged Extract below
+needs headroom past it. Requires `osmium` on PATH too (`brew install osmium-tool` /
+`apt install osmium-tool`) — same tool `ingest-transit-graph.sh` already depends on.
+
+Then build the road graphs (one-time, re-run only when `scripts/osm-snapshot.env`'s pinned
 snapshot moves):
 
 ```bash
 pnpm build:osrm-graphs
 ```
 
-This downloads a pinned Kanto extract and runs `osrm-extract`/`osrm-partition`/`osrm-customize`
-for the `foot` and `car` profiles (`bicycle` was evaluated and dropped — see ADR-0024's
-2026-08-09 amendment). Needs Docker, ~1 GB of disk, and a few minutes on first run.
+This downloads three pinned Geofabrik regions — Kantō, Kansai and Chūbu (Tokyo, Kyoto/Osaka,
+Nagoya) — merges them with `osmium merge` into one ~1.2 GB Extract, and runs
+`osrm-extract`/`osrm-partition`/`osrm-customize` for the `foot` and `car` profiles against it
+(`bicycle` was evaluated and dropped — see ADR-0024's 2026-08-09 amendment). A location outside
+these three regions is not an error: the road provider declines it and travel cost falls back to
+a straight line (ADR-0024, amended 2026-08-10 — hosted OpenRouteService was evaluated as a global
+fallback for this gap and dropped; coverage grows by widening `OSM_ROAD_REGIONS`, not by adding a
+weaker provider). Needs Docker, ~15 GB of disk once built (pruned of build-only intermediates —
+the peak during a build is higher), and tens of minutes on first run.
 
 Then bring the stack up:
 
