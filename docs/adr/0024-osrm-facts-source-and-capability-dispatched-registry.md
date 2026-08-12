@@ -297,6 +297,97 @@ discovery corridor is unrelated to this ADR.
 > trips being modelled, and `car` is built so the declaration is honest — but the selection rule
 > itself is owed by the PR that builds the composition pipeline.
 
+> ### Amended 2026-08-10 — hosted ORS is dropped; coverage grows by Extract, not by a weaker tier
+>
+> The 2026-08-09 amendment added hosted OpenRouteService as §4's fourth row, between `osrm` and
+> `haversine`, to close the diagnostic gap the 2026-08-07 amendment had opened — a trip outside the
+> road Extract "silently routes entirely by haversine while OSRM appears healthy." **That row is
+> removed.** §4's table is four rows:
+>
+> | # | id | kinds | gate |
+> | --- | --- | --- | --- |
+> | 1 | `osm-japan` | `rail` | in Japan; graph file present. Declines when no station is in range. |
+> | 2 | `osrm` | `walking`, `driving` | OSRM URLs configured |
+> | 3 | `google` | `bus` | API key configured |
+> | 4 | `haversine` | terminal | always |
+>
+> **ORS is not removed on the tests that disqualified the others, and that matters for the record.**
+> Held to the same standard: its quota is sufficient — Standard is 500 matrix requests/day at 40/min,
+> and at two requests per optimize run that is 250 runs/day, far past what one traveler generates —
+> and HeiGIT's terms contain no caching or storage clause of any kind, which is precisely why it
+> survived the screen that removed Mapbox, Stadia, GraphHopper and Google. Both findings in
+> `hosted-routing-alternatives.md` stand unaltered. The row is removed on three other grounds.
+>
+> **It removes road self-hosting, not self-hosting.** VROOM is a container and the Rail graph is a
+> file we ship; both remain whatever ORS does. Substituting a free research API for infrastructure we
+> control therefore buys none of the operational simplification it appears to, while adding an
+> availability dependency that cannot be escalated — all three ORS plans are €0, no purchasable tier
+> exists, and the terms reserve account removal "without prior notice." A quota that stops fitting
+> has no next step. HeiGIT's own answer for production use is the On-Premise tier: run it yourself.
+>
+> **It reintroduces the tiling loop §1 deleted.** A 60-Location Trip is 3,600 cells against ORS's
+> 3,500-element cap, so every matrix costs two requests split 30/30. The same matrix is one request
+> against `osrm` under `--max-table-size 1000`. `osrm-viability-149.md` §3 identified deleting
+> `computeFullMatrix`'s tiling as the largest code simplification OSRM bought; a fallback tier that
+> hands it back is not free, and it is code that only ever runs when something has already gone wrong.
+>
+> **Its results carry CC-BY-SA 4.0.** Share-alike asserted over query results has no Produced Work
+> carve-out, unlike the ODbL position `osrm-viability-149.md` §6 established for our own graph. Inert
+> while nothing is published — but it attaches a licence to Plan content the moment an itinerary is.
+>
+> **What replaces the row is data, not a tier.** A fallback that is silently worse than the provider
+> it stands in for is a liability rather than a safety net: it makes "outside the Extract" and "the
+> graph is down" return *different but equally plausible* answers, where a single terminal fallback
+> makes both return the same obviously-degraded one. Coverage now grows by **extending the Extract** —
+> merging regions into the input `osrm-extract` reads — rather than by stacking a weaker provider
+> beneath a stronger one.
+>
+> **The diagnostic gap is therefore re-opened, and accepted deliberately.** The 2026-08-07
+> amendment's statement returns in force: degradation is per cell and honest, and the residual risk
+> is diagnostic rather than correctness. Two obligations follow, both landing on the PR that builds
+> the composition pipeline:
+>
+> - `osrmProvider` must decline out-of-Extract cells **explicitly**. OSRM snaps a coordinate to the
+>   nearest way in its graph and answers confidently rather than erroring, so a Kansai Location can
+>   resolve against a Kantō road hundreds of kilometres away. A bounds check or a `radiuses` cap is
+>   required; without one the provider does not decline, it lies. The exact snapping behaviour must be
+>   verified against the live container before the shape of the check is fixed.
+> - `basisOfCost: straightLine` becomes the *only* signal distinguishing an unroutable cell from a
+>   routed one. That raises §5 from a correctness nicety to the mechanism the whole degradation story
+>   rests on.
+>
+> **The `bicycle` paragraph in the amendment above is moot.** With no ORS row, no provider declares
+> `bicycle` at all, so the asymmetry it explained no longer exists in the table. The reasoning it
+> recorded is retained as a general statement about §3 — a self-hosted provider's `kinds` is bounded
+> by which graphs we choose to build, a hosted provider's by what the service can answer — but it now
+> describes a distinction with no instance.
+>
+> **Build memory, not disk, is what bounds the Extract.** Measured on the machine ADR-0025 names as
+> the deployment: 16 GB host, **7.75 GB allocated to the Docker VM**, 297 GB free on disk. Kantō is
+> 431 MB and builds inside that allocation; nationwide Japan is 2,370 MB and does not. Kansai is
+> 321 MB, Chūbu 448 MB, Chūgoku 191 MB — so a Kantō + Kansai merge is roughly 750 MB, about 1.75× the
+> current input. Disk is not a constraint at any of these sizes and will not become one. Three levers
+> exist, in ascending cost:
+>
+> 1. **Raise the Docker Desktop memory allocation.** 7.75 GB is self-imposed, not hardware; the host
+>    has 16 GB. A one-off build at 12 GB leaves macOS 4 GB and is very likely sufficient for a
+>    two-region merge. Free, reversible, and the first thing to try.
+> 2. **Build off-machine and copy `db/osrm/` down.** The build is dev-time, manual, re-runnable and
+>    gitignored — nothing requires it to run on the laptop. This decouples the Extract's size from the
+>    developer's RAM entirely and is the answer for a nationwide graph.
+> 3. **Build per region rather than merging** — one graph and one `osrm-routed` per (region ×
+>    profile). This is the only lever that *removes* the memory pressure rather than raising the
+>    ceiling, because build memory then scales with the largest single region instead of the total.
+>    **Not chosen.** No single graph holds both endpoints of a cross-region pair, so `osrmProvider`
+>    would have to dispatch on which region a coordinate falls in, and Tokyo→Kyoto road cells become
+>    unanswerable. That is defensible on its own terms — inter-metro travel in Japan is rail, which is
+>    `osm-japan`'s nationwide job — but it pushes a routing decision into the provider and entangles
+>    it with the still-open profile-selection question above. Kept as the escape hatch if a merged
+>    Extract ever outgrows an affordable build box.
+>
+> `CONTEXT.md`'s **Extract** entry is widened accordingly: a road Extract is one sub-region *or
+> several merged*, and which regions ship is a product decision rather than an infrastructure default.
+
 ## Alternatives considered
 
 - **Let VROOM query OSRM directly**, as `vroom-express`'s stock configuration expects and as the VROOM
