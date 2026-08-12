@@ -29,6 +29,13 @@
       "when": 1786000000000,
       "tag": "0003_allowed_path_kinds",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787000000000,
+      "tag": "0004_road_profile",
+      "breakpoints": true
     }
   ]
 }

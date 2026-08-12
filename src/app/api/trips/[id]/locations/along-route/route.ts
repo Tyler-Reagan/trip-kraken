@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getLocationCoords, getTripWithDetails } from "@/lib/db";
 import { getDiscoveryProvider, modeForScope, scoreAndSort } from "@/lib/discovery";
 import { computeRoutePolyline } from "@/lib/googleRoutesProvider";
-import { resolvePrimaryPathKind } from "@/lib/pathKind";
 import type { PathKind } from "@/types/path";
 import type { Point } from "@/lib/geo";
 
@@ -79,7 +78,11 @@ export async function GET(
     const polyline = await corridorPolyline(
       { lat: from.lat, lng: from.lng },
       { lat: to.lat, lng: to.lng },
-      resolvePrimaryPathKind(trip.allowedPathKinds)
+      // Was resolvePrimaryPathKind(trip.allowedPathKinds) — that column is deleted (ADR-0024) and
+      // always resolved to "rail" in practice anyway (no UI ever set it), so this is
+      // behaviour-identical. The real fix — deriving the corridor from the OSM-Japan transit graph
+      // instead of trying "rail" against an API with no Japan transit data — is #106.
+      "rail"
     );
     if (!polyline) {
       return NextResponse.json({ error: "No route between these stops" }, { status: 422 });

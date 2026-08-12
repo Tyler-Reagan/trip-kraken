@@ -32,6 +32,13 @@ export type PathKind = "rail" | "bus" | "walking" | "driving" | "bicycle" | "oth
  * precedence; keep in sync with the `PathKind` union above by construction, not by convention. */
 export const ALL_PATH_KINDS: readonly PathKind[] = ["rail", "bus", "walking", "driving", "bicycle", "other"];
 
+/** Which OSRM profile answers a Trip's road cells (ADR-0024, amended 2026-08-11) — a subtype of
+ * `PathKind`, not a separate vocabulary, so folding it into a composition request
+ * (`["rail", "bus", roadProfile]`) is plain inclusion rather than a translation table. Narrower
+ * than the deleted `allowedPathKinds`: it selects a profile for the `osrm` registry entry alone,
+ * never gates `osm-japan` or `google`. */
+export type RoadProfile = Extract<PathKind, "walking" | "driving">;
+
 /** How a Path's cost was arrived at (CONTEXT.md). Carries no reason — only whether real topology
  * was used, not why it wasn't. */
 export type BasisOfCost = "railNetwork" | "routingService" | "straightLine";

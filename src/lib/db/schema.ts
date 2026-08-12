@@ -18,7 +18,6 @@
 
 import { sql } from "drizzle-orm";
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
-import type { PathKind } from "@/types/path";
 
 export const trip = sqliteTable("Trip", {
   id: text("id").primaryKey(),
@@ -31,13 +30,13 @@ export const trip = sqliteTable("Trip", {
   // A day's optional label, keyed by date. Days are a derived clustering of Placements, not an
   // entity, so the only thing a day "owns" — a label — rides here (locked decision, ADR-0015).
   dayLabels: text("dayLabels", { mode: "json" }).$type<Record<string, string>>(),
-  // The Trip's willing Path kinds (ADR-0019 §mode, renamed by ADR-0022 P2) — a set threaded
-  // through `solve()` unresolved (ADR-0022, revised: willingness, not a constraint), with
-  // `resolvePrimaryPathKind` (pathKind.ts) used only by the narrower callers that need one
-  // representative kind. Nullable rather than DB-defaulted: an unset Trip already resolves to
-  // `DEFAULT_ALLOWED_PATH_KINDS` (which includes rail+bus), so there is no meaningful "unset"
-  // state to distinguish at the schema level.
-  allowedPathKinds: text("allowedPathKinds", { mode: "json" }).$type<PathKind[]>(),
+  // Which OSRM profile answers this Trip's road cells (ADR-0024, amended 2026-08-11) — the
+  // traveler-facing selector CONTEXT.md's "kind (Path)" entry licenses returning ("the term
+  // returns only if a traveler-facing selector does"). Deliberately narrower than the deleted
+  // `allowedPathKinds`: it never gates osm-japan or google, only which profile a *road* cell
+  // routes on. `notNull` + a default, not nullable: there is no meaningful unset state, same
+  // reasoning as `transitCaveatDismissed` below.
+  roadProfile: text("roadProfile", { enum: ["walking", "driving"] }).notNull().default("walking"),
   // Whether the user has dismissed ADR-0019's estimated-transit-timing caveat (#130) — persisted
   // so it stays dismissed across reloads instead of reappearing on every page mount.
   transitCaveatDismissed: integer("transitCaveatDismissed", { mode: "boolean" }).notNull().default(false),

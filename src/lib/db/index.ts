@@ -5,7 +5,7 @@ import { trip, location, placement } from "./schema";
 import type { TripWithDetails, Location, Placement, IsoDate } from "@/types";
 import type { LocationEnrichment } from "@/lib/places";
 import type { ParsedBooking } from "@/lib/bookingImport";
-import type { PathKind } from "@/types/path";
+import type { RoadProfile } from "@/types/path";
 import { reorderPlacements, insertPlacement } from "@/lib/placementOrdering";
 import { dedupeName } from "@/lib/dedupeName";
 
@@ -31,7 +31,7 @@ function parseTrip(r: typeof trip.$inferSelect) {
     startDate: r.startDate,
     endDate: r.endDate,
     dayLabels: r.dayLabels ?? null,
-    allowedPathKinds: r.allowedPathKinds ?? null,
+    roadProfile: r.roadProfile,
     transitCaveatDismissed: r.transitCaveatDismissed,
     createdAt: new Date(r.createdAt),
     updatedAt: new Date(r.updatedAt),
@@ -179,9 +179,6 @@ export function createTripWithLocations(data: {
   /** Required temporal axis (ADR-0015 §3): every trip has a real calendar range. */
   startDate: IsoDate;
   endDate: IsoDate;
-  /** ADR-0019 §mode / ADR-0022 P2; unset resolves to the default set (rail+bus included) at
-   * optimize time. */
-  allowedPathKinds?: PathKind[] | null;
   locations: Array<{
     name: string;
     address?: string | null;
@@ -200,7 +197,6 @@ export function createTripWithLocations(data: {
         sourceUrl: data.sourceUrl ?? null,
         startDate: data.startDate,
         endDate: data.endDate,
-        allowedPathKinds: data.allowedPathKinds ?? null,
       })
       .run();
     for (const loc of data.locations) {
@@ -231,7 +227,7 @@ export function updateTrip(
     startDate?: IsoDate;
     endDate?: IsoDate;
     dayLabels?: Record<string, string> | null;
-    allowedPathKinds?: PathKind[] | null;
+    roadProfile?: RoadProfile;
     transitCaveatDismissed?: boolean;
   }
 ): TripWithDetails {
@@ -242,7 +238,7 @@ export function updateTrip(
       ...(fields.startDate !== undefined ? { startDate: fields.startDate } : {}),
       ...(fields.endDate !== undefined ? { endDate: fields.endDate } : {}),
       ...(fields.dayLabels !== undefined ? { dayLabels: fields.dayLabels } : {}),
-      ...(fields.allowedPathKinds !== undefined ? { allowedPathKinds: fields.allowedPathKinds } : {}),
+      ...(fields.roadProfile !== undefined ? { roadProfile: fields.roadProfile } : {}),
       ...(fields.transitCaveatDismissed !== undefined ? { transitCaveatDismissed: fields.transitCaveatDismissed } : {}),
       updatedAt: sql`(datetime('now'))`,
     })

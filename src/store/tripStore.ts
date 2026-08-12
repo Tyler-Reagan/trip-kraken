@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { deriveDays, type TripWithDetails, type Location, type Lodging, type NearbyPlace } from "@/types";
+import type { RoadProfile } from "@/types/path";
 import { reorderPlacements, insertPlacement } from "@/lib/placementOrdering";
 
 type ActiveSurface = "itinerary" | "places";
@@ -89,6 +90,7 @@ interface TripStore {
   addDiscoveredPlace: (place: NearbyPlace, date: string | null, order?: number) => Promise<string | null>;
   setDayLabel: (date: string, label: string | null) => Promise<void>;
   setTransitCaveatDismissed: (v: boolean) => Promise<void>;
+  setRoadProfile: (v: RoadProfile) => Promise<void>;
   importBooking: (text: string) => Promise<string | null>;
   enrich: () => Promise<void>;
 
@@ -367,6 +369,21 @@ export const useTripStore = create<TripStore>()((set, get) => ({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ transitCaveatDismissed: v }),
+    });
+  },
+
+  // Optimistic, same pattern as setTransitCaveatDismissed — this must persist (unlike
+  // OptimizeModal's dayBudgetHours, which is per-run local state) because the Facts layer reads
+  // it off the Trip at matrix time (ADR-0024, amended 2026-08-11).
+  setRoadProfile: async (v) => {
+    const tripId = get().tripId;
+    const t = get().trip;
+    if (!tripId || !t) return;
+    set({ trip: { ...t, roadProfile: v } });
+    await fetch(`/api/trips/${tripId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roadProfile: v }),
     });
   },
 

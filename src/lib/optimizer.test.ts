@@ -264,17 +264,16 @@ const db = drizzle(sqlite, { schema });
 migrate(db, { migrationsFolder: path.join(process.cwd(), "db", "migrations") });
 (globalThis as unknown as { _drizzle?: typeof db })._drizzle = db;
 
-// 3-day trip; lodging H across all nights; three activities with coords; one excluded. Pinned to
-// walking (ADR-0019 #86, ADR-0022 P2): this test is about placement/DB mechanics, not provider
-// selection, and its Tokyo-area coordinates would otherwise resolve to the OSM-Japan transit
-// provider by default (rail is in the default allowed-kinds set) — which requires a real ingested
-// `db/transit-japan.db` this test environment doesn't have.
+// 3-day trip; lodging H across all nights; three activities with coords; one excluded. This test
+// is about placement/DB mechanics, not provider selection: it no longer needs to steer around the
+// OSM-Japan transit provider (ADR-0024's registry gates that entry on the rail graph file being
+// present — a machine without `db/transit-japan.db` ingested simply never reaches it — rather than
+// on the Trip declining rail via a kinds set, which is what the deleted `allowedPathKinds` did).
 const trip = createTripWithLocations({
   name: "Opt trip",
   sourceUrl: "",
   startDate: "2026-06-24",
   endDate: "2026-06-26",
-  allowedPathKinds: ["walking"],
   locations: [
     { name: "H", lat: 35.0, lng: 139.0 },
     { name: "X", lat: 35.01, lng: 139.01 },

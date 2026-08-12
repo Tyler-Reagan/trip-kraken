@@ -127,6 +127,12 @@ fallback for this gap and dropped; coverage grows by widening `OSM_ROAD_REGIONS`
 weaker provider). Needs Docker, ~15 GB of disk once built (pruned of build-only intermediates —
 the peak during a build is higher), and tens of minutes on first run.
 
+**Building elsewhere and moving the result** is a legitimate alternative to raising this
+machine's Docker memory — the build is dev-time and gitignored, so nothing requires it to run
+here. On a machine with more headroom: `pnpm build:osrm-graphs`, then
+`pnpm transfer:osrm-graphs pack`, then copy the resulting `osrm-graphs-*.tar.zst` over (scp,
+rsync, a shared bucket) and run `pnpm transfer:osrm-graphs unpack <file>` on this machine.
+
 Then bring the stack up:
 
 ```bash
