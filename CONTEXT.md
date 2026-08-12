@@ -78,8 +78,18 @@ knows what it was.
 `kind` states facts, never preferences. It says what a Path **reports**, and — outside the
 domain, in the routing layer — what a provider is **able to answer for**. A Trip once carried an
 *allowed kinds* set expressing what a traveler was willing to use; nothing ever wrote it, and it
-is deleted (ADR-0024). The term returns only if a traveler-facing selector does.
+is deleted (ADR-0024). The term returns only if a traveler-facing selector does — see
+**Road profile**, the selector that returned it.
 _Avoid_: travel mode, mode, transit, allowed kinds
+
+**Road profile**:
+Which OSRM profile — `walking` or `driving` — answers a Trip's road cells (ADR-0024, amended
+2026-08-11). A field on Trip, decided prior to optimization and changeable after. Deliberately
+narrower than the deleted *allowed kinds*: it never gates `osm-japan` or `google`, and it is not
+a willingness set — it selects a single profile for one registry entry, nothing else. The
+traveler-facing selector `kind (Path)` names as the only condition under which that concept
+returns.
+_Avoid_: allowed kinds, travel mode, willingness
 
 **Operator**:
 The entity operating a Path — whoever provides the travel *to* you rather than you providing
