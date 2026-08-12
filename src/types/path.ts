@@ -27,9 +27,20 @@ import type { Point } from "@/lib/geo";
  * chosen per Trip, reported per Path. */
 export type PathKind = "rail" | "bus" | "walking" | "driving" | "bicycle" | "other";
 
+/** Every `PathKind`, in one place — the terminal registry entry (ADR-0024 §4) declares this as
+ * its competence, since a straight line can stand in for any kind's cost. Not an ordering or
+ * precedence; keep in sync with the `PathKind` union above by construction, not by convention. */
+export const ALL_PATH_KINDS: readonly PathKind[] = ["rail", "bus", "walking", "driving", "bicycle", "other"];
+
 /** How a Path's cost was arrived at (CONTEXT.md). Carries no reason — only whether real topology
  * was used, not why it wasn't. */
 export type BasisOfCost = "railNetwork" | "routingService" | "straightLine";
+
+/** Which registry entry answered a cell (ADR-0024 §4/§5, CONTEXT.md's "Answered by"). Orthogonal
+ * to `BasisOfCost`: `osrm` and `google` both produce `routingService`, and `osrm` alone can also
+ * produce `straightLine` for a cell it declined. Load-bearing beyond diagnostics — see
+ * `PersistableTravelCost` below, the type this exists to make checkable. */
+export type ProviderId = "osm-japan" | "osrm" | "google" | "haversine";
 
 /** The entity operating a Path — whoever provides the travel *to* you rather than you providing
  * it yourself. An object rather than a bare string so an OSM id or a canonical ref can attach
@@ -43,15 +54,43 @@ export interface TravelCost {
   distanceMeters: number;
   durationSeconds: number;
   basisOfCost: BasisOfCost;
+  /** Which registry entry produced this cost (ADR-0024 §4). Required, not inferred from
+   * `basisOfCost` — two providers can share a basis. */
+  answeredBy: ProviderId;
   /** Always `durationSeconds / 60` — assigned only through `makeTravelCost` below so it can never
    * diverge from the authoritative seconds figure. */
   costAsMinutes: number;
 }
 
 /** The single constructor for `TravelCost`, so `costAsMinutes` can never be set independently of
- * `durationSeconds`. */
-export function makeTravelCost(distanceMeters: number, durationSeconds: number, basisOfCost: BasisOfCost): TravelCost {
-  return { distanceMeters, durationSeconds, basisOfCost, costAsMinutes: durationSeconds / 60 };
+ * `durationSeconds`. `answeredBy` is a required positional parameter, not optional-with-default:
+ * six call sites at the time this was added, and a default would silently mislabel every future
+ * provider that forgot to pass it. */
+export function makeTravelCost(
+  distanceMeters: number,
+  durationSeconds: number,
+  basisOfCost: BasisOfCost,
+  answeredBy: ProviderId
+): TravelCost {
+  return { distanceMeters, durationSeconds, basisOfCost, answeredBy, costAsMinutes: durationSeconds / 60 };
+}
+
+/**
+ * #158 / Google Maps Platform Terms of Service §3.2.3(a): "Customer will not pre-fetch, index,
+ * store, or cache any Content" — and distance-matrix results are named explicitly. The Routes API
+ * caching exception (Maps Service Specific Terms §19.3) covers latitude/longitude only; durations
+ * and distances derived from Google are not covered. Any function that writes a `TravelCost` to
+ * SQLite must require this type, not the bare `TravelCost` — the compiler then enforces the
+ * exclusion instead of a comment having to be remembered at every future call site.
+ *
+ * Holding a Google-derived cost in memory for the span of one optimize run remains permitted
+ * (ADR-0018 §1) — this type governs *persistence*, not use. Do not widen it to allow caching
+ * later: a matrix cache is legal only for the cells this type already excludes Google from.
+ */
+export type PersistableTravelCost = TravelCost & { answeredBy: Exclude<ProviderId, "google"> };
+
+export function isPersistable(cost: TravelCost): cost is PersistableTravelCost {
+  return cost.answeredBy !== "google";
 }
 
 /** A Path's endpoint, as identity plus coordinates — deliberately not a full `Location`.

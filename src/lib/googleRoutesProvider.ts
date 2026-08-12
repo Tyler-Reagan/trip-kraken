@@ -18,11 +18,14 @@
  * ADR-0018 §1 already scoped time-of-day sensitivity to transit only — so the guard is real API
  * behavior, not speculative mode-specific branching.
  *
- * `kinds` (ADR-0022 P2) is a willingness *set*; Google's matrix/routes calls take exactly one
- * `travelMode` per request, so this provider collapses the set to one representative `PathKind`
- * via `resolvePrimaryPathKind` (`pathKind.ts`) before mapping it onto Google's vocabulary
- * (`GOOGLE_MODE_FOR_KIND`). Forwarding the full transit subset as `transitPreferences.
- * allowedTravelModes`, rather than just picking one, is deferred to #146 — not this slice.
+ * `kinds` arrives already narrowed to this provider's declared competence — the registry
+ * (`travelCostRegistry.ts`) intersects a request's kinds against `google`'s `kinds: ["bus"]`
+ * (ADR-0024 §4/§7) before ever calling in, so in practice `kinds` here is always `["bus"]`.
+ * `resolvePrimaryPathKind` (`pathKind.ts`) is kept anyway rather than hardcoding `"bus"`: Google's
+ * matrix/routes calls take exactly one `travelMode` per request regardless of how many kinds a
+ * caller passes, so the collapse is real defensive plumbing, now reduced to a one-element case.
+ * Forwarding the full transit subset as `transitPreferences.allowedTravelModes`, rather than just
+ * picking one, is deferred to #146 — not this slice.
  *
  * `describeJourney`'s result is currently a single `UnknownPath` whenever the resolved kind is
  * `rail`/`bus`/`other` (ADR-0022, revised): this provider doesn't request
@@ -158,7 +161,7 @@ async function computeFullMatrix(
         }
         const i = originBatch[el.originIndex];
         const j = destBatch[el.destinationIndex];
-        matrix[i][j] = makeTravelCost(el.distanceMeters ?? 0, el.duration ? toSeconds(el.duration) : 0, "routingService");
+        matrix[i][j] = makeTravelCost(el.distanceMeters ?? 0, el.duration ? toSeconds(el.duration) : 0, "routingService", "google");
       }
     }
   }
@@ -257,7 +260,8 @@ export const googleRoutesProvider: PathProvider = {
     const travelCost = makeTravelCost(
       route.distanceMeters ?? 0,
       route.duration ? toSeconds(route.duration) : 0,
-      "routingService"
+      "routingService",
+      "google"
     );
 
     // A transit-bucket kind was requested but not derivable from the response yet (see module

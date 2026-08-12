@@ -115,9 +115,9 @@ export async function optimizeItinerary(
   dayStartMins = 9 * 60,   // assumed start-of-day for time-window simulation (default 09:00)
   edges: EdgeAnchors = {},
   provider: PathProvider = haversineProvider,
-  /** The run's willing Path kinds (ADR-0019 #86, ADR-0022 P2) — the orchestrator threads a Trip's
-   * whole `allowedPathKinds` set through via `solve()`, unresolved; direct/test callers default
-   * to `DEFAULT_KINDS`. */
+  /** The Path kinds this run wants sourced (ADR-0024 §3) — threaded through from `solve()`
+   * unresolved, for the registry to intersect against each provider's own declared competence;
+   * direct/test callers default to `DEFAULT_KINDS`. */
   kinds: PathKind[] = DEFAULT_KINDS,
   /** Representative departure datetime (ADR-0018), forwarded to the provider's costMatrix call.
    * Undefined for providers/callers that don't model time-of-day. */

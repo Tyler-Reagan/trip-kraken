@@ -13,15 +13,16 @@
  * `getTransitGraph()` singleton; tests supply a small hand-built fixture instead) and every query
  * is a local search over it.
  *
- * Station-snapping + fallback (ADR-0019): a point connects to every stop node within
- * `STATION_SNAP_RADIUS_METERS` via a walk edge (distance ÷ walk speed) — not just the nearest, so
- * the search can still pick whichever entry line is actually shortest. A point with no stop node
- * in range falls back to haversine-as-walking, reported as `UnknownPath` (Basis of cost
- * `straightLine`, ADR-0022): it was computed *as* a walk but never routed *as* one, so it cannot
- * honestly claim `kind: "walking"`. A pair that both snap but turn out disconnected in the graph
- * is a different failure (nationwide rail should be one connected component) and throws rather
- * than silently walking instead — ADR-0017/0018's fail-loud precedent, not a station-snapping
- * fallback case.
+ * Station-snapping + decline (ADR-0019, decline behavior revised by ADR-0024 §4): a point
+ * connects to every stop node within `STATION_SNAP_RADIUS_METERS` via a walk edge (distance ÷ walk
+ * speed) — not just the nearest, so the search can still pick whichever entry line is actually
+ * shortest. A point with no stop node in range **declines** (`null`) rather than fabricating a
+ * straight-line walk — the registry's terminal `haversine` entry is what fills a declined cell now,
+ * so this provider no longer needs its own straight-line fallback (lifting it out is the ADR-0024
+ * §4 change: "the matrix builder deletes the hardcoded version"). A pair that both snap but turn
+ * out disconnected in the graph is a different failure (nationwide rail should be one connected
+ * component) and throws rather than declining — ADR-0017/0018's fail-loud precedent, not a
+ * station-snapping decline case.
  *
  * `describeJourney` returns a single-element `Path[]` (ADR-0022 P1): a real journey may cross
  * several lines/Operators, which should decompose into several single-kind Paths, but
@@ -33,7 +34,7 @@
 
 import { haversineMeters, type Point } from "@/lib/geo";
 import { makeTravelCost, type Path, type PathEndpoint, type TravelCost } from "@/types/path";
-import type { PathProvider } from "@/lib/pathProvider";
+import type { PathProvider, MatrixCell } from "@/lib/pathProvider";
 import type { TransitGraph, StopNode, LineType, SpatialIndex } from "@/lib/transitGraph";
 
 /** Effective speed per line type (ADR-0019's coarse duration model) — one number per type
@@ -57,11 +58,6 @@ export const STATION_SNAP_RADIUS_METERS = 800;
 
 function minutesForMeters(distanceMeters: number, speedKmh: number): number {
   return distanceMeters / 1000 / speedKmh * 60;
-}
-
-function haversineWalkingCost(from: Point, to: Point): TravelCost {
-  const distanceMeters = haversineMeters(from, to);
-  return makeTravelCost(distanceMeters, minutesForMeters(distanceMeters, WALK_SPEED_KMH) * 60, "straightLine");
 }
 
 type RideStep = { kind: "ride"; lineName: string };
@@ -243,12 +239,18 @@ interface JourneyResult {
   lineName?: string;
 }
 
-async function routeJourney(graph: TransitGraph, spatialIndex: SpatialIndex, from: Point, to: Point): Promise<JourneyResult> {
-  if (haversineMeters(from, to) === 0) return { travelCost: makeTravelCost(0, 0, "straightLine") };
+/** `null` is a decline (ADR-0024 §4) — the identity cell and the no-station-in-range case both
+ * decline now rather than fabricating a straight line; the registry's terminal `haversine` entry
+ * fills whatever this provider declines. A pair that both snap but is disconnected in the graph
+ * still throws — see the module doc. */
+async function routeJourney(graph: TransitGraph, spatialIndex: SpatialIndex, from: Point, to: Point): Promise<JourneyResult | null> {
+  // The terminal entry produces the same zero-cost answer for an identical pair, so declining
+  // here is one fewer special case rather than a behavior change at the matrix level.
+  if (haversineMeters(from, to) === 0) return null;
 
   const fromSnaps = snapWithWalkCost(spatialIndex, from);
   const toSnaps = snapWithWalkCost(spatialIndex, to);
-  if (!fromSnaps || !toSnaps) return { travelCost: haversineWalkingCost(from, to) };
+  if (!fromSnaps || !toSnaps) return null;
 
   const adjacency = buildAdjacency(graph);
   const toStopIds = new Set(toSnaps.map((s) => s.stop.id));
@@ -272,7 +274,7 @@ async function routeJourney(graph: TransitGraph, spatialIndex: SpatialIndex, fro
 
   const result = raw.get(best.toStopId)!;
   return {
-    travelCost: makeTravelCost(best.totalDistance, best.totalMinutes * 60, "railNetwork"),
+    travelCost: makeTravelCost(best.totalDistance, best.totalMinutes * 60, "railNetwork", "osm-japan"),
     lineName: joinedLineNameOf(result.steps),
   };
 }
@@ -282,18 +284,21 @@ async function routeJourney(graph: TransitGraph, spatialIndex: SpatialIndex, fro
 export function createOsmTransitProvider(graph: TransitGraph, spatialIndex: SpatialIndex): PathProvider {
   return {
     async costMatrix(points) {
-      const matrix: TravelCost[][] = [];
+      const matrix: MatrixCell[][] = [];
       for (const from of points) {
-        const row: TravelCost[] = [];
+        const row: MatrixCell[] = [];
         for (const to of points) {
-          row.push((await routeJourney(graph, spatialIndex, from, to)).travelCost);
+          const journey = await routeJourney(graph, spatialIndex, from, to);
+          row.push(journey?.travelCost ?? null);
         }
         matrix.push(row);
       }
       return matrix;
     },
-    async describeJourney(from: PathEndpoint, to: PathEndpoint): Promise<Path[]> {
-      const { travelCost, lineName } = await routeJourney(graph, spatialIndex, from, to);
+    async describeJourney(from: PathEndpoint, to: PathEndpoint): Promise<Path[] | null> {
+      const journey = await routeJourney(graph, spatialIndex, from, to);
+      if (!journey) return null;
+      const { travelCost, lineName } = journey;
       if (lineName === undefined) return [{ from, to, travelCost }];
       return [{ kind: "rail", from, to, travelCost, lineName }];
     },
