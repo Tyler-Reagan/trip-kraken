@@ -11,6 +11,7 @@
     "knip:fix": "knip --fix",
     "ingest:transit-graph": "./scripts/ingest-transit-graph.sh",
     "build:osrm-graphs": "./scripts/build-osrm-graphs.sh",
+    "transfer:osrm-graphs": "./scripts/transfer-osrm-graphs.sh",
     "infra:verify": "./scripts/verify-infra.sh"
   },
   "dependencies": {
