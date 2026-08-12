@@ -26,6 +26,7 @@ import {
   setDayLabel,
   importBookingLodging,
   getTripWithDetails,
+  updateTrip,
   LodgingValidationError,
 } from "@/lib/db";
 import {
@@ -74,6 +75,14 @@ assert.equal(trip.startDate, "2026-06-24", "trip carries its required start date
 assert.equal(trip.endDate, "2026-06-26", "trip carries its required end date");
 const A = trip.locations.find((l) => l.name === "A")!.id;
 const B = trip.locations.find((l) => l.name === "B")!.id;
+
+// ── roadProfile (ADR-0024, amended 2026-08-11): defaults to walking, round-trips through
+//    updateTrip, and allowedPathKinds no longer exists on the returned shape at all ──
+assert.equal(trip.roadProfile, "walking", "a Trip created without one defaults to walking");
+assert.equal("allowedPathKinds" in trip, false, "the deleted column has no trace in the returned shape");
+const withDriving = updateTrip(trip.id, { roadProfile: "driving" });
+assert.equal(withDriving.roadProfile, "driving", "updateTrip round-trips roadProfile");
+assert.equal(getTripWithDetails(trip.id)!.roadProfile, "driving", "the change persists across a fresh read");
 
 // ── Default kind: imported places are activities until a constraint elevates them (ADR-0015 §1) ──
 assert.ok(trip.locations.every(isActivity), "imported places default to kind=activity");

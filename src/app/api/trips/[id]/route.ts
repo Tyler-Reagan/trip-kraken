@@ -17,13 +17,14 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const body = await req.json();
-  const { name, startDate, endDate, dayLabels, transitCaveatDismissed } = body;
+  const { name, startDate, endDate, dayLabels, roadProfile, transitCaveatDismissed } = body;
 
   const trip = updateTrip(id, {
     ...(name !== undefined ? { name } : {}),
     ...(startDate !== undefined ? { startDate } : {}),
     ...(endDate !== undefined ? { endDate } : {}),
     ...(dayLabels !== undefined ? { dayLabels } : {}),
+    ...(roadProfile !== undefined ? { roadProfile } : {}),
     ...(transitCaveatDismissed !== undefined ? { transitCaveatDismissed } : {}),
   });
   return NextResponse.json(trip);

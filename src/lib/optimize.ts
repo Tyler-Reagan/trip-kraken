@@ -64,11 +64,9 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
     typeof opts.dayBudgetHours === "number" && opts.dayBudgetHours > 0 ? opts.dayBudgetHours * 60 : undefined;
 
   // The kinds this run sources cells for (ADR-0024 §3): rail and bus are always in play, and
-  // exactly one road kind. "walking" is hardcoded pending PR 3b, which replaces it with
-  // `trip.roadProfile` — the traveler-facing selector CONTEXT.md's "kind (Path)" entry licenses
-  // ("the term returns only if a traveler-facing selector does"). This is the entire coupling
-  // between PR 3a and PR 3b: one line.
-  const kinds: PathKind[] = ["rail", "bus", "walking"];
+  // exactly one road kind — the Trip's own traveler-facing selector (CONTEXT.md's "kind (Path)"
+  // entry: "the term returns only if a traveler-facing selector does").
+  const kinds: PathKind[] = ["rail", "bus", trip.roadProfile];
   const provider = composedPathProvider;
 
   const itinerary = await solve({

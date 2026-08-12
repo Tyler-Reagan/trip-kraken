@@ -3,10 +3,17 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
+import type { RoadProfile } from "@/types/path";
+
+const ROAD_PROFILES: { id: RoadProfile; label: string }[] = [
+  { id: "walking", label: "Walking" },
+  { id: "driving", label: "Driving" },
+];
 
 export default function OptimizeModal() {
   const trip = useTripStore((s) => s.trip);
   const setShowOptimize = useTripStore((s) => s.setShowOptimize);
+  const setRoadProfile = useTripStore((s) => s.setRoadProfile);
   const optimize = useTripStore((s) => s.optimize);
   const [dayBudgetHours, setDayBudgetHours] = useState<number>(8);
   const [loading, setLoading] = useState(false);
@@ -59,6 +66,31 @@ export default function OptimizeModal() {
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-ink">Getting around</label>
+            <div className="flex rounded-lg border border-line border-line-strong overflow-hidden w-fit">
+              {ROAD_PROFILES.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setRoadProfile(p.id)}
+                  disabled={loading}
+                  className={`px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50
+                    ${trip.roadProfile === p.id
+                      ? "bg-brand-600 dark:bg-brand-500 text-white"
+                      : "bg-surface text-sub hover:bg-surface-2"
+                    }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-faint">
+              How road legs are routed. Trains and buses are unaffected — this only decides walking vs. driving between stops.
+              Changeable any time; takes effect on the next optimize.
+            </p>
+          </div>
+
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium text-ink">
