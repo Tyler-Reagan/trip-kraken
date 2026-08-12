@@ -1,46 +1,59 @@
 /**
- * Provider-selection registry (ADR-0019, issue #86; `kinds` per ADR-0022 P2) — the piece that
- * actually turns on the OSM-Japan provider (issue #85) for a real optimize run. An ordered list of
- * `PathProvider`s, each carrying an `appliesTo(points, kinds)` predicate; the first entry whose
- * predicate matches wins. Precedence: OSM-Japan (Japan + rail willing) → Google (global default,
- * when an API key is present) → haversine (the floor, always applies) — mirrors
- * `discovery.ts`'s existing provider-list + `applies`/region-gating pattern.
+ * The provider registry (ADR-0024) — capability-dispatched, not selected. Each entry declares a
+ * static `kinds` array (its competence, ADR-0024 §3) and an `isAvailable(points)` gate (region and
+ * configuration only, never `kinds` — that distinction is the point of the ADR). `buildTravelMatrix`
+ * composes a full matrix cell-by-cell in this preference order via `composeTravelMatrix`
+ * (`travelMatrix.ts`); `composedPathProvider` wraps that as a `PathProvider` so
+ * `solve()`/`optimize.ts`/`buildDistanceLookup` keep their existing seam untouched. PR 4
+ * (ADR-0023 §9) deletes the adapter, `buildDistanceLookup`, and `DistanceLookup` together and
+ * calls `buildTravelMatrix` directly from the VROOM request builder.
  *
- * `kinds` is the Trip's whole willingness *set*, unresolved — `appliesTo` tests intersection, not
- * equality, so a Trip willing to use rail among other kinds still lets OSM-Japan apply even though
- * rail isn't its only allowed kind. Collapsing the set to one query mode is each selected
- * provider's own concern (`googleRoutesProvider.ts`), not the registry's.
+ * Four rows, in this order (ADR-0024 §4, amended 2026-08-10 — hosted OpenRouteService was
+ * designed in as a fifth row, between `osrm` and `haversine`, and dropped; there is nothing
+ * between them now, and road coverage grows by widening the Extract, not by adding a weaker
+ * provider underneath):
  *
- * Selection is by applicability, not try-and-fallback (ADR-0018 §4): once a provider is selected,
- * its errors propagate — a missing `db/transit-japan.db` throws loudly (`transitGraphStore.ts`)
- * rather than silently falling through to Google/haversine. Region is checked against a single
- * representative point (`points[0]`), never an all-points scan — an itinerary is single-region by
- * domain invariant (a Trip spanning Japan and Paris is modeled as two Trips).
+ * | # | id         | kinds             | gate                                               |
+ * |---|------------|-------------------|-----------------------------------------------------|
+ * | 1 | osm-japan  | rail              | in Japan; graph file present                       |
+ * | 2 | osrm       | walking, driving  | OSRM URLs configured (per-cell decline is internal) |
+ * | 3 | google     | bus               | API key configured                                 |
+ * | 4 | haversine  | all, terminal     | always                                             |
  *
- * Called once per optimize run, from the orchestrator (`optimize.ts`), and the result is passed
- * into `solve()`, which keeps its existing optional `provider` param and stays provider-agnostic —
- * `solve()` itself never imports this registry.
+ * **Deliberate posture flip from ADR-0018 §4.** Previously a missing `db/transit-japan.db` threw
+ * loudly the moment OSM-Japan was selected — "selection is by applicability, not
+ * try-and-fallback." Under this table, graph-file presence is one clause of an *entry gate*:
+ * missing it now means `osm-japan` silently declines to participate, the same as any other
+ * unavailable entry, and the cell falls to `osrm`/`haversine`. This is intentional, not a
+ * regression — `travelCostRegistry.test.ts` asserts the new behaviour explicitly, with a comment
+ * naming it as a reversal, so a future reader doesn't "fix" it back.
+ *
+ * `isAvailable` examines only `points[0]`, never an all-points scan — an itinerary is
+ * single-region by domain invariant (a Trip spanning Japan and Paris is modeled as two Trips).
  */
 
+import fs from "node:fs";
 import { haversineProvider, type PathProvider } from "@/lib/pathProvider";
-import type { PathKind } from "@/types/path";
 import type { Point } from "@/lib/geo";
+import { ALL_PATH_KINDS, type ProviderId, type TravelCost } from "@/types/path";
 import { googleRoutesProvider } from "@/lib/googleRoutesProvider";
 import { createOsmTransitProvider } from "@/lib/osmTransitProvider";
-import { getTransitGraph } from "@/lib/transitGraphStore";
+import { getTransitGraph, DEFAULT_GRAPH_PATH } from "@/lib/transitGraphStore";
 import { inJapan } from "@/lib/discovery";
+import { osrmProvider } from "@/lib/osrmProvider";
+import { composeTravelMatrix, type MatrixEntry, type TravelMatrixRequest } from "@/lib/travelMatrix";
 
-interface RegistryEntry {
-  id: string;
+interface RegistryEntry extends Omit<MatrixEntry, "provider"> {
+  /** The full `PathProvider`, not `MatrixEntry`'s `Pick<PathProvider, "costMatrix">` — narration
+   * dispatch (`composedPathProvider.describeJourney` below) needs `describeJourney` too. */
   provider: PathProvider;
-  /** `points` is the full point set for signature symmetry with `selectPathProvider`, but
-   * only `points[0]` (the representative point) is ever examined — see the module doc. */
-  appliesTo(points: Point[], kinds: PathKind[]): boolean;
+  /** Region + configuration only — everything that is *not* a kind (ADR-0024 §3). */
+  isAvailable(points: Point[]): boolean;
 }
 
-// Bound lazily to the real ingested graph singleton (`getTransitGraph()`) — resolved per call, not
-// at module load or at `appliesTo` time, so a missing graph file's loud error surfaces only when
-// this provider is actually queried, never merely by importing the registry.
+// Bound lazily to the real ingested graph singleton — resolved per call, not at module load or at
+// `isAvailable` time, so this provider's own errors (a present-but-corrupt graph file, say) still
+// surface only when it is actually queried, never merely by importing the registry.
 const osmJapanProvider: PathProvider = {
   async costMatrix(points, kinds, opts) {
     const { graph, spatialIndex } = getTransitGraph();
@@ -52,38 +65,80 @@ const osmJapanProvider: PathProvider = {
   },
 };
 
-const REGISTRY: readonly RegistryEntry[] = [
+/** Exported for `travelCostRegistry.test.ts` to assert order, `kinds`, and gate behaviour
+ * directly against a literal — so the table in this module's doc comment and the table in the
+ * ADR can't silently drift from what the code actually does. Not meant as a general-purpose
+ * export: production code goes through `buildTravelMatrix`/`composedPathProvider` below. */
+export const REGISTRY: readonly RegistryEntry[] = [
   {
     id: "osm-japan",
     provider: osmJapanProvider,
-    appliesTo: (points, kinds) => kinds.includes("rail") && points.length > 0 && inJapan(points[0].lat, points[0].lng),
+    kinds: ["rail"],
+    isAvailable: (points) =>
+      points.length > 0 && inJapan(points[0].lat, points[0].lng) && fs.existsSync(DEFAULT_GRAPH_PATH),
+  },
+  {
+    id: "osrm",
+    provider: osrmProvider,
+    kinds: ["walking", "driving"],
+    // Region availability (inside the built Extract or not) is a per-cell concern handled inside
+    // osrmProvider via snap-distance decline, not an isAvailable gate — the same reason osm-japan
+    // above only gates on graph presence, not on whether any particular point is near a station.
+    isAvailable: () => !!process.env.OSRM_FOOT_URL && !!process.env.OSRM_CAR_URL,
   },
   {
     id: "google",
     provider: googleRoutesProvider,
-    // Global default whenever the API key is configured (ADR-0019) — Google covers drive/walk/bike
-    // routing everywhere, not just transit, so this doesn't gate on `kinds`.
-    appliesTo: () => !!process.env.GOOGLE_MAPS_API_KEY,
+    kinds: ["bus"],
+    isAvailable: () => !!process.env.GOOGLE_MAPS_API_KEY,
   },
   {
     id: "haversine",
     provider: haversineProvider,
-    appliesTo: () => true,
+    kinds: ALL_PATH_KINDS,
+    terminal: true,
+    isAvailable: () => true,
   },
 ];
 
-/** Looks up a registry entry's provider instance by id — lets tests assert *which* provider
- * `selectPathProvider` returned (e.g. confirming OSM-Japan precedence over Google) without
- * the registry needing to expose its internal entries directly. */
-export function getPathProviderById(id: string): PathProvider | undefined {
-  return REGISTRY.find((e) => e.id === id)?.provider;
+/** The registry, filtered to entries available for this request's representative point, in
+ * preference order — the set both `buildTravelMatrix` and narration dispatch actually walk. */
+function availableEntries(points: Point[]): RegistryEntry[] {
+  return REGISTRY.filter((e) => e.isAvailable(points));
 }
 
-/** Picks the first applicable provider for this optimize run's representative point + willing
- * kinds. `REGISTRY`'s last entry (haversine) always applies, so this never falls through to the
- * `?? ` default in practice — it's there only to satisfy TypeScript's control-flow analysis over
- * `Array.prototype.find`, not a real runtime fallback path. */
-export function selectPathProvider(points: Point[], kinds: PathKind[]): PathProvider {
-  const entry = REGISTRY.find((e) => e.appliesTo(points, kinds));
-  return (entry ?? REGISTRY[REGISTRY.length - 1]).provider;
+/** Composes a full travel-cost matrix over the real four-row registry (ADR-0024 §4). Thin over
+ * `composeTravelMatrix` — this function's only job is binding the registry's entries and
+ * availability gates to that pure composer. */
+export async function buildTravelMatrix(points: Point[], request: TravelMatrixRequest): Promise<TravelCost[][]> {
+  return composeTravelMatrix(availableEntries(points), points, request);
 }
+
+/**
+ * The registry as a `PathProvider` (ADR-0024's shift from lookup to composition pipeline), so
+ * `solve()`/`optimizer.ts`/`buildDistanceLookup` keep their existing seam untouched. PR 4 deletes
+ * this adapter and calls `buildTravelMatrix` directly from the VROOM request builder.
+ */
+export const composedPathProvider: PathProvider = {
+  async costMatrix(points, kinds, opts) {
+    // A composed matrix is filled by construction (composeTravelMatrix throws otherwise), so
+    // `TravelCost[][]` is always a valid `MatrixCell[][]` here — never actually a decline.
+    return buildTravelMatrix(points, { kinds, departureTime: opts?.departureTime });
+  },
+  /**
+   * Narration dispatch (ADR-0024 §6): the first available entry whose declared kinds intersect
+   * the request answers the *whole* journey. Per-Path multi-provider chaining within one journey
+   * (walk to a station via OSRM, ride via OSM-Japan, walk again) is deferred — it needs
+   * `osmTransitProvider` to expose its snapped station endpoints, which it does not yet.
+   */
+  async describeJourney(from, to, kinds, opts) {
+    for (const entry of availableEntries([from])) {
+      const kindsForEntry = entry.kinds.filter((k) => kinds.includes(k));
+      if (kindsForEntry.length === 0) continue;
+      const result = await entry.provider.describeJourney(from, to, kindsForEntry, opts);
+      if (result) return result;
+    }
+    // Unreachable in practice: haversine is terminal, always available, and never declines.
+    throw new Error("composedPathProvider.describeJourney: no provider answered this journey");
+  },
+};

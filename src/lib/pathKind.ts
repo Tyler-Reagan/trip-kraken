@@ -7,11 +7,13 @@
  * in `better-sqlite3` via `transitGraphStore.ts`'s `getTransitGraph()`, neither of which this
  * module has any part of).
  *
- * `allowedPathKinds` is a **willingness set** (ADR-0022, revised), not a constraint — the
- * optimizer threads the whole set through to the selected provider, which decides for itself how
- * to spend it (`travelCostRegistry.ts`'s `appliesTo`, `googleRoutesProvider.ts`'s one-mode-per-
- * request collapse). `resolvePrimaryPathKind` exists only for the narrower callers below that
- * genuinely need one representative kind, not a replacement for threading the set itself.
+ * `allowedPathKinds`'s "willingness set" reading is gone (ADR-0024 §3): a Trip's kinds are now a
+ * static declaration of what's being sourced, composed cell-by-cell across every provider whose
+ * declared competence intersects it (`travelCostRegistry.ts`'s `buildTravelMatrix`), not handed
+ * whole to one selected provider. `resolvePrimaryPathKind` survives for the narrower callers below
+ * that genuinely need one representative kind — `googleRoutesProvider.ts`'s one-mode-per-request
+ * collapse now reduces a set the registry has already narrowed to `["bus"]`, so in practice it's a
+ * one-element reduction, not a real choice among several.
  */
 
 import type { PathKind } from "@/types/path";

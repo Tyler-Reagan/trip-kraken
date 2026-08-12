@@ -97,6 +97,15 @@ wasn't. A taxonomy, so it earns a term; the cost figures it accompanies are plai
 and do not (ADR-0022).
 _Avoid_: basis, fallback, degraded
 
+**Answered by**:
+Which registry entry produced a travel cost — `osm-japan` · `osrm` · `google` · `haversine`
+(ADR-0024 §4/§5). Orthogonal to Basis of cost: `osrm` and `google` both produce
+`routingService`, so Basis of cost alone cannot say which one answered a given cell.
+Load-bearing beyond diagnostics — a cost Answered by `google` must never be persisted
+(Google ToS §3.2.3(a), issue #158); that rule is checkable because the field is already
+there, not something a future cache has to remember on its own.
+_Avoid_: source, origin, provenance
+
 **Anchor (derived)**:
 A Location that bookends a Day, *projected* from a constraint-field — the lodging you sleep
 at, the transit you enter or exit by. Computed every read, never stored.
@@ -172,5 +181,8 @@ one sub-region or several merged together for road. Which regions and which snap
 independent choices, and conflating them is what "the pinned URL" used to do. The regions a
 road Extract covers are the boundary of where road costs can be routed at all: outside it
 the provider declines and the cost is `straightLine`, so widening coverage means widening
-the Extract, never adding a weaker provider beneath the one that declined (ADR-0024).
+the Extract, never adding a weaker provider beneath the one that declined (ADR-0024). Rail
+and road coverage are independent — a Location outside the road Extract but near a station
+still routes by rail, so a Trip may be rail-covered and road-uncovered at once; only a
+Location neither provider can answer for is a coverage gap worth surfacing.
 _Avoid_: region file, the pbf

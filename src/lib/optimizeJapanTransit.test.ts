@@ -107,7 +107,10 @@ for (let i = 0; i < stopIds.length - 1; i++) {
   const from = byId.get(stopIds[i])!;
   const to = byId.get(stopIds[i + 1])!;
   const journey = await provider.describeJourney(from, to, ["rail"]);
-  if (journey[0].kind === "rail") {
+  // A decline (ADR-0024 §4) is a legitimate outcome for a pair with no station in range — this
+  // loop is looking for at least one real rail Path among the consecutive stops, not asserting
+  // every pair routes.
+  if (journey?.[0].kind === "rail") {
     sawRealTransitPath = true;
     assert.equal(journey[0].travelCost.basisOfCost, "railNetwork", "a real transit Path is routed, not estimated");
   }

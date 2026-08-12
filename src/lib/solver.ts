@@ -53,9 +53,11 @@ export interface OptimizationProblem {
    * departure datetime, fetched once per optimize run for time-of-day-dependent providers.
    * Undefined skips time-of-day entirely (providers that ignore it, like haversine, don't need it). */
   startDate?: IsoDate;
-  /** The willing Path kinds for this optimize run (ADR-0019 #86, ADR-0022 P2) — the orchestrator
-   * passes a Trip's whole `allowedPathKinds` set through, unresolved. Defaults to `DEFAULT_KINDS`
-   * for callers (tests, direct use) that don't need per-Trip resolution. */
+  /** The Path kinds this run wants sourced (ADR-0024 §3) — a static declaration of what's being
+   * asked for, not a traveler's willingness set (that concept is deleted). The registry
+   * (`travelCostRegistry.ts`) intersects this against each provider's own declared `kinds` before
+   * calling it. Defaults to `DEFAULT_KINDS` for callers (tests, direct use) that don't need
+   * per-Trip resolution. */
   kinds?: PathKind[];
 }
 

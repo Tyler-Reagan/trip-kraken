@@ -388,6 +388,56 @@ discovery corridor is unrelated to this ADR.
 > `CONTEXT.md`'s **Extract** entry is widened accordingly: a road Extract is one sub-region *or
 > several merged*, and which regions ship is a product decision rather than an infrastructure default.
 
+> ### Amended 2026-08-11 — PR 3's composition pipeline settles the questions this ADR left open
+>
+> §4's table becomes real code in this PR: `osrmProvider`, `buildTravelMatrix`
+> (`composeTravelMatrix` in `travelMatrix.ts`), and the registry rewrite in
+> `travelCostRegistry.ts`. Four things were decided while building it, none of them free choices
+> among equals.
+>
+> **Which profile answers a walking-or-driving cell, resolved as a traveler-facing selector.**
+> The open question from the 2026-08-09 amendment — walking or driving by default — is answered by
+> a Trip-level `roadProfile` preference, decided prior to optimization and changeable after
+> (`CONTEXT.md`'s **kind (Path)** entry: "The term returns only if a traveler-facing selector
+> does" — this is that selector, and it is deliberately narrower than the deleted
+> `allowedPathKinds`: it never gates `osm-japan` or `google`, only which OSRM profile answers a
+> *road* cell). Landing the schema/UI slice is PR 3b; PR 3a hardcodes `"walking"` in `optimize.ts`
+> with a comment naming the one line PR 3b replaces.
+>
+> **`fallback_speed` is rejected in favor of decline.** §2 names OSRM's `fallback_speed` /
+> `fallback_speed_cells` as part of the argument for materializing the matrix ourselves — a
+> per-cell straight-line estimate when a pair can't be routed. `osrmProvider` does not send it.
+> Doing so would put two disagreeing straight-line speed models inside one matrix (OSRM's
+> `fallback_speed` parameter and `haversineProvider`'s 20 km/h, ADR-0004). Declining the cell
+> instead and letting the registry's terminal `haversine` entry fill it keeps exactly one
+> straight-line model in play and satisfies §2's actual argument identically — one unroutable pair
+> degrades one cell rather than failing the whole request.
+>
+> **Out-of-Extract detection is the `table`/`route` response's own snap distance, not
+> `radiuses`.** The 2026-08-10 amendment named `radiuses` as one option for the required
+> out-of-Extract bounds check. Verified live against the running containers (2026-08-11): a
+> coordinate outside the loaded graph does not error — `code: "Ok"` came back for a point 585 km
+> from the nearest matching Kanto extract, snapped to a way in Nagano, with no signal anything was
+> wrong. `radiuses` fails the *entire* request with `NoSegment` when any one point falls outside
+> it, which would take down a whole matrix over one bad Location. Every `table`/`route` response
+> already carries each point's snap `distance` in its `Waypoint` objects
+> (`sources[]`/`destinations[]` for `table`, `waypoints[]` for `route`) — at zero extra requests,
+> and per-endpoint, so a threshold on it declines exactly the affected cells. Legitimate in-Extract
+> points snapped under ~35 m in the same session's checks; `ROAD_SNAP_MAX_METERS = 1000` is set
+> from that margin. `foot` and `car` were also confirmed to snap differently for the same
+> coordinate (1.6 m vs. 32.3 m in one check), confirming coverage genuinely has to be asked
+> per profile, not once for the Extract as a whole.
+>
+> **The missing-graph-file posture flips, and this is a deliberate reversal, not a regression.**
+> §4 originally inherited ADR-0018 §4's "selection is by applicability, not try-and-fallback" — a
+> missing `db/transit-japan.db` was meant to throw loudly the moment OSM-Japan was selected.
+> Capability dispatch has no single "selection" moment to hang that on: graph presence becomes one
+> clause of `osm-japan`'s `isAvailable` gate, alongside region. A missing graph file now means the
+> entry silently declines to participate, exactly like being outside Japan or `OSRM_FOOT_URL` being
+> unset, and the cell falls through to `osrm`/`haversine`. `travelCostRegistry.test.ts` asserts
+> this explicitly, with a comment naming it as the reversal it is, so a future reader doesn't
+> restore the old throw believing it to be a bug fix.
+
 ## Alternatives considered
 
 - **Let VROOM query OSRM directly**, as `vroom-express`'s stock configuration expects and as the VROOM

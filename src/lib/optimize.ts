@@ -9,9 +9,8 @@
 import { getTripWithDetails, setPlacements } from "@/lib/db";
 import { solve, type FeasibilityViolation } from "@/lib/solver";
 import type { LocationInput, StayPlan, Unplaced } from "@/lib/optimizer";
-import { hasValidCoords } from "@/lib/geo";
-import { selectPathProvider } from "@/lib/travelCostRegistry";
-import { DEFAULT_ALLOWED_PATH_KINDS } from "@/lib/pathKind";
+import { composedPathProvider } from "@/lib/travelCostRegistry";
+import type { PathKind } from "@/types/path";
 import { isActivity, isLodging, dayNumberOf, addDaysIso, numDaysOf, type Location, type TripWithDetails } from "@/types";
 
 export type OptimizeOptions = {
@@ -64,14 +63,13 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
   const dayBudgetMinutes =
     typeof opts.dayBudgetHours === "number" && opts.dayBudgetHours > 0 ? opts.dayBudgetHours * 60 : undefined;
 
-  // Select the applicable provider once, up front (ADR-0019 #86), from the Trip's whole
-  // allowed-kinds *set* — unresolved (ADR-0022, revised): willingness is not a constraint, so
-  // solve() and the provider it's given both receive the set, not one collapsed mode. The
-  // representative point is whichever input location has real coordinates first; an itinerary is
-  // single-region by domain invariant, so no all-points scan is needed (ADR-0019).
-  const kinds = trip.allowedPathKinds && trip.allowedPathKinds.length > 0 ? trip.allowedPathKinds : DEFAULT_ALLOWED_PATH_KINDS;
-  const representativePoints = inputLocations.filter(hasValidCoords);
-  const provider = selectPathProvider(representativePoints, kinds);
+  // The kinds this run sources cells for (ADR-0024 §3): rail and bus are always in play, and
+  // exactly one road kind. "walking" is hardcoded pending PR 3b, which replaces it with
+  // `trip.roadProfile` — the traveler-facing selector CONTEXT.md's "kind (Path)" entry licenses
+  // ("the term returns only if a traveler-facing selector does"). This is the entire coupling
+  // between PR 3a and PR 3b: one line.
+  const kinds: PathKind[] = ["rail", "bus", "walking"];
+  const provider = composedPathProvider;
 
   const itinerary = await solve({
     locations: inputLocations,

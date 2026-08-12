@@ -1,21 +1,18 @@
 /**
- * Provider-selection registry tests (issue #86, Seam 4; `kinds` per ADR-0022 P2). Standalone (no
- * test runner): run with `tsx src/lib/travelCostRegistry.test.ts`. Direct assertions on the pure
- * `selectPathProvider` function — precedence, region/kind gating (by set intersection, not
- * equality), and the "errors propagate, no fallthrough" contract — per issue #81's Seam 4 spec:
- * "Japan + rail-willing → OSM-Japan; non-Japan → Google; no key → haversine; precedence order; a
- * selected provider that throws propagates (no fallthrough)."
+ * Provider registry tests (ADR-0024) — capability dispatch, not selection. Standalone (no test
+ * runner): run with `tsx src/lib/travelCostRegistry.test.ts`. Direct assertions on `REGISTRY`'s
+ * shape (order, `kinds`, `terminal`), each entry's `isAvailable` gate in isolation (no network),
+ * one end-to-end `buildTravelMatrix` call proving the whole pipeline wires together, and
+ * `isPersistable` (`types/path.ts`) since #158's rule is only as good as this test keeping it
+ * honest.
  */
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { haversineProvider } from "./pathProvider";
-import { googleRoutesProvider } from "./googleRoutesProvider";
-import { selectPathProvider, getPathProviderById } from "./travelCostRegistry";
+import { REGISTRY, buildTravelMatrix } from "./travelCostRegistry";
 import { DEFAULT_GRAPH_PATH } from "./transitGraphStore";
+import { isPersistable, makeTravelCost, type ProviderId } from "@/types/path";
 
-// tsx compiles this file to CJS (no "type": "module" in package.json), which doesn't support
-// top-level await — same wrapper as optimizer.test.ts, with an explicit exit-1 on failure.
 main().catch((err) => {
   console.error(err);
   process.exit(1);
@@ -26,74 +23,128 @@ async function main() {
 const TOKYO = { lat: 35.6812, lng: 139.7671 };
 const PARIS = { lat: 48.8566, lng: 2.3522 };
 
-const originalKey = process.env.GOOGLE_MAPS_API_KEY;
-function withApiKey<T>(value: string | undefined, fn: () => T): T {
-  if (value === undefined) delete process.env.GOOGLE_MAPS_API_KEY;
-  else process.env.GOOGLE_MAPS_API_KEY = value;
+// Async-aware and always awaited at call sites: a sync try/finally around an async `fn` would
+// restore env vars before `fn`'s awaited work actually finishes, which is exactly the bug the
+// end-to-end test below would otherwise have (it awaits buildTravelMatrix inside `fn`).
+async function withEnv<T>(vars: Record<string, string | undefined>, fn: () => T | Promise<T>): Promise<T> {
+  const originals = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  for (const [k, v] of Object.entries(vars)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
   try {
-    return fn();
+    return await fn();
   } finally {
-    if (originalKey === undefined) delete process.env.GOOGLE_MAPS_API_KEY;
-    else process.env.GOOGLE_MAPS_API_KEY = originalKey;
+    for (const [k, v] of Object.entries(originals)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
   }
 }
 
-// ── Japan + rail-willing selects OSM-Japan ──
-withApiKey("test-key", () => {
-  const provider = selectPathProvider([TOKYO], ["rail"]);
-  assert.equal(provider, getPathProviderById("osm-japan"), "Japan + rail-willing selects the OSM-Japan provider");
-});
-
-// ── Non-Japan selects Google when a key is present ──
-withApiKey("test-key", () => {
-  const provider = selectPathProvider([PARIS], ["rail"]);
-  assert.equal(provider, googleRoutesProvider, "non-Japan selects Google when an API key is present");
-});
-
-// ── Japan but no rail willingness does not select the rail-only OSM-Japan provider ──
-withApiKey("test-key", () => {
-  const provider = selectPathProvider([TOKYO], ["driving"]);
-  assert.equal(provider, googleRoutesProvider, "Japan + driving-only falls through to Google, not OSM-Japan");
-});
-
-// ── appliesTo tests set intersection, not equality: a set that includes rail alongside other
-//    kinds still selects OSM-Japan (ADR-0022, revised — willingness, not a constraint) ──
-withApiKey("test-key", () => {
-  const provider = selectPathProvider([TOKYO], ["driving", "rail", "walking"]);
-  assert.equal(provider, getPathProviderById("osm-japan"), "rail anywhere in the willing set is enough, not the only kind");
-});
-
-// ── No API key at all falls to haversine, the always-applicable floor ──
-withApiKey(undefined, () => {
-  const provider = selectPathProvider([PARIS], ["rail"]);
-  assert.equal(provider, haversineProvider, "no API key falls back to the haversine floor");
-});
-
-// ── Precedence: OSM-Japan beats Google even when a key is present for the same query ──
-withApiKey("test-key", () => {
-  const provider = selectPathProvider([TOKYO], ["rail"]);
-  assert.notEqual(provider, googleRoutesProvider, "OSM-Japan takes precedence over Google for Japan + rail-willing");
-});
-
-// ── A selected provider's errors propagate — no silent fallthrough to haversine/Google ──
-// Forces the "not ingested" case regardless of whether this dev environment has a real graph
-// file (issue #88's manual eval ingested one): temporarily hides it, mirroring
-// transitGraphStore.test.ts's own backup/restore pattern around its singleton test — this must
-// never clobber a real ingested graph. Safe to do here: nothing earlier in this file calls
-// costMatrix/describeJourney on the OSM-Japan provider, so getTransitGraph()'s cache is never
-// populated before this point in this process.
-const hadRealGraph = fs.existsSync(DEFAULT_GRAPH_PATH);
-const backupPath = `${DEFAULT_GRAPH_PATH}.bak-${Date.now()}`;
-if (hadRealGraph) fs.renameSync(DEFAULT_GRAPH_PATH, backupPath);
-try {
-  await assert.rejects(
-    () => selectPathProvider([TOKYO], ["rail"]).costMatrix([TOKYO], ["rail"]),
-    /transit graph not ingested/,
-    "a selected provider's error propagates instead of falling through to a lower-precedence provider"
-  );
-} finally {
-  if (hadRealGraph) fs.renameSync(backupPath, DEFAULT_GRAPH_PATH);
+function entry(id: ProviderId) {
+  const e = REGISTRY.find((e) => e.id === id);
+  assert.ok(e, `registry has a "${id}" entry`);
+  return e!;
 }
+
+// ── The table (ADR-0024 §4, amended 2026-08-10): four rows, this order, these kinds ──
+// A literal, so re-ordering or re-declaring a row's competence is a visible diff here, not just
+// in the module doc or the ADR.
+assert.deepEqual(
+  REGISTRY.map((e) => ({ id: e.id, kinds: [...e.kinds], terminal: e.terminal ?? false })),
+  [
+    { id: "osm-japan", kinds: ["rail"], terminal: false },
+    { id: "osrm", kinds: ["walking", "driving"], terminal: false },
+    { id: "google", kinds: ["bus"], terminal: false },
+    { id: "haversine", kinds: ["rail", "bus", "walking", "driving", "bicycle", "other"], terminal: true },
+  ],
+  "registry order and declared competence match ADR-0024 §4 exactly"
+);
+
+// ── osm-japan's gate: region AND graph presence, both required ──
+assert.equal(entry("osm-japan").isAvailable([PARIS]), false, "declines outside Japan regardless of graph presence");
+{
+  const hadRealGraph = fs.existsSync(DEFAULT_GRAPH_PATH);
+  const backupPath = `${DEFAULT_GRAPH_PATH}.bak-${Date.now()}`;
+  if (hadRealGraph) fs.renameSync(DEFAULT_GRAPH_PATH, backupPath);
+  try {
+    assert.equal(entry("osm-japan").isAvailable([TOKYO]), false, "declines in Japan with no graph file");
+  } finally {
+    if (hadRealGraph) fs.renameSync(backupPath, DEFAULT_GRAPH_PATH);
+  }
+  if (hadRealGraph) {
+    assert.equal(entry("osm-japan").isAvailable([TOKYO]), true, "available in Japan once the graph file is back");
+  }
+}
+
+// ── osrm's gate: both URLs, not either ──
+await withEnv({ OSRM_FOOT_URL: undefined, OSRM_CAR_URL: undefined }, () => {
+  assert.equal(entry("osrm").isAvailable([TOKYO]), false, "unavailable with neither URL set");
+});
+await withEnv({ OSRM_FOOT_URL: "http://localhost:5002", OSRM_CAR_URL: undefined }, () => {
+  assert.equal(entry("osrm").isAvailable([TOKYO]), false, "unavailable with only the foot URL set");
+});
+await withEnv({ OSRM_FOOT_URL: "http://localhost:5002", OSRM_CAR_URL: "http://localhost:5010" }, () => {
+  assert.equal(entry("osrm").isAvailable([TOKYO]), true, "available once both URLs are set");
+});
+
+// ── google's gate: the API key, region-independent ──
+await withEnv({ GOOGLE_MAPS_API_KEY: undefined }, () => {
+  assert.equal(entry("google").isAvailable([TOKYO]), false, "unavailable with no key");
+});
+await withEnv({ GOOGLE_MAPS_API_KEY: "test-key" }, () => {
+  assert.equal(entry("google").isAvailable([PARIS]), true, "available anywhere once a key is set — not Japan-gated");
+});
+
+// ── haversine: always ──
+assert.equal(entry("haversine").isAvailable([PARIS]), true);
+assert.equal(entry("haversine").terminal, true, "exactly one entry is marked terminal");
+
+// ── Deliberate posture flip from ADR-0018 §4 (ADR-0024, amended 2026-08-11): a missing graph
+//    file used to throw the moment OSM-Japan was selected — "selection is by applicability, not
+//    try-and-fallback." Under capability dispatch, graph presence is one clause of an entry gate:
+//    missing it now means osm-japan silently declines and the cell falls through, the same as any
+//    other unavailable entry. This is the new contract, asserted explicitly so nobody "fixes" it
+//    back to a throw believing this to be a regression. ──
+{
+  const hadRealGraph = fs.existsSync(DEFAULT_GRAPH_PATH);
+  const backupPath = `${DEFAULT_GRAPH_PATH}.bak-${Date.now()}`;
+  if (hadRealGraph) fs.renameSync(DEFAULT_GRAPH_PATH, backupPath);
+  try {
+    // kinds: ["rail"] only — osrm doesn't declare rail and google isn't queried for it, so this
+    // never touches the network; only osm-japan (declines) and haversine (terminal) are in play.
+    const matrix = await buildTravelMatrix([TOKYO, TOKYO], { kinds: ["rail"] });
+    assert.equal(matrix[0][1].answeredBy, "haversine", "falls through to haversine instead of throwing");
+  } finally {
+    if (hadRealGraph) fs.renameSync(backupPath, DEFAULT_GRAPH_PATH);
+  }
+}
+
+// ── End to end, no gates available: every cell in the composed matrix is haversine, none null ──
+// Paris keeps osm-japan out on region alone regardless of graph presence; no env var is set for
+// osrm or google, so this exercises the real four-row walk with no network calls at all.
+await withEnv({ OSRM_FOOT_URL: undefined, OSRM_CAR_URL: undefined, GOOGLE_MAPS_API_KEY: undefined }, async () => {
+  const points = [PARIS, { lat: 48.86, lng: 2.29 }];
+  const matrix = await buildTravelMatrix(points, { kinds: ["rail", "bus", "walking", "driving"] });
+  assert.equal(matrix.length, 2);
+  for (const row of matrix) {
+    for (const cell of row) {
+      assert.equal(cell.answeredBy, "haversine");
+      assert.equal(cell.basisOfCost, "straightLine");
+    }
+  }
+});
+
+// ── isPersistable (types/path.ts): the #158 gate. Google Maps Platform ToS §3.2.3(a) names
+//    "distance matrix results" under its no-pre-fetch/no-caching clause; the Routes API's caching
+//    exception (§19.3) covers lat/lng only, not durations or distances. Anything answeredBy
+//    "google" must fail this check; everything else must pass it. ──
+const sample = (answeredBy: ProviderId) => makeTravelCost(1000, 100, "routingService", answeredBy);
+assert.equal(isPersistable(sample("google")), false, "a Google-derived cost is never persistable");
+assert.equal(isPersistable(sample("osrm")), true);
+assert.equal(isPersistable(sample("osm-japan")), true);
+assert.equal(isPersistable(sample("haversine")), true);
 
 console.log("✓ travelCostRegistry.test.ts passed");
 }

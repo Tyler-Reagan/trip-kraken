@@ -12,11 +12,11 @@
  * centroid is a synthetic averaged point, not a real place, so "how do I travel to this made-up
  * point" isn't a meaningful provider query. Clustering stays on its own local distance math.
  *
- * `kinds` (ADR-0022 P2) is a **willingness set**, not a constraint (ADR-0022, revised) — the
- * orchestrator (`optimize.ts`) threads a Trip's whole `allowedPathKinds` through, unresolved, and
- * each provider decides for itself how to spend it: a provider limited to one query per request
- * (Google's matrix takes exactly one `travelMode`) picks its own single kind by a documented
- * precedence; a provider with only one kind to offer (OSM-Japan) ignores the set entirely.
+ * `kinds` (ADR-0022 P2, revised by ADR-0024 §3) is a **static declaration of competence**, not a
+ * traveler's willingness set — that concept is deleted. `buildTravelMatrix`
+ * (`travelCostRegistry.ts`) intersects a request's kinds against each registry entry's declared
+ * `kinds` before calling it, so a provider only ever sees kinds it claimed it can answer for; a
+ * provider never has to infer or collapse a set it didn't ask for.
  */
 
 import { type Path, type PathEndpoint, type PathKind, type TravelCost, makeTravelCost } from "@/types/path";
@@ -29,14 +29,21 @@ export interface PathProviderOptions {
   departureTime?: Date;
 }
 
+/** A provider's answer for one matrix cell, or `null` — an explicit decline (ADR-0024 §4). `null`
+ * rather than `undefined`: `undefined` is what an unfilled array slot already is before anything
+ * has run, so the composer needs a distinct value to say "this provider looked and declined." */
+export type MatrixCell = TravelCost | null;
+
 export interface PathProvider {
-  /** Fetch every pairwise cost in one round trip (ADR-0004), for sequencing's inner loops. */
-  costMatrix(points: Point[], kinds: PathKind[], opts?: PathProviderOptions): Promise<TravelCost[][]>;
+  /** Fetch every pairwise cost in one round trip (ADR-0004), for sequencing's inner loops. Any
+   * cell may be `null` — the provider declining that specific pair, not an error. */
+  costMatrix(points: Point[], kinds: PathKind[], opts?: PathProviderOptions): Promise<MatrixCell[][]>;
   /** One A-to-B journey as its constituent Paths (ADR-0021, ADR-0022) — for the final plan's
    * display only; called lazily at display time, never inside sequencing's construction/refinement
-   * loops. Every provider currently returns a single-element array (decomposition unimplemented,
-   * P1 of the ADR-0022 refactor); a straight-line fallback is always exactly one `UnknownPath`. */
-  describeJourney(from: PathEndpoint, to: PathEndpoint, kinds: PathKind[], opts?: PathProviderOptions): Promise<Path[]>;
+   * loops. `null` is a decline, the same as a `MatrixCell`. Every provider currently returns a
+   * single-element array when it does answer (decomposition unimplemented, P1 of the ADR-0022
+   * refactor). */
+  describeJourney(from: PathEndpoint, to: PathEndpoint, kinds: PathKind[], opts?: PathProviderOptions): Promise<Path[] | null>;
 }
 
 // Average city travel speed for estimating durations (20 km/h) — unchanged from the pre-O2 constant.
@@ -44,7 +51,7 @@ const AVG_SPEED_M_PER_S = (20 * 1000) / 3600;
 
 function haversineCost(from: Point, to: Point): TravelCost {
   const distanceMeters = haversineMeters(from, to);
-  return makeTravelCost(distanceMeters, distanceMeters / AVG_SPEED_M_PER_S, "straightLine");
+  return makeTravelCost(distanceMeters, distanceMeters / AVG_SPEED_M_PER_S, "straightLine", "haversine");
 }
 
 /**
@@ -52,7 +59,9 @@ function haversineCost(from: Point, to: Point): TravelCost {
  * pre-O2 optimizer produced. `mode` is accepted (interface contract) but ignored here; giving each
  * mode its own speed is a real quality change (category A, docs/optimizer-rebuild.md), deliberately
  * not bundled into this slice. `describeJourney` always returns a single `UnknownPath`: no route
- * was computed, so there is no honest kind to report (ADR-0022).
+ * was computed, so there is no honest kind to report (ADR-0022). This is the registry's terminal
+ * entry (ADR-0024 §4) — it never declines, which is what the composer relies on to guarantee
+ * completion.
  */
 export const haversineProvider: PathProvider = {
   async costMatrix(points) {
