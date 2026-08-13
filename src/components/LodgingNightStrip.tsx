@@ -112,6 +112,15 @@ function NightStripWizard({ metros: liveMetros, onClose }: { metros: UncoveredMe
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Bounds for the two date inputs. Without them the pickers start empty, so the browser opens
+  // them on *today's* month — months away from a trip in October — and a stay picked there saves
+  // clean but covers none of the trip's nights. The drag/resize paths can't hit that: they derive
+  // dates from the nights array. Check-out runs to the morning after the final night.
+  const trip = useTripStore((s) => s.trip);
+  const nightBounds = trip
+    ? { first: trip.startDate, last: trip.endDate, checkoutMax: addDaysIso(trip.endDate, 1) }
+    : null;
+
   const liveKeys = new Set(liveMetros.map(metroKey));
   // A key that's fallen out of the live uncovered list got lodging some other way (e.g. edited
   // directly on the night strip behind this modal) — count it resolved rather than getting the
@@ -238,9 +247,9 @@ function NightStripWizard({ metros: liveMetros, onClose }: { metros: UncoveredMe
               {metro.activities.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
             <div className="flex items-center gap-1.5">
-              <input type="date" value={checkInDate} onChange={(e) => setCheckInDate(e.target.value)} className="input py-1 text-xs flex-1" aria-label="Check-in" />
+              <input type="date" value={checkInDate} min={nightBounds?.first} max={nightBounds?.last} onChange={(e) => setCheckInDate(e.target.value)} className="input py-1 text-xs flex-1" aria-label="Check-in" />
               <span className="text-faint text-xs">→</span>
-              <input type="date" value={checkOutDate} min={checkInDate} onChange={(e) => setCheckOutDate(e.target.value)} className="input py-1 text-xs flex-1" aria-label="Check-out" />
+              <input type="date" value={checkOutDate} min={checkInDate || nightBounds?.first} max={nightBounds?.checkoutMax} onChange={(e) => setCheckOutDate(e.target.value)} className="input py-1 text-xs flex-1" aria-label="Check-out" />
             </div>
             <button onClick={handleManualSave} disabled={saving || !locationId} className="btn-secondary text-xs py-1.5 px-3 w-full disabled:opacity-40">
               Save & continue
@@ -503,9 +512,9 @@ export function NightStrip({ trip, lodgings, activities }: { trip: TripWithDetai
               <button onClick={() => setEditing(null)} className="text-faint hover:text-ink p-0.5" aria-label="Close"><X className="w-3.5 h-3.5" /></button>
             </div>
             <div className="flex items-center gap-1.5 text-xs">
-              <input type="date" value={l.checkInDate} onChange={(e) => saveLodgingDates(l.id, { checkInDate: e.target.value, checkOutDate: l.checkOutDate })} className="input py-1 text-xs" aria-label="Check-in" />
+              <input type="date" value={l.checkInDate} min={nights[0]} max={trip.endDate} onChange={(e) => saveLodgingDates(l.id, { checkInDate: e.target.value, checkOutDate: l.checkOutDate })} className="input py-1 text-xs" aria-label="Check-in" />
               <span className="text-faint">→</span>
-              <input type="date" value={l.checkOutDate} min={l.checkInDate} onChange={(e) => saveLodgingDates(l.id, { checkInDate: l.checkInDate, checkOutDate: e.target.value })} className="input py-1 text-xs" aria-label="Check-out" />
+              <input type="date" value={l.checkOutDate} min={l.checkInDate} max={addDaysIso(trip.endDate, 1)} onChange={(e) => saveLodgingDates(l.id, { checkInDate: l.checkInDate, checkOutDate: e.target.value })} className="input py-1 text-xs" aria-label="Check-out" />
             </div>
             <button onClick={() => { saveLodgingDates(l.id, null); setEditing(null); }} className="text-xs text-danger-600 dark:text-danger-400 hover:underline">
               Remove booking

@@ -151,6 +151,35 @@ async function main() {
     "single-result text search with bias"
   );
 
+  // ── findPlaceFromText: a match beyond the bias circle is rejected, not trusted ──
+  // locationBias is a *soft* hint — Google will happily return a globally-famous match far
+  // outside it (searching "Whistler" biased to Tokyo returns the BC ski town). Enrichment
+  // overwrites a Location's coordinates with what this returns, so trusting a far match
+  // silently relocates an imported pin across the planet. Same in-process cutoff searchNearby
+  // already applies to its own soft bias.
+  mockFetch({ places: [{ id: "place-far", location: { latitude: 50.1162, longitude: -122.9535 } }] });
+  assert.equal(
+    await findPlaceFromText("Whistler", 35.71, 139.79, 1000),
+    null,
+    "match beyond the bias radius is rejected"
+  );
+
+  // A match inside the circle is still returned — the guard must not reject legitimate hits.
+  mockFetch({ places: [{ id: "place-near", location: { latitude: 35.7105, longitude: 139.7905 } }] });
+  assert.deepEqual(
+    await findPlaceFromText("Senso-ji", 35.71, 139.79, 1000),
+    { placeId: "place-near", lat: 35.7105, lng: 139.7905 },
+    "match inside the bias radius is kept"
+  );
+
+  // With no coordinates to bias by there is nothing to check against — unchanged behaviour.
+  mockFetch({ places: [{ id: "place-any", location: { latitude: 50.1162, longitude: -122.9535 } }] });
+  assert.deepEqual(
+    await findPlaceFromText("Whistler", null, null),
+    { placeId: "place-any", lat: 50.1162, lng: -122.9535 },
+    "no bias coords → no distance guard"
+  );
+
   // ── findPlaceFromText: zero results / network failure → null, never throws ──
   mockFetch({});
   assert.equal(await findPlaceFromText("nowhere", null, null), null, "zero results → null");

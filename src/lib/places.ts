@@ -255,13 +255,23 @@ function extractWeeklyHours(
  * Pass lat/lng as a geographic bias when you know the approximate area (e.g. the
  * anchor location) — this prevents name collisions for common restaurant names.
  * Returns null on zero results or any error — never throws.
+ *
+ * When bias coords are given, a result outside `biasRadius` is rejected rather than returned:
+ * `locationBias` is a hint, not a restriction, so a globally-famous name outranks it (searching
+ * an imported pin named "Whistler" biased to Tokyo returns the BC ski town). `enrichLocation`
+ * *overwrites* a Location's coordinates with what this resolves, so a trusted far match silently
+ * moves an imported pin across the planet — and a wrong place's hours and rating are wrong too,
+ * which is why this rejects the match outright rather than keeping the details and dropping the
+ * coordinates. Rejection marks the row enrichment-failed, which leaves the pin's own coordinates
+ * standing. Same cutoff `searchNearby` applies to its own soft bias.
  */
 export async function findPlaceFromText(
   name: string,
   lat: number | null,
   lng: number | null,
-  /** Bias radius in metres. Use ~100 when coords are precise (e.g. from a prior
-   *  geocode); use ~5000 when coords are only approximate (e.g. anchor hotel). */
+  /** Bias radius in metres, and — when coords are supplied — the hard cutoff for accepting the
+   *  match. Use ~100 when coords are precise (e.g. from a prior geocode); use ~5000 when coords
+   *  are only approximate (e.g. anchor hotel). */
   biasRadius = 1000
 ): Promise<{ placeId: string; lat: number; lng: number } | null> {
   try {
@@ -276,6 +286,12 @@ export async function findPlaceFromText(
     );
     const r = places[0];
     if (!r?.location) return null;
+    if (
+      lat !== null &&
+      lng !== null &&
+      haversineMeters({ lat, lng }, { lat: r.location.latitude, lng: r.location.longitude }) > biasRadius
+    )
+      return null;
     return { placeId: r.id, lat: r.location.latitude, lng: r.location.longitude };
   } catch {
     return null;

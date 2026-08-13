@@ -383,6 +383,22 @@ export function setLodgingDates(
     throw new LodgingValidationError("Invalid check-in/check-out date");
   if (checkInDate >= checkOutDate) throw new LodgingValidationError("Check-in must be before check-out");
 
+  // The stay must cover at least one of the trip's nights. This is the same half-open
+  // intersection optimize.ts uses to build night-ranges, stated as a rule instead of a silent
+  // drop: a stay it discards leaves a Location that is a lodging by kind — so filtered out of the
+  // activity list — with no night to render on, invisible in both views. Checking out the morning
+  // after the final night is normal, hence `checkOutDate > startDate` rather than `<= endDate`.
+  const owner = db
+    .select({ startDate: trip.startDate, endDate: trip.endDate })
+    .from(trip)
+    .where(eq(trip.id, tripId))
+    .get();
+  if (!owner) throw new LodgingValidationError("Trip not found");
+  if (checkInDate > owner.endDate || checkOutDate <= owner.startDate)
+    throw new LodgingValidationError(
+      `Stay (${checkInDate} to ${checkOutDate}) falls outside the trip's dates (${owner.startDate} to ${owner.endDate})`
+    );
+
   const target = db
     .select({ id: location.id })
     .from(location)
