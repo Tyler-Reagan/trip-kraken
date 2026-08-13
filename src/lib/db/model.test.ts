@@ -128,6 +128,14 @@ assert.equal(plan[0].date, "2026-06-24", "placement moved to the new plan");
 expectRejected(() => setLodgingDates(trip.id, B, { checkInDate: "2026-06-25", checkOutDate: "2026-06-24" }), "checkIn >= checkOut");
 expectRejected(() => setLodgingDates(trip.id, B, { checkInDate: "2026-06-25", checkOutDate: "2026-06-27" }), "overlaps A's nights");
 expectRejected(() => setLodgingDates(trip.id, "not-a-location", { checkInDate: "2026-06-24", checkOutDate: "2026-06-25" }), "location not in trip");
+// A stay that covers none of the trip's nights is silently dropped by optimize.ts ("Empty ranges
+// (outside the trip) drop"), leaving a Location that is a lodging by kind — so filtered out of the
+// activity list — but has no night to render on. Reject it at the only write path instead.
+expectRejected(() => setLodgingDates(trip.id, B, { checkInDate: "2026-07-10", checkOutDate: "2026-07-12" }), "stay entirely after the trip");
+expectRejected(() => setLodgingDates(trip.id, B, { checkInDate: "2026-06-01", checkOutDate: "2026-06-03" }), "stay entirely before the trip");
+// Boundary: checking out the morning after the final night is normal and must stay legal — B's
+// own 2026-06-26..27 booking above already relies on it.
+setLodgingDates(trip.id, B, { checkInDate: "2026-06-26", checkOutDate: "2026-06-27" });
 
 // ── Manual placement edits: hand placements that persist until the next optimize (ADR-0015) ──
 const P = createLocation(trip.id, { name: "P (activity)" }).id;
