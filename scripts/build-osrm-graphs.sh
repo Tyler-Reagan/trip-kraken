@@ -92,8 +92,11 @@ for PROFILE in foot car; do
 
   # Build-only files, verified this session (moved aside, container restarted, /table and
   # /route?steps=true re-queried, byte-identical output both times): the edge-based graph and its
-  # build-stage companions, and the per-profile copy of the input. osrm-routed memory-maps only
-  # what serving actually reads.
+  # build-stage companions, and the per-profile copy of the input. They aren't skipped because
+  # osrm-routed "only reads what it maps" — by default it copies every serving file into process
+  # memory, --mmap or not (see docker-compose.yml and docs/research/routing-memory-architecture.md
+  # §1/§3) — they're skipped because they're absent from osrm-routed's loaded-file list entirely:
+  # storage.cpp's GetStaticFiles/GetUpdatableFiles never name them.
   #
   # Caveat: osrm-customize can normally be re-run alone (to fold in new weights) without
   # repeating osrm-extract, but that path needs road.osrm.ebg. Deleting it here means any future
