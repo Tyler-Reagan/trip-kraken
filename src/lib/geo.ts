@@ -24,8 +24,10 @@ function toRad(deg: number): number {
 }
 
 /** Straight-line distance in meters — the single haversine implementation shared by the
- * path-provider default, clustering's centroid math (optimizer.ts), discovery (discovery.ts,
- * places.ts), and transit-graph ingest/query (transitGraphIngest.ts, transitGraph.ts). */
+ * path-provider default, `metroCluster.ts`'s clustering, discovery (discovery.ts, places.ts), and
+ * transit-graph ingest/query (transitGraphIngest.ts, transitGraph.ts). `haversineKm` (the pre-VROOM
+ * optimizer's k-means centroid math, its only caller) was deleted with `optimizer.ts` (ADR-0023 §9)
+ * — every remaining caller wants meters. */
 export function haversineMeters(a: Point, b: Point): number {
   const dLat = toRad(b.lat - a.lat);
   const dLng = toRad(b.lng - a.lng);
@@ -35,13 +37,4 @@ export function haversineMeters(a: Point, b: Point): number {
     sinDLat * sinDLat +
     Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinDLng * sinDLng;
   return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-}
-
-/**
- * Straight-line distance in km. A k-means centroid is a synthetic point, not a real place, so it
- * never goes through the async `PathProvider` itself, but there's no reason for it to duplicate
- * the trig.
- */
-export function haversineKm(a: Point, b: Point): number {
-  return haversineMeters(a, b) / 1000;
 }

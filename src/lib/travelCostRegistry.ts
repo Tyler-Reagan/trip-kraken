@@ -3,10 +3,9 @@
  * static `kinds` array (its competence, ADR-0024 §3) and an `isAvailable(points)` gate (region and
  * configuration only, never `kinds` — that distinction is the point of the ADR). `buildTravelMatrix`
  * composes a full matrix cell-by-cell in this preference order via `composeTravelMatrix`
- * (`travelMatrix.ts`); `composedPathProvider` wraps that as a `PathProvider` so
- * `solve()`/`optimize.ts`/`buildDistanceLookup` keep their existing seam untouched. PR 4
- * (ADR-0023 §9) deletes the adapter, `buildDistanceLookup`, and `DistanceLookup` together and
- * calls `buildTravelMatrix` directly from the VROOM request builder.
+ * (`travelMatrix.ts`) and is called directly by the VROOM request builder
+ * (`src/lib/vroom/request.ts`, ADR-0023) — the old `composedPathProvider` adapter, which wrapped
+ * this as a `PathProvider` for the pre-VROOM optimizer's `buildDistanceLookup` seam, is gone.
  *
  * Four rows, in this order (ADR-0024 §4, amended 2026-08-10 — hosted OpenRouteService was
  * designed in as a fifth row, between `osrm` and `haversine`, and dropped; there is nothing
@@ -45,7 +44,7 @@ import { composeTravelMatrix, type MatrixEntry, type TravelMatrixRequest } from 
 
 interface RegistryEntry extends Omit<MatrixEntry, "provider"> {
   /** The full `PathProvider`, not `MatrixEntry`'s `Pick<PathProvider, "costMatrix">` — narration
-   * dispatch (`composedPathProvider.describeJourney` below) needs `describeJourney` too. */
+   * dispatch (`describeJourney` below) needs `describeJourney` too. */
   provider: PathProvider;
   /** Region + configuration only — everything that is *not* a kind (ADR-0024 §3). */
   isAvailable(points: Point[]): boolean;
@@ -68,7 +67,7 @@ const osmJapanProvider: PathProvider = {
 /** Exported for `travelCostRegistry.test.ts` to assert order, `kinds`, and gate behaviour
  * directly against a literal — so the table in this module's doc comment and the table in the
  * ADR can't silently drift from what the code actually does. Not meant as a general-purpose
- * export: production code goes through `buildTravelMatrix`/`composedPathProvider` below. */
+ * export: production code goes through `buildTravelMatrix`/`describeJourney` below. */
 export const REGISTRY: readonly RegistryEntry[] = [
   {
     id: "osm-japan",
@@ -115,30 +114,24 @@ export async function buildTravelMatrix(points: Point[], request: TravelMatrixRe
 }
 
 /**
- * The registry as a `PathProvider` (ADR-0024's shift from lookup to composition pipeline), so
- * `solve()`/`optimizer.ts`/`buildDistanceLookup` keep their existing seam untouched. PR 4 deletes
- * this adapter and calls `buildTravelMatrix` directly from the VROOM request builder.
+ * Narration dispatch (ADR-0024 §6): the first available entry whose declared kinds intersect the
+ * request answers the *whole* journey — used for the final plan's display (a Journey's constituent
+ * Paths), never inside matrix construction. Per-Path multi-provider chaining within one journey
+ * (walk to a station via OSRM, ride via OSM-Japan, walk again) is deferred — it needs
+ * `osmTransitProvider` to expose its snapped station endpoints, which it does not yet.
  */
-export const composedPathProvider: PathProvider = {
-  async costMatrix(points, kinds, opts) {
-    // A composed matrix is filled by construction (composeTravelMatrix throws otherwise), so
-    // `TravelCost[][]` is always a valid `MatrixCell[][]` here — never actually a decline.
-    return buildTravelMatrix(points, { kinds, departureTime: opts?.departureTime });
-  },
-  /**
-   * Narration dispatch (ADR-0024 §6): the first available entry whose declared kinds intersect
-   * the request answers the *whole* journey. Per-Path multi-provider chaining within one journey
-   * (walk to a station via OSRM, ride via OSM-Japan, walk again) is deferred — it needs
-   * `osmTransitProvider` to expose its snapped station endpoints, which it does not yet.
-   */
-  async describeJourney(from, to, kinds, opts) {
-    for (const entry of availableEntries([from])) {
-      const kindsForEntry = entry.kinds.filter((k) => kinds.includes(k));
-      if (kindsForEntry.length === 0) continue;
-      const result = await entry.provider.describeJourney(from, to, kindsForEntry, opts);
-      if (result) return result;
-    }
-    // Unreachable in practice: haversine is terminal, always available, and never declines.
-    throw new Error("composedPathProvider.describeJourney: no provider answered this journey");
-  },
-};
+export async function describeJourney(
+  from: Parameters<PathProvider["describeJourney"]>[0],
+  to: Parameters<PathProvider["describeJourney"]>[1],
+  kinds: Parameters<PathProvider["describeJourney"]>[2],
+  opts?: Parameters<PathProvider["describeJourney"]>[3]
+): ReturnType<PathProvider["describeJourney"]> {
+  for (const entry of availableEntries([from])) {
+    const kindsForEntry = entry.kinds.filter((k) => kinds.includes(k));
+    if (kindsForEntry.length === 0) continue;
+    const result = await entry.provider.describeJourney(from, to, kindsForEntry, opts);
+    if (result) return result;
+  }
+  // Unreachable in practice: haversine is terminal, always available, and never declines.
+  throw new Error("describeJourney: no provider answered this journey");
+}

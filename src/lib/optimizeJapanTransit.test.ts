@@ -1,7 +1,13 @@
 /**
- * End-to-end integration tracer (issue #86): "optimizing a Japan Trip demonstrably uses real
- * transit line names / transfer counts (against whatever graph file is present)." Standalone (no
- * test runner): run with `tsx src/lib/optimizeJapanTransit.test.ts`.
+ * Facts-layer integration tracer (issue #86): "once a Japan transit graph is present, routing
+ * between real stations demonstrably uses real transit line names / transfer counts." Standalone
+ * (no test runner): run with `tsx src/lib/optimizeJapanTransit.test.ts`.
+ *
+ * Retargeted under ADR-0023 (PR 4): #86's actual claim is about the Facts layer
+ * (`osmTransitProvider.ts`/`describeJourney`, ADR-0024) producing `basisOfCost: "railNetwork"`
+ * costs from a real graph file — it was never a claim about the solver, and coupling it to
+ * `solve()` only ever made it fragile to solver changes unrelated to what it's checking. This test
+ * now calls the provider directly rather than routing through `solve()`.
  *
  * This repo has no real ingested `db/transit-japan.db` yet — the OSM ingestion pipeline that would
  * produce one is out of scope for #86 (parent issue #81's slice order: J2 only built the graph
@@ -9,10 +15,7 @@
  * hand-built graph fixture (identical in spirit to `osmTransitProvider.test.ts`'s Seam 1 fixture)
  * for "whatever graph file is present": it's saved to and reloaded from a real on-disk SQLite file
  * via `transitGraphStore.ts`'s `save()`/`load()` — genuinely round-tripping through disk, not just
- * an in-memory object — then run through `solve()`'s real sequencing path with `mode: "transit"`,
- * exactly as `optimize.ts`'s orchestrator would for a real Japan Trip once ingestion exists. The
- * point being demonstrated: once a graph file is present, the solved plan's Legs carry real line
- * names and a real transfer count, not haversine's plain distance/time.
+ * an in-memory object.
  */
 
 import { tmpdir } from "node:os";
@@ -22,7 +25,6 @@ import assert from "node:assert/strict";
 import { createGraph, type TransitGraph } from "./transitGraph";
 import { save, load } from "./transitGraphStore";
 import { createOsmTransitProvider } from "./osmTransitProvider";
-import { solve } from "./solver";
 
 main().catch((err) => {
   console.error(err);
@@ -78,37 +80,22 @@ save(buildFixture(), graphPath);
 const { graph, spatialIndex } = load(graphPath);
 const provider = createOsmTransitProvider(graph, spatialIndex);
 
-// Three activities near real stations on the fixture's two lines, one day, no lodging — enough to
-// force sequencing to route between stations on different lines (an interchange at Tokyo).
-const locations = [
-  { id: "near-akihabara", lat: 35.6983, lng: 139.7733 }, // ~10m from loop-akihabara
-  { id: "near-otemachi", lat: 35.6869, lng: 139.7644 }, // ~10m from spur-otemachi
-  { id: "near-kanda", lat: 35.6917, lng: 139.7707 }, // ~10m from loop-kanda
+// Three points near real stations on the fixture's two lines — enough to force routing between
+// stations on different lines (an interchange at Tokyo) across at least one consecutive pair.
+const points = [
+  { locationId: "near-akihabara", lat: 35.6983, lng: 139.7733 }, // ~10m from loop-akihabara
+  { locationId: "near-otemachi", lat: 35.6869, lng: 139.7644 }, // ~10m from spur-otemachi
+  { locationId: "near-kanda", lat: 35.6917, lng: 139.7707 }, // ~10m from loop-kanda
 ];
 
-const itinerary = await solve({
-  locations,
-  numDays: 1,
-  provider,
-  kinds: ["rail"],
-});
-
-assert.equal(itinerary.days.length, 1, "one day plan for one day's worth of stops");
-const stopIds = itinerary.days[0].locationIds;
-assert.equal(stopIds.length, 3, "all three activities are placed");
-
-// Walk the solved day's consecutive stops through describeJourney — the same lazy, display-time
-// call optimize.ts's caller would make for the plan's Paths (ADR-0018, ADR-0021, ADR-0022) — and
+// The same lazy, display-time call a plan's Paths would make (ADR-0018, ADR-0021, ADR-0022) —
 // confirm at least one consecutive pair reports a real rail-routed cost, not haversine's plain
 // straight-line numbers.
-const byId = new Map(locations.map((l) => [l.id, { locationId: l.id, lat: l.lat, lng: l.lng }]));
 let sawRealTransitPath = false;
-for (let i = 0; i < stopIds.length - 1; i++) {
-  const from = byId.get(stopIds[i])!;
-  const to = byId.get(stopIds[i + 1])!;
-  const journey = await provider.describeJourney(from, to, ["rail"]);
+for (let i = 0; i < points.length - 1; i++) {
+  const journey = await provider.describeJourney(points[i], points[i + 1], ["rail"]);
   // A decline (ADR-0024 §4) is a legitimate outcome for a pair with no station in range — this
-  // loop is looking for at least one real rail Path among the consecutive stops, not asserting
+  // loop is looking for at least one real rail Path among the consecutive points, not asserting
   // every pair routes.
   if (journey?.[0].kind === "rail") {
     sawRealTransitPath = true;
@@ -117,7 +104,7 @@ for (let i = 0; i < stopIds.length - 1; i++) {
 }
 assert.ok(
   sawRealTransitPath,
-  "the solved plan's Paths demonstrably use real rail routing once a graph file is present (#86)"
+  "the Facts layer demonstrably uses real rail routing once a graph file is present (#86)"
 );
 
 fs.rmSync(dir, { recursive: true, force: true });

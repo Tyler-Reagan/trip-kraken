@@ -18,11 +18,12 @@ export async function POST(
   const { dayBudgetHours } = body ?? {};
 
   try {
-    const { trip, feasibilityViolations } = await optimizeTrip(tripId, {
+    const { trip, unplaced, warnings } = await optimizeTrip(tripId, {
       ...(typeof dayBudgetHours === "number" && dayBudgetHours > 0 ? { dayBudgetHours } : {}),
     });
-    // feasibilityViolations (ADR-0017) rides along on the response; no UI reads it yet.
-    return NextResponse.json({ ...trip, feasibilityViolations });
+    // unplaced (ADR-0023 §7) and warnings (#152) ride along on the response — #120's Unassigned
+    // tray reads unplaced to show why an Activity has no Placement; OptimizeModal reads warnings.
+    return NextResponse.json({ ...trip, unplaced, warnings });
   } catch (err) {
     // A selected provider's error propagates by design (ADR-0018 §4) — e.g. a missing ingested
     // transit graph. Return it as a structured 500 so the client can surface a real message

@@ -81,8 +81,9 @@ placement-optimization concern; not decided here.
   replaces it.
 - `dayBudgetPenaltyKm` is confirmed feasibility-tier (ADR-0001 already placed "day overstuffed"
   under criterion #1). Its current implementation is still a soft additive term, not yet a true
-  gate — restructuring it to actually behave as one is O3's job (see
-  `docs/optimizer-rebuild.md`), not done by this ADR alone.
+  gate — restructuring it to actually behave as one is O3's job (the planning tracker this pointed
+  to, `docs/agents/optimizer-rebuild.md`, is deleted by ADR-0023 §9, whose VROOM swap is that
+  restructuring), not done by this ADR alone.
 - O3 (ADR-0003's solver interface, specifically its composed whole-itinerary comparator) must
   implement feasibility-then-travel as two lexicographically compared tiers, not a single
   flattened sum. This is now a requirement of what "the objective" is, not an implementation

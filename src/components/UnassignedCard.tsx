@@ -2,12 +2,17 @@
 
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { ScheduledStop, Location } from "@/types";
+import type { Unplaced } from "@/lib/solver";
 import { useTripStore } from "@/store/tripStore";
 import { GripVertical, Search, Trash2 } from "lucide-react";
 import { UNASSIGNED_DROP_ID } from "./DayNavigator";
 
 interface Props {
   locations: Location[];
+  /** Reasons from the last optimize run (#120), keyed by locationId — ADR-0023 §7's pre-flight
+   *  exclusions plus VROOM's own reasonless `unassigned[]`. Distinct from `loc.excluded`: that's
+   *  the user's own choice to ignore a Location, this is the optimizer trying and failing. */
+  unplacedByLocationId: Map<string, Unplaced>;
   draggingStop: ScheduledStop | null;
   dragId: (locationId: string) => string;
   /** False before the first optimize: there are no days to drag a location onto yet. */
@@ -28,7 +33,7 @@ function formatDuration(mins: number): string {
   return `${h}h ${m}m`;
 }
 
-export default function UnassignedCard({ locations, draggingStop, dragId, schedulable = true }: Props) {
+export default function UnassignedCard({ locations, unplacedByLocationId, draggingStop, dragId, schedulable = true }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: UNASSIGNED_DROP_ID });
   const isDragTarget = isOver && draggingStop !== null;
 
@@ -54,7 +59,13 @@ export default function UnassignedCard({ locations, draggingStop, dragId, schedu
       ) : (
         <ul className="space-y-2">
           {locations.map((loc) => (
-            <UnassignedRow key={loc.id} id={dragId(loc.id)} loc={loc} schedulable={schedulable} />
+            <UnassignedRow
+              key={loc.id}
+              id={dragId(loc.id)}
+              loc={loc}
+              unplaced={unplacedByLocationId.get(loc.id) ?? null}
+              schedulable={schedulable}
+            />
           ))}
         </ul>
       )}
@@ -62,7 +73,17 @@ export default function UnassignedCard({ locations, draggingStop, dragId, schedu
   );
 }
 
-function UnassignedRow({ id, loc, schedulable }: { id: string; loc: Location; schedulable: boolean }) {
+function UnassignedRow({
+  id,
+  loc,
+  unplaced,
+  schedulable,
+}: {
+  id: string;
+  loc: Location;
+  unplaced: Unplaced | null;
+  schedulable: boolean;
+}) {
   const tripId = useTripStore((s) => s.tripId);
   const reload = useTripStore((s) => s.reload);
   const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
@@ -122,9 +143,17 @@ function UnassignedRow({ id, loc, schedulable }: { id: string; loc: Location; sc
             <span className="text-[10px] text-amber-500 shrink-0 font-bold" title="Enrichment failed">!</span>
           )}
         </div>
-        <p className="text-xs text-faint mt-0.5">
-          {hoursText} · {durText}
-        </p>
+        {/* #120: an Excluded location (the user's own choice) and an Unplaced one (the optimizer
+            tried and failed) read as different problems — never the same generic gap. */}
+        {loc.excluded ? (
+          <p className="text-xs text-faint italic mt-0.5">Excluded — won&apos;t be scheduled</p>
+        ) : unplaced ? (
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">{unplaced.reason}</p>
+        ) : (
+          <p className="text-xs text-faint mt-0.5">
+            {hoursText} · {durText}
+          </p>
+        )}
       </div>
 
       {/* Action buttons */}

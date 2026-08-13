@@ -18,18 +18,25 @@ export default function OptimizeModal() {
   const [dayBudgetHours, setDayBudgetHours] = useState<number>(8);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // #152: a non-fatal condition from the run that just finished (e.g. a pending lodging with no
+  // Anchor yet) — shown instead of closing the modal, so the user sees it before the tray reload
+  // pulls their attention elsewhere.
+  const [warnings, setWarnings] = useState<string[] | null>(null);
 
   if (!trip) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setWarnings(null);
     setLoading(true);
     try {
       // The day count and dates come from the trip's required range (ADR-0015); only the soft
       // knobs are chosen here. Re-optimize replaces the plan wholesale.
       await optimize({ dayBudgetHours });
-      setShowOptimize(false);
+      const runWarnings = useTripStore.getState().optimizeWarnings;
+      if (runWarnings.length > 0) setWarnings(runWarnings);
+      else setShowOptimize(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
@@ -108,7 +115,7 @@ export default function OptimizeModal() {
               className="w-full accent-brand-600"
             />
             <p className="text-xs text-faint">
-              Balances days so no single day exceeds this visit time. Only applies when locations have durations set.
+              The length of each day, including travel and waiting — not just time spent visiting.
             </p>
           </div>
 
@@ -118,16 +125,24 @@ export default function OptimizeModal() {
             </p>
           )}
 
+          {warnings && warnings.length > 0 && (
+            <div className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg px-3 py-2 space-y-1">
+              {warnings.map((w, i) => (
+                <p key={i}>{w}</p>
+              ))}
+            </div>
+          )}
+
           <div className="flex gap-3">
             <button
               type="button"
               onClick={() => setShowOptimize(false)}
               className="btn-secondary flex-1"
             >
-              Cancel
+              {warnings && warnings.length > 0 ? "Close" : "Cancel"}
             </button>
             <button type="submit" disabled={loading} className="btn-primary flex-1">
-              {loading ? "Optimizing…" : "Generate itinerary"}
+              {loading ? "Optimizing…" : warnings && warnings.length > 0 ? "Optimize again" : "Generate itinerary"}
             </button>
           </div>
         </form>

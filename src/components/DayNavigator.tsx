@@ -57,6 +57,7 @@ const COOLDOWN_MS = 350;
  */
 export default function DayNavigator() {
   const trip = useTripStore((s) => s.trip);
+  const unplaced = useTripStore((s) => s.unplaced);
   const activeDayNumber = useTripStore((s) => s.activeDayNumber);
   const setActiveDayNumber = useTripStore((s) => s.setActiveDayNumber);
   const movePlacement = useTripStore((s) => s.movePlacement);
@@ -163,6 +164,10 @@ export default function DayNavigator() {
   const placedIds = new Set(trip.placements.map((p) => p.locationId));
   // Only activities are placed; lodging/transit are projected, never in the unscheduled pool.
   const unscheduledLocations = trip.locations.filter((l) => isActivity(l) && !placedIds.has(l.id));
+  // Reasons from the last optimize run (#120) — keyed by locationId so UnassignedCard can render
+  // one per row without a lookup of its own. A location can appear here without being unscheduled
+  // right now (a prior run's reason, since replaced by a manual placement) — Map.get simply misses.
+  const unplacedByLocationId = new Map(unplaced.map((u) => [u.locationId, u]));
 
   function handleDragStart(event: DragStartEvent) {
     const data = event.active.data.current as DragItem | undefined;
@@ -270,6 +275,7 @@ export default function DayNavigator() {
 
         <UnassignedCard
           locations={unscheduledLocations}
+          unplacedByLocationId={unplacedByLocationId}
           draggingStop={dragging?.kind === "stop" ? dragging.stop : null}
           dragId={locationDragId}
         />
