@@ -378,8 +378,9 @@ differs from the README's recommendation — set `--algorithm mld` explicitly).
 
 #### `trip` → **not a candidate for the optimizer's category-B track. Close the door.**
 
-OSRM's `trip` service solves TSP, and on its face that looks like the alternative solver
-`docs/agents/optimizer-rebuild.md` describes. It is not, on three independent grounds, any one of
+OSRM's `trip` service solves TSP, and on its face that looks like the alternative solver the
+planning tracker `docs/agents/optimizer-rebuild.md` (deleted by ADR-0023 §9; VROOM is the
+alternative solver that shipped) described. It is not, on three independent grounds, any one of
 which is disqualifying:
 
 1. **Wrong objective.** Per the HTTP docs it "[u]ses the Traveling Salesman Problem using a greedy
@@ -416,8 +417,10 @@ Tiles of internal routing metadata; a debugging aid, unrelated to `MapView.tsx`'
 Verified from `googleRoutesProvider.ts` and `solver.ts` on the P2 branch:
 
 - `solve()` fetches **one** matrix per optimize run and passes it into `optimizeItinerary` as
-  `precomputedDist` — the duplicate fetch that `optimizer-rebuild.md` flagged was fixed (#82).
-  ADR-0004's one-fetch-per-run pattern holds.
+  `precomputedDist` — the duplicate fetch the planning tracker `docs/agents/optimizer-rebuild.md`
+  (deleted by ADR-0023 §9) flagged was fixed (#82). ADR-0004's one-fetch-per-run pattern holds.
+  (Historical: `optimizeItinerary`/`precomputedDist` are themselves gone under ADR-0023's VROOM
+  swap, which fetches once inside `solve()` the same way, just without a name for the parameter.)
 - `computeFullMatrix` tiles into `floor(sqrt(MAX_ELEMENTS))`-sized batches (25 for road modes, 10
   for transit) over the full origin × destination cross-product, so **total billed elements =
   n²** exactly, where n = points with valid coordinates (placeable activities + lodging and edge

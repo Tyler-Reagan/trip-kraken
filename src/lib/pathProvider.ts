@@ -1,16 +1,14 @@
 /**
  * The path provider (ADR-0004, renamed by ADR-0022): every "how far / how long between two
- * places" query the optimizer's sequencing phase makes routes through this interface, so a real
- * routing API can replace the default straight-line math later without touching any caller. Named
- * for what it produces — a Path — not for the cost field that used to be its whole shape.
+ * places" query routes through this interface, so a real routing API can stand in for the default
+ * straight-line math without touching any caller. Named for what it produces — a Path — not for
+ * the cost field that used to be its whole shape. Each row of the provider registry
+ * (`travelCostRegistry.ts`, ADR-0024) implements this; `buildTravelMatrix` is what the VROOM
+ * request builder (`src/lib/vroom/request.ts`, ADR-0023) actually calls, never a `PathProvider`
+ * directly — sequencing itself is VROOM's, not application code walking this interface in a loop.
  *
- * Async, deliberately: a real provider is inherently a network call. Building this synchronous now
- * would force a breaking rework of every caller exactly when it matters most — when a real provider
- * actually gets added (O1-O3 grill, docs/optimizer-rebuild.md, 2026-07-06).
- *
- * NOT used by the optimizer's clustering step (kMeans/seedCentroids in optimizer.ts) — a clustering
- * centroid is a synthetic averaged point, not a real place, so "how do I travel to this made-up
- * point" isn't a meaningful provider query. Clustering stays on its own local distance math.
+ * Async, deliberately: a real provider is inherently a network call. Building this synchronous
+ * would force a breaking rework of every caller the moment a real provider needs it.
  *
  * `kinds` (ADR-0022 P2, revised by ADR-0024 §3) is a **static declaration of competence**, not a
  * traveler's willingness set — that concept is deleted. `buildTravelMatrix`
@@ -57,8 +55,10 @@ function haversineCost(from: Point, to: Point): TravelCost {
 /**
  * Default provider (ADR-0004): straight-line distance + one fixed speed — the same numbers the
  * pre-O2 optimizer produced. `mode` is accepted (interface contract) but ignored here; giving each
- * mode its own speed is a real quality change (category A, docs/optimizer-rebuild.md), deliberately
- * not bundled into this slice. `describeJourney` always returns a single `UnknownPath`: no route
+ * mode its own speed is a real quality change, deliberately not bundled into this slice (and still
+ * not: #162 tracks the same gap under ADR-0023's VROOM swap — a straight-line fallback cell is
+ * cheaper than the routes it replaces, so the optimizer is actively attracted to degraded pairs).
+ * `describeJourney` always returns a single `UnknownPath`: no route
  * was computed, so there is no honest kind to report (ADR-0022). This is the registry's terminal
  * entry (ADR-0024 §4) — it never declines, which is what the composer relies on to guarantee
  * completion.

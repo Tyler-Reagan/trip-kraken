@@ -44,3 +44,6 @@ tsconfig.tsbuildinfo
 # impeccable design tooling (critique snapshots, live-mode config — local, not versioned)
 .impeccable/
 osrm-graphs-20260812.tar.zst
+
+# Claude Code project settings — settings.local.json is machine-local, worktrees/ is scratch
+.claude/

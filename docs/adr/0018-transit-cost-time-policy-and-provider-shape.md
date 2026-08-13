@@ -77,8 +77,9 @@ from directions endpoints (full journey detail).
 already-fixed day assignment, consuming `describeLeg` data. Whether that tier is
 authoritative (reorders the plan — requires amending ADR-0016 with a third
 lexicographic tier) or advisory (ADR-0016's suggestions feature), and how much tier-1
-travel cost it may spend, are ungrilled category-B questions (build-and-compare, per
-`docs/optimizer-rebuild.md`).
+travel cost it may spend, were ungrilled category-B questions (build-and-compare, per the
+planning tracker `docs/agents/optimizer-rebuild.md`, deleted by ADR-0023 §9 once VROOM's
+own comparator made "the objective" a solved question rather than a build-and-compare one).
 
 ### 3. Mode-mixing is the provider's job
 

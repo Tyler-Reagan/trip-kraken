@@ -1,64 +1,16 @@
 /**
- * `DistanceLookup` (ADR-0004/O2) — the optimizer's actual currency. Sequencing never touches a
- * Path or a Journey; it reads `km(aId, bId)`/`mins(aId, bId)`, keyed by Location id, over a matrix
- * fetched once per optimize run. Split out of the dissolved `travelCost.ts` because this is
- * `Point` + `TravelCost` currency, distinct from the shape module (`types/path.ts`) and the
- * provider module (`pathProvider.ts`) it sits between.
- *
  * `composeTravelMatrix` (below) is the pure composition core ADR-0024 §4 introduces: given a
  * preference-ordered list of registry entries, it walks them per cell, so `buildTravelMatrix`
  * (`travelCostRegistry.ts`) can bind the real four-row registry while this module stays
- * importable without pulling in anything registry-specific (`better-sqlite3`, env reads). PR 4
- * (ADR-0023 §9) deletes `buildDistanceLookup`/`DistanceLookup` and calls `composeTravelMatrix`
- * directly from the VROOM request builder; until then `buildDistanceLookup` is the adapter that
- * keeps today's optimizer working unchanged.
+ * importable without pulling in anything registry-specific (`better-sqlite3`, env reads). The
+ * VROOM request builder (`src/lib/vroom/request.ts`, ADR-0023) calls `buildTravelMatrix` directly
+ * and reads cells positionally, so there is no id-keyed lookup layer above this any more —
+ * `DistanceLookup`/`buildDistanceLookup` (the pre-VROOM optimizer's currency) were deleted with it.
  */
 
 import type { Point } from "@/lib/geo";
 import type { PathKind, ProviderId, TravelCost } from "@/types/path";
-import type { MatrixCell, PathProvider, PathProviderOptions } from "@/lib/pathProvider";
-
-export interface DistanceLookup {
-  km(aId: string, bId: string): number;
-  mins(aId: string, bId: string): number;
-}
-
-/**
- * Fetches one full pairwise matrix upfront and returns synchronous by-id lookups over it — the
- * batching ADR-0004 calls for. Sequencing (optimizer.ts) calls this once per optimize run, then
- * every distance/duration query inside its construction loops is a plain array read, not a
- * provider round trip.
- */
-export async function buildDistanceLookup(
-  provider: PathProvider,
-  points: (Point & { id: string })[],
-  kinds: PathKind[],
-  opts?: PathProviderOptions
-): Promise<DistanceLookup> {
-  const index = new Map(points.map((p, i) => [p.id, i]));
-  const matrix = await provider.costMatrix(points, kinds, opts);
-
-  const cellOf = (aId: string, bId: string): TravelCost => {
-    const i = index.get(aId);
-    const j = index.get(bId);
-    if (i === undefined) throw new Error(`buildDistanceLookup: unknown id ${aId}`);
-    if (j === undefined) throw new Error(`buildDistanceLookup: unknown id ${bId}`);
-    const cell = matrix[i][j];
-    // Unreachable for `composedPathProvider` (its terminal entry never declines — see
-    // composeTravelMatrix below); reachable, and correct to throw, for any other PathProvider a
-    // caller injects directly (tests do this) that declines without a terminal fallback of its
-    // own.
-    if (cell === null) {
-      throw new Error(`buildDistanceLookup: unresolved cell (${aId}, ${bId}) — provider declined with no fallback`);
-    }
-    return cell;
-  };
-
-  return {
-    km: (aId, bId) => cellOf(aId, bId).distanceMeters / 1000,
-    mins: (aId, bId) => cellOf(aId, bId).durationSeconds / 60,
-  };
-}
+import type { MatrixCell, PathProvider } from "@/lib/pathProvider";
 
 /** One request to compose a matrix for — the kinds this run wants sourced (ADR-0024 §3, a static
  * declaration of what's being asked, not a traveler's willingness set) and ADR-0018's single

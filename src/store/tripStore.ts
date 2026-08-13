@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { deriveDays, type TripWithDetails, type Location, type Lodging, type NearbyPlace } from "@/types";
 import type { RoadProfile } from "@/types/path";
 import { reorderPlacements, insertPlacement } from "@/lib/placementOrdering";
+import type { Unplaced } from "@/lib/solver";
 
 type ActiveSurface = "itinerary" | "places";
 
@@ -50,6 +51,13 @@ interface TripStore {
   routeSearch: RouteSearch | null;
   showOptimize: boolean;
   showAddLocation: boolean;
+  /** ADR-0023 §7 pre-flight/solver exclusions from the last optimize run (#120) — a property of
+   *  that run, not of the trip, so it's kept separately from `trip` and survives the `reload()`
+   *  `optimize()` triggers afterward. Cleared implicitly by the next `optimize()` call replacing it. */
+  unplaced: Unplaced[];
+  /** Non-fatal conditions from the last optimize run (#152), e.g. a pending lodging with no Anchor
+   *  yet — surfaced in `OptimizeModal`, not per-Activity. */
+  optimizeWarnings: string[];
 
   // Setters
   setTrip: (trip: TripWithDetails) => void;
@@ -121,6 +129,8 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   routeSearch: null,
   showOptimize: false,
   showAddLocation: false,
+  unplaced: [],
+  optimizeWarnings: [],
   isEnriching: false,
   enrichProgress: null,
   _pollTimer: null,
@@ -196,7 +206,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   optimize: async (opts) => {
     const tripId = get().tripId;
     if (!tripId) return;
-    // fetch only rejects on a network failure — an HTTP 500 (e.g. a missing transit graph, which
+    // fetch only rejects on a network failure — an HTTP 500 (e.g. an unreachable VROOM, which
     // fails loudly by design) resolves with ok: false. Throw on it so callers surface the error
     // instead of silently reloading an unchanged plan.
     const res = await fetch(`/api/trips/${tripId}/optimize`, {
@@ -208,6 +218,10 @@ export const useTripStore = create<TripStore>()((set, get) => ({
       const message = await res.json().then((b) => b?.error).catch(() => null);
       throw new Error(message || `Optimize failed (${res.status})`);
     }
+    // unplaced/warnings (#120, #152) ride on this response only — reload() below refetches the
+    // trip itself and would not otherwise carry them.
+    const body = await res.json().catch(() => ({}));
+    set({ unplaced: body?.unplaced ?? [], optimizeWarnings: body?.warnings ?? [] });
     await get().reload();
   },
 

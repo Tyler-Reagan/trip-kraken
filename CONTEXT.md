@@ -42,6 +42,16 @@ times) — true regardless of planning, and an optimizer *input*.
 The optimizer's *output*: the Locations contextualized onto the timeline as Placements,
 clustered by Day across the Trip's dates.
 
+**Solver wire vocabulary** (ADR-0023):
+The optimizer is VROOM, a fleet-routing service — it speaks vehicles, jobs, and skills, not Trips
+and Days. That vocabulary is real (it's the wire format) but foreign, and it is quarantined to
+`src/lib/vroom/wire.ts`: no `Vroom*` type and no wire key (`vehicle`, `job`, `skills`, `max_tasks`,
+…) appears anywhere else in the codebase. A Day becomes a vehicle, a candidate Activity a job, an
+Anchor a vehicle's `start_index`/`end_index` — but only inside that one file, whose docblock is the
+authoritative translation table. Everywhere else, including this glossary, keep using our own
+terms; if you find yourself reaching for "vehicle" or "job" outside `src/lib/vroom/`, that's the
+smear this boundary exists to prevent.
+
 **Placement**:
 A *scheduled activity* on a Day — `{ date, locationId, order }` — the activity's committed
 appearance in the Plan. (Location = candidate; Placement = commitment.)
@@ -128,6 +138,14 @@ Reflected from a Location's `kind` and constraint-fields; **never stored**. A pl
 
 **Excluded (Location)**:
 A Location kept in the Trip but ignored by the optimizer — present, but not placed.
+
+**Unplaced**:
+An Activity the optimizer *tried* to place and could not, carrying a reason — either decided
+before the solve (no coordinates yet, no lodging covers its area, closed on every Trip date) or
+returned by the solver itself with no reason given. Distinct from **Excluded**, which the user
+chose; an Unplaced Activity wanted a Placement and didn't get one. A narrower case of
+**Unassigned**, which doesn't care why.
+_Avoid_: excluded, dropped, filtered
 
 **Unassigned (candidate)**:
 An activity Location with no Placement yet — in the cast, awaiting the Plan.

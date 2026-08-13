@@ -104,7 +104,8 @@ is what forced `PathDetail` to exist at all: `costMatrix` needed bare `TravelCos
 > concern. `costMatrix` remains N² scalar costs keyed by Location id, one `travelMode` per request,
 > and the optimizer never sees a Path. Making Paths the optimizer's currency would turn each edge
 > from a number into a set of alternative chains — that is #140's deferred multimodal routing plus
-> a category-B solver (`docs/agents/optimizer-rebuild.md`), explicitly not smuggled in here.
+> a category-B solver (the planning tracker this pointed to, `docs/agents/optimizer-rebuild.md`, is
+> deleted by ADR-0023 §9 — VROOM is that category-B solver), explicitly not smuggled in here.
 >
 > **`allowedPathKinds` is a willingness set, not a constraint.** It states which kinds a traveler
 > is prepared to use; it does not filter results. Since Google's matrix takes exactly one

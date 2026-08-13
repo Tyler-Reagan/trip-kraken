@@ -7,26 +7,24 @@
  */
 
 import { getTripWithDetails, setPlacements } from "@/lib/db";
-import { solve, type FeasibilityViolation } from "@/lib/solver";
-import type { LocationInput, StayPlan, Unplaced } from "@/lib/optimizer";
-import { composedPathProvider } from "@/lib/travelCostRegistry";
+import { solve, type LocationInput, type StayPlan, type Unplaced } from "@/lib/solver";
 import type { PathKind } from "@/types/path";
 import { isActivity, isLodging, dayNumberOf, addDaysIso, numDaysOf, type Location, type TripWithDetails } from "@/types";
 
 export type OptimizeOptions = {
-  /** Soft per-day time budget in hours; over-budget days are gently penalized during clustering. */
+  /** Per-day time budget in hours — the length of the day including travel and waiting, not just
+   * visiting (ADR-0023's Consequences: this changes meaning from the pre-VROOM optimizer). */
   dayBudgetHours?: number;
 };
 
 export type OptimizeResult = {
   trip: TripWithDetails;
-  /** ADR-0017: which stops/days the solved itinerary still violates, if any. Plumbing only —
-   * nothing acts on this yet; it exists so a caller (the API route, eventually a UI) can. */
-  feasibilityViolations: FeasibilityViolation[];
-  /** ADR-0020 (#118): activities left with no `Placement` because their metro has no covering
-   * lodging. Plumbing only, like `feasibilityViolations` — the existing Unassigned tray already
-   * shows these (no Placement = unassigned); a future ticket (#120) surfaces the `reason`. */
+  /** Activities the optimizer could not place, with reasons (ADR-0023 §7) — the existing
+   * Unassigned tray shows these already (no Placement = unassigned); #120 surfaces the `reason`. */
   unplaced: Unplaced[];
+  /** Non-fatal conditions worth telling the user about, e.g. a lodging still enrichment-pending
+   * (#152: warn, don't block). */
+  warnings: string[];
 };
 
 function toInput(l: Location): LocationInput {
@@ -34,9 +32,12 @@ function toInput(l: Location): LocationInput {
     id: l.id,
     lat: l.lat ?? 0,
     lng: l.lng ?? 0,
+    kind: l.kind,
+    enrichmentStatus: l.enrichmentStatus,
     ...(l.visitDuration != null ? { visitDuration: l.visitDuration } : {}),
     ...(l.openTime != null ? { openTime: l.openTime } : {}),
     ...(l.closeTime != null ? { closeTime: l.closeTime } : {}),
+    ...(l.hoursJson != null ? { hoursJson: l.hoursJson } : {}),
   };
 }
 
@@ -57,9 +58,7 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
     if (startNight <= endNight) stays.push({ lodgingId: l.id, startNight, endNight });
   }
 
-  // The solver needs lodging coordinates (for clustering tethers) alongside the placeable activities;
-  // it holds the lodgings out of the pool itself. Edges derive from transit, which is parked — none fed.
-  const inputLocations = [...activities, ...lodgings].map((l) => toInput(l));
+  const inputLocations = [...activities, ...lodgings].map(toInput);
   const dayBudgetMinutes =
     typeof opts.dayBudgetHours === "number" && opts.dayBudgetHours > 0 ? opts.dayBudgetHours * 60 : undefined;
 
@@ -67,7 +66,6 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
   // exactly one road kind — the Trip's own traveler-facing selector (CONTEXT.md's "kind (Path)"
   // entry: "the term returns only if a traveler-facing selector does").
   const kinds: PathKind[] = ["rail", "bus", trip.roadProfile];
-  const provider = composedPathProvider;
 
   const itinerary = await solve({
     locations: inputLocations,
@@ -76,7 +74,6 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
     dayBudgetMinutes,
     startDate: trip.startDate,
     kinds,
-    provider,
   });
 
   // Map day numbers onto calendar dates and flatten to the stored Placement shape.
@@ -90,7 +87,7 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
 
   return {
     trip: setPlacements(tripId, placements),
-    feasibilityViolations: itinerary.feasibilityViolations,
     unplaced: itinerary.unplaced,
+    warnings: itinerary.warnings,
   };
 }
