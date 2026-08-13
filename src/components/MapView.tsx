@@ -2,7 +2,7 @@
 
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
-import Map, { Source, Layer, MapMouseEvent } from "react-map-gl/maplibre";
+import Map, { Source, Layer, AttributionControl, MapMouseEvent } from "react-map-gl/maplibre";
 import type { MapRef, LayerProps } from "react-map-gl/maplibre";
 import type { FeatureCollection, LineString, Point } from "geojson";
 import { ChevronRight, Crosshair, Globe, MapPin, PanelLeftClose } from "lucide-react";
@@ -11,8 +11,24 @@ import { deriveDays, type DerivedDay, type Location } from "@/types";
 import { DAY_COLORS, dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { boundsOf, metroOfDay, metrosOf, type Bounds, type TripMetro } from "@/lib/tripMetros";
 
-const CARTO_DARK =
-  "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
+// #145: CARTO's keyless basemap endpoint is outside its published license (enterprise/grant-only,
+// no self-serve tier). Stadia's Alidade Smooth Dark is the visual replacement — see ADR-0027 for
+// why Stadia over MapTiler/self-hosted PMTiles. No API key needed on localhost (strict but
+// unpublished rate limit); NEXT_PUBLIC_STADIA_API_KEY is read if a key is ever provisioned, but
+// nothing sets it today.
+const STADIA_STYLE_URL = "https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json";
+const STADIA_API_KEY = process.env.NEXT_PUBLIC_STADIA_API_KEY;
+const STADIA_DARK = STADIA_API_KEY
+  ? `${STADIA_STYLE_URL}?api_key=${STADIA_API_KEY}`
+  : STADIA_STYLE_URL;
+
+// #145/#150: MapLibre adds an AttributionControl by default, but only in *compact* form — a small
+// icon that needs a click to reveal the credit, which doesn't meet OSMF guidance ("should not
+// require individuals to interact with the map ... to see the attribution"). Stadia's own style
+// JSON declares an accurate, complete attribution string (verified 2026-08-12 — unlike CARTO's,
+// which omitted a credit its own license required), so the fix is forcing the control open
+// (`compact={false}`), not overriding the text: a hardcoded string here would duplicate what the
+// control already renders from the style, and silently drift if Stadia's credit ever changes.
 
 // Camera semantics (#128 decision 1): metro and day targets *fit* their extent; a single stop is a
 // flyTo at a fixed zoom, since a one-point bounds has no extent to fit.
@@ -419,9 +435,10 @@ export default function MapView() {
           <Map
             ref={mapRef}
             initialViewState={initialViewState}
-            mapStyle={CARTO_DARK}
+            mapStyle={STADIA_DARK}
             style={{ width: "100%", height: "100%" }}
             interactiveLayerIds={["stops"]}
+            attributionControl={false}
             onClick={handleClick}
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
@@ -429,6 +446,7 @@ export default function MapView() {
             onZoomStart={handleUserMove}
             cursor={tooltip ? "pointer" : "grab"}
           >
+            <AttributionControl compact={false} />
             <Source id="routes" type="geojson" data={routesGeoJSON}>
               <Layer {...routeLayer} />
             </Source>

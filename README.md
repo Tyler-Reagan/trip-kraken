@@ -96,6 +96,14 @@ The key needs the following APIs enabled in Google Cloud Console:
 - Geocoding API (fallback coordinate resolution)
 - Places API (Nearby Search, Text Search, Place Details)
 
+The basemap (Stadia Maps, see ADR-0027) needs no key on `localhost` — it's subject to a strict but
+unpublished rate limit instead. If that limit is ever hit, or the app is deployed off `localhost`,
+add a free Stadia account's key:
+
+```env
+NEXT_PUBLIC_STADIA_API_KEY=your_key_here
+```
+
 ### 3. Start VROOM and OSRM
 
 Optimization (ADR-0023) and road travel cost (ADR-0024) depend on two self-hosted services,
