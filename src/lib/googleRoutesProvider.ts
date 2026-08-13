@@ -5,8 +5,12 @@
  * Google Cloud API that must be individually enabled/billed on the same project (see the ADR-0018
  * implementation notes for the console steps).
  *
- * Fails loudly (ADR-0018 #4): any HTTP error, per-element error status, or "no route" condition
- * throws — never a silent fallback to haversine.
+ * Fails loudly (ADR-0018 #4, amended 2026-08-12) on a genuine failure — any HTTP error or
+ * per-element error status — never a silent fallback to haversine. A "no route" condition is not a
+ * failure: Google successfully answered "no route exists," which is exactly what `PathProvider`'s
+ * `null` decline (ADR-0024 §4) exists to carry — `costMatrix` sets that cell `null` and
+ * `describeJourney` returns `null`, letting the registry's next entry (ultimately `haversine`)
+ * answer instead, visibly stamped `basisOfCost: straightLine`.
  *
  * Waypoints are sent as lat/lng, not Google `placeId`s: `Point` doesn't carry a placeId today, and
  * every committed Location's coordinates are already Google-canonical (ADR-0009 enrichment), so
@@ -37,7 +41,7 @@
 
 import { makeTravelCost, type Path, type PathEndpoint, type PathKind, type TravelCost } from "@/types/path";
 import type { Point } from "@/lib/geo";
-import type { PathProvider } from "@/lib/pathProvider";
+import type { MatrixCell, PathProvider } from "@/lib/pathProvider";
 import { resolvePrimaryPathKind } from "@/lib/pathKind";
 
 const MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
@@ -132,9 +136,9 @@ async function computeFullMatrix(
   points: Point[],
   googleMode: string,
   departureTime?: Date
-): Promise<TravelCost[][]> {
+): Promise<MatrixCell[][]> {
   const n = points.length;
-  const matrix: TravelCost[][] = Array.from({ length: n }, () => new Array(n));
+  const matrix: MatrixCell[][] = Array.from({ length: n }, () => new Array(n).fill(null));
 
   const maxElements = MAX_ELEMENTS[googleMode] ?? 625;
   const batchSize = Math.max(1, Math.floor(Math.sqrt(maxElements)));
@@ -156,11 +160,15 @@ async function computeFullMatrix(
         if (el.status?.code) {
           throw new Error(`Google Routes API element error: ${el.status.message ?? el.status.code}`);
         }
-        if (el.condition && el.condition !== "ROUTE_EXISTS") {
-          throw new Error(`Google Routes API: no route (${el.condition}) between one origin/destination pair`);
-        }
         const i = originBatch[el.originIndex];
         const j = destBatch[el.destinationIndex];
+        if (el.condition && el.condition !== "ROUTE_EXISTS") {
+          // A "no route" condition is Google successfully answering "no route exists" — a decline
+          // (ADR-0024 §4), not a failure (ADR-0018 §4, amended 2026-08-12). The cell stays null so
+          // the registry's next entry can answer instead.
+          matrix[i][j] = null;
+          continue;
+        }
         matrix[i][j] = makeTravelCost(el.distanceMeters ?? 0, el.duration ? toSeconds(el.duration) : 0, "routingService", "google");
       }
     }
@@ -228,7 +236,7 @@ export const googleRoutesProvider: PathProvider = {
     return computeFullMatrix(points, googleMode, departureTime);
   },
 
-  async describeJourney(from: PathEndpoint, to: PathEndpoint, kinds, opts): Promise<Path[]> {
+  async describeJourney(from: PathEndpoint, to: PathEndpoint, kinds, opts): Promise<Path[] | null> {
     const primary = resolvePrimaryPathKind(kinds);
     const googleMode = GOOGLE_MODE_FOR_KIND[primary];
     const departureTime = googleMode === "TRANSIT" ? opts?.departureTime : undefined;
@@ -255,7 +263,9 @@ export const googleRoutesProvider: PathProvider = {
     }
     const data = (await res.json()) as ComputeRoutesResponse;
     const route = data.routes?.[0];
-    if (!route) throw new Error("Google Routes API: no route found for this Journey");
+    // No route is Google successfully answering "no route exists" — a decline (ADR-0024 §4), not a
+    // failure (ADR-0018 §4, amended 2026-08-12). `null` is a decline, same as a MatrixCell.
+    if (!route) return null;
 
     const travelCost = makeTravelCost(
       route.distanceMeters ?? 0,
