@@ -52,3 +52,4 @@ status to **Superseded by ADR-NNNN**.
 | [0023](0023-vroom-as-the-decision-layer.md) | VROOM is the Decision layer; the objective is the solver's | Accepted |
 | [0024](0024-osrm-facts-source-and-capability-dispatched-registry.md) | OSRM as primary road Facts; capability-dispatched provider registry | Accepted |
 | [0025](0025-bff-over-http-services-and-deployment-posture.md) | The app stays a BFF; VROOM and OSRM are upstream HTTP services | Accepted |
+| [0026](0026-self-heal-plan-repair.md) | A removed activity Placement self-heals its Day locally; re-optimize stays optional, never forced | Accepted |

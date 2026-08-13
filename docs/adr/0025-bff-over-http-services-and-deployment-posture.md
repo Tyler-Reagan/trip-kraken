@@ -112,3 +112,23 @@ environment. Only the third is attributable to this work.
   true" list is the agenda.
 - **ADR-0024's "plus CI" consequence is withdrawn** in its 2026-08-07 amendment: CI presupposes
   something to gate.
+
+> ### Amended 2026-08-12 — the narrow constraint was mmap, not "long-lived and slow to start"
+>
+> This ADR's stated reason `osrm-routed` and VROOM "cannot run *as* serverless functions" was that
+> they "memory-map multi-gigabyte graphs and take tens of seconds to become ready." That was wrong
+> on the facts: by default `osrm-routed` does not memory-map its serving files, it copies them into
+> process memory (`ImmutableProvider`/`ProcessMemoryAllocator`) — only the R-tree `.fileIndex` is
+> ever mapped. Discovered when #163's widened Extract pushed that copy past Docker Desktop's VM
+> allocation and OOM-killed `osrm-car`; see `docs/research/routing-memory-architecture.md` for the
+> full measurement and source citations.
+>
+> The fix — passing `--mmap` (`docker-compose.yml`) — genuinely does make `osrm-routed` map its
+> files, and drops startup to ~0.2s and resident memory to under 100 MiB at rest. So "tens of
+> seconds to become ready" is no longer even true of the corrected configuration, and never
+> described the reason serverless was wrong.
+>
+> **The Decision does not change.** What actually blocks a function runtime is narrower and
+> survives untouched: the process needs a multi-gigabyte file resident on a local filesystem it
+> controls, which a stateless function invocation does not provide regardless of how fast the
+> process starts or how little memory it holds once running.

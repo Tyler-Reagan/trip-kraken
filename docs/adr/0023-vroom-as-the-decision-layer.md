@@ -252,6 +252,40 @@ duration from category is the real fix.
 > magnitude argument; it has not yet been confirmed or refuted by a fixture with real capacity
 > pressure.
 
+> ### Amended 2026-08-12 — §7 exclusions must remove a Location from the matrix, not just from `jobs`;
+> a fourth reason is recorded but deferred
+>
+> Diagnosing a live optimize failure (`ROUTE_NOT_FOUND` on a Location whose coordinates had been
+> mis-resolved to another continent by an unrelated enrichment defect, now fixed) forced a precise
+> answer to a question §7 left implicit: does a pre-flight exclusion remove a Location from the travel
+> matrix, or only from the `jobs` VROOM is asked to place?
+>
+> **It must remove from both.** The Location in question was already excludable under §7's existing
+> second reason — "metro with no covering lodging" — verified against the live data: it formed its own
+> single-activity metro cluster with zero covering lodgings, exactly what `clusterByMetro` (ADR-0020,
+> unchanged) already detects. But removing it from `jobs` alone while leaving it in the matrix would
+> still ask every registry provider to answer for it, including metered ones — paying for, and
+> potentially failing on, a cell whose Location was never going anywhere. Excluding a Location must
+> mean it never reaches `buildTravelMatrix` at all, matching how ADR-0024 §4's composer already
+> subsets points to bound a metered provider's exposure.
+>
+> **A fourth exclusion reason — "too far from the rest of the trip for any provider to route to" — is
+> recorded here but deliberately not built.** The triggering case this ADR-0018-adjacent investigation
+> turned up turned out to already be reason two (above): a metro-coverage gap, not a routability gap.
+> No Location in real use has yet demonstrated a case reason two misses — inside a metro with covering
+> lodging, but which no non-terminal registry provider can answer for, so the cell falls through to
+> `haversine`'s terminal, distance-uncapped straight line. Building a detector for a hypothesis with no
+> demonstrated instance trades simplicity for speculation. **The condition that should trigger building
+> it:** the first real Location, inside an otherwise-covered metro, whose matrix cells resolve to
+> `basisOfCost: straightLine` from every provider but the terminal one. Until then, `haversine`'s
+> uncapped straight line is a known, accepted rough edge (see also #162 on its speed model being wrong
+> in both directions), not a silent one — every such cell is visibly stamped, not hidden.
+>
+> This does not change what `googleRoutesProvider` does with a cell it *is* asked to answer — see
+> ADR-0018's 2026-08-12 amendment, decided alongside this one, for why it declines rather than throws
+> on "no route." The two are complementary: §7 stops a hopeless cell from ever being asked; the
+> provider's decline is the safety net for the cells that still reach it.
+
 ## Alternatives considered
 
 - **Keep the two-phase heuristic and improve it.** Rejected: the defect is structural, not a tuning

@@ -132,6 +132,38 @@ undesigned; haversine-vs-Google is plain config per ADR-0004.
 > self-hosted OSRM or the rail graph carry no such restriction. See
 > [#158](https://github.com/Tyler-Reagan/trip-kraken/issues/158).
 
+> ### Amended 2026-08-12 — §4 governs provider *failure*, never a successful "no route" answer
+>
+> Live testing hit `googleRoutesProvider.costMatrix` throwing `Google Routes API: no route
+> (ROUTE_NOT_FOUND) between one origin/destination pair` and killing an entire optimize run over one
+> unroutable pair (a Location whose coordinates had been mis-resolved to another continent by an
+> unrelated enrichment defect, now fixed). Diagnosing it surfaced that this ADR's "fails loudly" was
+> being applied to a case it was never written for.
+>
+> §4's examples are explicit: "outage, rate limit." Those are cases where the provider **could not
+> answer** — silently guessing at a cost it never computed is exactly the "confident-looking wrong
+> output" this section rules out. `ROUTE_NOT_FOUND` is not that. It is a `200 OK` in which Google
+> **did** answer: no bus runs between these two points. That is a true fact, not a missing one.
+>
+> `PathProvider` (`src/lib/pathProvider.ts`) already has a channel for exactly this: `MatrixCell =
+> TravelCost | null`, documented as "an explicit decline (ADR-0024 §4)," and `describeJourney`'s
+> `Path[] | null`, documented as "`null` is a decline, the same as a `MatrixCell`." A decline is not
+> a silent fallback — ADR-0024's registry composes the matrix from several providers precisely so a
+> decline lets the *next* row (ultimately `haversine`, ADR-0024 §4's terminal entry) answer instead,
+> visibly stamped with `basisOfCost: straightLine`. Nothing is hidden; the honest outcome ("no real
+> route exists") is preserved in the data rather than in a thrown error.
+>
+> `googleRoutesProvider.ts` already drew this line correctly in one place and not two others:
+> `computeRoutePolyline` returns `null` on no-route with a comment citing this very ADR, while
+> `costMatrix` and `describeJourney` threw on the same condition. That inconsistency, not this ADR,
+> was the defect — `costMatrix` and `describeJourney` are corrected to match `computeRoutePolyline`'s
+> existing, already-ADR-0018-compliant behavior.
+>
+> **§4 stands, unchanged, for what it actually names:** HTTP errors, rate limits, outages — anything
+> where the provider could not produce an answer. `composeTravelMatrix` gets no `try/catch` around a
+> provider call; a genuine failure there must still fail loudly, or ADR-0017's problem returns by a
+> different door.
+
 ## Alternatives considered
 
 - **Exact time-dependent cost in the inner loop.** Rejected: circular (ordering ↔
