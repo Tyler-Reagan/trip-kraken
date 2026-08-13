@@ -30,9 +30,21 @@ Multiple lodgings in a Trip are simply multiple lodging Locations.
 _Avoid_: base, hotel, Stay
 
 **Transit (kind)**:
-A Location you pass through — airport, station; carries scheduled times. The Trip's
-arrival/departure are *derived* from the earliest/latest transit.
+A Location you pass through — airport, station; carries `arriveAt` / `departAt`, whose presence is
+what makes the kind, the way a Lodging's dates make its own (ADR-0028). A Trip has at most one
+Location carrying each, guaranteed when written — so the arrival simply *is* the Location carrying
+`arriveAt`, with no earliest/latest rule to apply and no tie-break to get wrong. One Location may
+carry both: a round trip through one airport. Either value may be a date alone (designated, time not
+yet known) or a date and a time (designated, and constrains that Day's window).
 _Avoid_: terminus, endpoint, base
+
+**Authored / surfaced (Transit)**:
+Two provenances for one kind (ADR-0028), on opposite sides of the solve. **Authored** Transit is
+written by a traveller and is an optimizer *input*: the Trip's two edges, and nothing else.
+**Surfaced** Transit is a station a Journey's rail Path passes through — derived from the Plan,
+projected every read, never stored, and therefore an optimizer *output*. Storing a surfaced station
+would write the optimizer's output back into its own input, so a re-solve would stop being a
+function of what the traveller provided. Surfaced Transit is not built yet.
 
 **Constraint**:
 An intrinsic temporal fact stored as a **field on a Location** (lodging dates, transit
@@ -128,13 +140,17 @@ _Avoid_: source, origin, provenance
 
 **Anchor (derived)**:
 A Location that bookends a Day, *projected* from a constraint-field — the lodging you sleep
-at, the transit you enter or exit by. Computed every read, never stored.
+at, the transit you arrive or depart by. Computed every read, never stored. An Anchor is never a
+Placement: like a Lodging, an edge Transit Location shapes the Day rather than sitting on it, and
+both are held out of the candidate pool for that reason (ADR-0028).
 _Avoid_: terminus, base
 
 **Role (derived)**:
 An adjective for how a Location is used — `lodging` · `arrival` · `departure` · `candidate`.
 Reflected from a Location's `kind` and constraint-fields; **never stored**. A place is never
-*a lodging*; it is a Location of `kind: lodging`.
+*a lodging*; it is a Location of `kind: lodging`. ADR-0028 keeps this rule rather than bending it:
+the Trip's edges are made unique when written, not recorded as a role flag or a pointer on Trip —
+a shape ADR-0015 removed and this glossary should not let back in.
 
 **Excluded (Location)**:
 A Location kept in the Trip but ignored by the optimizer — present, but not placed.
