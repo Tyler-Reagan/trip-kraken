@@ -57,10 +57,18 @@ services:
     volumes:
       - ./db/osrm/car:/data:ro
     command: >
-      osrm-routed --algorithm mld --max-table-size 1000 -p 5000 /data/road.osrm
-    # Both flags correct wrong defaults: the binary defaults to CH against OSRM's own README
-    # recommendation, and --max-table-size defaults to 100 *locations*, which a 60-stop trip
-    # exceeds.
+      osrm-routed --algorithm mld --mmap --max-table-size 1000 -p 5000 /data/road.osrm
+    # --algorithm and --max-table-size correct wrong defaults: the binary defaults to CH against
+    # OSRM's own README recommendation, and --max-table-size defaults to 100 *locations*, which a
+    # 60-stop trip exceeds.
+    #
+    # --mmap is load-bearing, not an optimization: without it osrm-routed copies every serving
+    # file into process memory at startup (ImmutableProvider/ProcessMemoryAllocator), which is
+    # ~5.7 GB for this graph and OOM-kills in Docker Desktop's 8.3 GB VM once #163 widened the
+    # Extract past Kantō alone. With it, resident memory tracks the working set a Trip actually
+    # queries (measured: 76 MiB at startup, ~650 MiB after 60x60 tables spanning Tokyo and Osaka)
+    # at the cost of a one-off ~0.4-0.6s penalty on the first query into a previously-untouched
+    # region — see docs/research/routing-memory-architecture.md for the full measurement.
 
   osrm-foot:
     <<: *osrm
@@ -71,4 +79,5 @@ services:
     volumes:
       - ./db/osrm/foot:/data:ro
     command: >
-      osrm-routed --algorithm mld --max-table-size 1000 -p 5002 /data/road.osrm
+      osrm-routed --algorithm mld --mmap --max-table-size 1000 -p 5002 /data/road.osrm
+    # --mmap: see osrm-car's comment above, same reasoning, same measurement.

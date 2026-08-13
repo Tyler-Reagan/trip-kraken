@@ -6,9 +6,11 @@
 # build-only files per profile before this runs, so what gets packaged is the ~15 GB serving set,
 # not the larger in-progress build peak.
 #
-# zstd compression is for movement/archive only, never for serving — osrm-routed memory-maps
-# these files, and a compressed file isn't mappable. Measured this session on the largest served
-# file (cell_metrics): ~2.3x, so ~15 GB unpacked becomes roughly 6-7 GB in transit.
+# zstd compression is for movement/archive only, never for serving — osrm-routed needs these
+# files as plain uncompressed data on disk, whether it's reading them via --mmap or copying them
+# into process memory (the default; see docker-compose.yml), and a compressed file is neither
+# mappable nor directly readable. Measured this session on the largest served file
+# (cell_metrics): ~2.3x, so ~15 GB unpacked becomes roughly 6-7 GB in transit.
 #
 # Usage:
 #   On the build machine, after `pnpm build:osrm-graphs`:
