@@ -20,12 +20,12 @@ const P = (lat: number, lng: number) => ({ lat, lng });
 
 async function main() {
 
-// `describeJourney`'s interface widened to `Path[] | null` for ADR-0024's decline mechanism, but
-// this provider's own implementation never actually declines (it throws instead — ADR-0018 #4).
-// This helper keeps that fact out of every call site below rather than null-checking each one.
+// Every call site below mocks a real route (ADR-0024's decline mechanism is exercised separately,
+// below) — this helper keeps the non-null assertion out of each one rather than null-checking every
+// call.
 async function describeJourney(...args: Parameters<typeof googleRoutesProvider.describeJourney>) {
   const result = await googleRoutesProvider.describeJourney(...args);
-  assert.ok(result, "googleRoutesProvider.describeJourney never declines");
+  assert.ok(result, "expected a route for this mocked response");
   return result!;
 }
 // ── costMatrix: one small chunk, fields mapped correctly ──
@@ -90,15 +90,13 @@ await assert.rejects(
   "per-element error status throws"
 );
 
-// ── costMatrix: ROUTE_NOT_FOUND throws rather than silently zeroing the cell ──
+// ── costMatrix: ROUTE_NOT_FOUND declines the cell (null) rather than failing the whole matrix
+//    (ADR-0018 §4, amended 2026-08-12 — a successful "no route" answer is not a provider failure) ──
 mockFetch(() => [
   { originIndex: 0, destinationIndex: 0, status: {}, condition: "ROUTE_NOT_FOUND", distanceMeters: 0, duration: "0s" },
 ]);
-await assert.rejects(
-  () => googleRoutesProvider.costMatrix([P(0, 0)], ["walking"]),
-  /ROUTE_NOT_FOUND/,
-  "no-route condition throws"
-);
+const declinedMatrix = await googleRoutesProvider.costMatrix([P(0, 0)], ["walking"]);
+assert.equal(declinedMatrix[0][0], null, "no-route condition declines the cell instead of throwing");
 
 // ── describeJourney: transit-bucket kinds have genuine cost but no derivable kind (ADR-0022 P1 —
 //    no vehicle.type in the field mask yet, so a rail/bus/other journey reports UnknownPath).
@@ -124,9 +122,16 @@ mockFetch(() => ({ routes: [{ distanceMeters: 8000, duration: "1800s" }] }));
 const mixedJourney = await describeJourney(P(35.68, 139.76), P(35.71, 139.79), ["walking", "rail"]);
 assert.equal(mixedJourney[0].kind, undefined, "rail wins the precedence over walking, so still an unknown-kind transit result");
 
-// ── describeJourney: no route found throws ──
+// ── describeJourney: no route found declines (null) rather than throwing — same reasoning as
+//    costMatrix's ROUTE_NOT_FOUND case above, and the same shape computeRoutePolyline already used
+//    (ADR-0022/0024). The per-element-error-still-throws and HTTP-failure-still-throws cases are
+//    already covered above/below — the decline here is scoped to a successful "no route" answer. ──
 mockFetch(() => ({ routes: [] }));
-await assert.rejects(() => googleRoutesProvider.describeJourney(P(0, 0), P(0, 0), ["driving"]), /no route found/, "empty routes throws");
+assert.equal(
+  await googleRoutesProvider.describeJourney(P(0, 0), P(0, 0), ["driving"]),
+  null,
+  "empty routes declines instead of throwing"
+);
 
 // ── computeRoutePolyline: encoded polyline extracted, minimal field mask ──
 mockFetch((_url, init) => {
