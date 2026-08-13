@@ -1,0 +1,35 @@
+# #160: run the test suite automatically on push/PR to main. Deliberately Docker/VROOM/OSRM-free —
+# see ADR-0024's 2026-08-07 amendment for why: nothing is deployed to gate, so a Docker-building
+# workflow for infrastructure that only ever runs on one machine would be ceremony. `pnpm test` is
+# already a single hand-maintained chain of tsx files with no network or filesystem dependencies
+# outside its own temp fixtures.
+#
+# `build` and `knip` ride along even though the issue only asked for `test` — both are already part
+# of this repo's per-PR verification habit, and neither needs Docker either (DB-touching pages are
+# force-dynamic, the Drizzle handle is lazy).
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Must run before setup-node: setup-node's pnpm cache option needs pnpm on PATH already.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm knip
