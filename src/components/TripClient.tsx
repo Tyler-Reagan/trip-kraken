@@ -108,18 +108,20 @@ export default function TripClient({ trip: initial }: Props) {
               Enriching {pendingCount}…
             </span>
           )}
-          {(failedCount > 0 || pendingCount > 0) && (
+          {/* Pending rows now self-recover on server startup (ADR-0009, #124) — Retry is back to
+              scoped `failed`-only, for a human to force a re-attempt. */}
+          {failedCount > 0 && (
             <button
               onClick={enrich}
               disabled={isEnriching}
               className="btn-secondary text-sm disabled:opacity-40"
-              title="Retry fetching details for locations still missing them — pending items can get stuck here after a server restart drops the in-memory enrichment queue"
+              title="Retry fetching details for locations that failed to look up"
             >
               {isEnriching
                 ? enrichProgress
                   ? `${enrichProgress.enriched}/${enrichProgress.total} retried`
                   : "Retrying…"
-                : `Retry (${failedCount + pendingCount})`}
+                : `Retry (${failedCount})`}
             </button>
           )}
           <button onClick={() => setShowOptimize(true)} className="btn-primary text-sm">

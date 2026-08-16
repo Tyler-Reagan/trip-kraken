@@ -42,7 +42,12 @@ export const trip = sqliteTable("Trip", {
   transitCaveatDismissed: integer("transitCaveatDismissed", { mode: "boolean" }).notNull().default(false),
   createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
   updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
-});
+}, (t) => [
+  // Hardens the app-level collision guard (checkTripNameCollision, #119) at the layer that can
+  // actually make it hold under concurrency (#121) — two creates racing past the app-level
+  // pre-check can no longer both succeed.
+  uniqueIndex("trip_name_unique").on(t.name),
+]);
 
 export const location = sqliteTable("Location", {
   id: text("id").primaryKey(),

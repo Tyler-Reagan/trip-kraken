@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createTripWithLocations, deleteTrip, checkTripNameCollision } from "@/lib/db";
+import { createTripWithLocations, deleteTrip, checkTripNameCollision, TripNameCollisionError } from "@/lib/db";
 import { extractMid, fetchKml, extractKmlDocumentName } from "@/lib/myMaps";
 import { parseKml } from "@/lib/parsers/kml";
 import { enqueueLocationEnrichment } from "@/lib/enrichmentQueue";
@@ -85,19 +85,28 @@ export async function POST(req: NextRequest) {
     deleteTrip(replaceTripId);
   }
 
-  const trip = createTripWithLocations({
-    name: tripName,
-    sourceUrl: url,
-    startDate,
-    endDate,
-    locations: places.map((p) => ({
-      name: p.name,
-      address: p.description ?? null,
-      lat: p.lat,
-      lng: p.lng,
-      placeId: null,
-    })),
-  });
+  // The pre-check above is skipped when the client already resolved a duplicate (onDuplicate set)
+  // — the DB's unique index is the backstop for both that case and the race between two concurrent
+  // creates that both pass the pre-check (#121).
+  let trip;
+  try {
+    trip = createTripWithLocations({
+      name: tripName,
+      sourceUrl: url,
+      startDate,
+      endDate,
+      locations: places.map((p) => ({
+        name: p.name,
+        address: p.description ?? null,
+        lat: p.lat,
+        lng: p.lng,
+        placeId: null,
+      })),
+    });
+  } catch (e) {
+    if (e instanceof TripNameCollisionError) return NextResponse.json(e.collision, { status: 409 });
+    throw e;
+  }
 
   // Enqueue all locations for background enrichment. The trip page loads
   // immediately; locations will update as enrichment completes.

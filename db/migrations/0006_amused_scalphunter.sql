@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `trip_name_unique` ON `Trip` (`name`);
