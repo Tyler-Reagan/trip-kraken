@@ -1,9 +1,10 @@
 "use client";
 
-import { Map, Star, TrainFront } from "lucide-react";
+import { Map, Star } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
-import { isActivity, isLodging, isTransit, type Location, type TripWithDetails } from "@/types";
+import { isActivity, isLodging, type Location, type TripWithDetails } from "@/types";
 import { NightStrip } from "./LodgingNightStrip";
+import { TransitSection } from "./TransitEdgeSlots";
 
 /**
  * The Manifest (ADR-0015 / ADR-0010) — the trip's inventory of places, grouped by `kind`. It is the
@@ -82,7 +83,6 @@ export default function Manifest() {
   if (!trip) return null;
 
   const lodgings = trip.locations.filter(isLodging);
-  const transit = trip.locations.filter(isTransit);
   const activities = trip.locations.filter(isActivity);
   const excludedCount = activities.filter((a) => a.excluded).length;
 
@@ -112,18 +112,9 @@ export default function Manifest() {
         </div>
       </Group>
 
-      {transit.length > 0 && (
-        <Group title={`Transit · ${transit.length}`}>
-          <div className="space-y-2">
-            {transit.map((t) => (
-              <div key={t.id} className="card p-3 text-sm text-sub flex items-center gap-1.5">
-                <TrainFront className="w-4 h-4 shrink-0" />
-                {t.name}
-              </div>
-            ))}
-          </div>
-        </Group>
-      )}
+      <Group title="Transit">
+        <TransitSection trip={trip} />
+      </Group>
     </div>
   );
 }

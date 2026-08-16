@@ -12,7 +12,7 @@
  */
 
 import { clusterByMetro } from "@/lib/metroCluster";
-import { deriveDays, isLodging, type TripWithDetails } from "@/types";
+import { deriveTripPlanDays, isLodging, type TripWithDetails } from "@/types";
 
 /** A lng/lat box in MapLibre's `fitBounds` order: [[west, south], [east, north]]. */
 export type Bounds = [[number, number], [number, number]];
@@ -92,7 +92,7 @@ export function metrosOf(trip: TripWithDetails): TripMetro[] {
   const cached = cache.get(trip);
   if (cached) return cached;
 
-  const days = deriveDays(trip);
+  const days = deriveTripPlanDays(trip);
   const daysByLocationId = new Map<string, number[]>();
   for (const day of days) {
     for (const stop of day.stops) {

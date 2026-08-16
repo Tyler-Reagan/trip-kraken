@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { eq, and, asc, desc, ne, gt, gte, max, sql, count, inArray, getTableColumns } from "drizzle-orm";
+import { eq, and, asc, desc, ne, gt, gte, max, sql, count, inArray, isNotNull, getTableColumns } from "drizzle-orm";
 import { getDrizzle, type Drizzle } from "./client";
 import { trip, location, placement } from "./schema";
 import type { TripWithDetails, Location, Placement, IsoDate } from "@/types";
@@ -38,17 +38,19 @@ function parseTrip(r: typeof trip.$inferSelect) {
   };
 }
 
-/** Narrow one DB row into the discriminated union (ADR-0015 §1). A lodging row must carry the
- *  booking dates that made it lodging; for other kinds those columns are dropped from the type. */
+/** Narrow one DB row into the discriminated union (ADR-0015 §1, ADR-0028). A lodging row must
+ *  carry the booking dates that made it lodging; a transit row carries whichever of
+ *  `arriveAt`/`departAt` made it transit (possibly both); for activity, those columns are dropped
+ *  from the type. */
 function toLocation(r: typeof location.$inferSelect): Location {
-  const { kind, checkInDate, checkOutDate, ...base } = r;
+  const { kind, checkInDate, checkOutDate, arriveAt, departAt, ...base } = r;
   switch (kind) {
     case "lodging":
       if (!checkInDate || !checkOutDate)
         throw new Error(`Lodging ${r.id} is missing its booking dates — DB inconsistency`);
       return { ...base, kind, checkInDate, checkOutDate };
     case "transit":
-      return { ...base, kind };
+      return { ...base, kind, arriveAt: arriveAt ?? null, departAt: departAt ?? null };
     case "activity":
       return { ...base, kind };
     default:
@@ -231,20 +233,43 @@ export function updateTrip(
     transitCaveatDismissed?: boolean;
   }
 ): TripWithDetails {
-  getDrizzle()
-    .update(trip)
-    .set({
-      ...(fields.name !== undefined ? { name: fields.name } : {}),
-      ...(fields.startDate !== undefined ? { startDate: fields.startDate } : {}),
-      ...(fields.endDate !== undefined ? { endDate: fields.endDate } : {}),
-      ...(fields.dayLabels !== undefined ? { dayLabels: fields.dayLabels } : {}),
-      ...(fields.roadProfile !== undefined ? { roadProfile: fields.roadProfile } : {}),
-      ...(fields.transitCaveatDismissed !== undefined ? { transitCaveatDismissed: fields.transitCaveatDismissed } : {}),
-      updatedAt: sql`(datetime('now'))`,
-    })
-    .where(eq(trip.id, id))
-    .run();
+  getDrizzle().transaction((tx) => {
+    tx.update(trip)
+      .set({
+        ...(fields.name !== undefined ? { name: fields.name } : {}),
+        ...(fields.startDate !== undefined ? { startDate: fields.startDate } : {}),
+        ...(fields.endDate !== undefined ? { endDate: fields.endDate } : {}),
+        ...(fields.dayLabels !== undefined ? { dayLabels: fields.dayLabels } : {}),
+        ...(fields.roadProfile !== undefined ? { roadProfile: fields.roadProfile } : {}),
+        ...(fields.transitCaveatDismissed !== undefined ? { transitCaveatDismissed: fields.transitCaveatDismissed } : {}),
+        updatedAt: sql`(datetime('now'))`,
+      })
+      .where(eq(trip.id, id))
+      .run();
+
+    // The trip edges' date component follows the trip's own dates (ADR-0028 §3) — a user never
+    // edits it directly, so a date-range change must carry a stored arrival/departure forward
+    // rather than leaving it pointing at a date the trip no longer has.
+    if (fields.startDate !== undefined) rewriteEdgeDate(tx, id, "arriveAt", fields.startDate);
+    if (fields.endDate !== undefined) rewriteEdgeDate(tx, id, "departAt", fields.endDate);
+  });
   return requireTrip(id);
+}
+
+/** Re-stamp a trip edge's date component after the trip's date range moves, preserving any time
+ *  the edge already carried (ADR-0028 §3). A no-op when no Location currently holds that edge. */
+function rewriteEdgeDate(tx: Tx, tripId: string, field: "arriveAt" | "departAt", newDate: IsoDate) {
+  const column = field === "arriveAt" ? location.arriveAt : location.departAt;
+  const row = tx
+    .select({ id: location.id, value: column })
+    .from(location)
+    .where(and(eq(location.tripId, tripId), isNotNull(column)))
+    .get();
+  if (!row || row.value == null) return;
+  const time = row.value.includes("T") ? row.value.slice(row.value.indexOf("T")) : "";
+  const next = `${newDate}${time}`;
+  if (field === "arriveAt") tx.update(location).set({ arriveAt: next }).where(eq(location.id, row.id)).run();
+  else tx.update(location).set({ departAt: next }).where(eq(location.id, row.id)).run();
 }
 
 export function deleteTrip(id: string): void {
@@ -475,6 +500,115 @@ export function importBookingLodging(tripId: string, booking: ParsedBooking): Tr
     checkInDate: booking.checkInDate,
     checkOutDate: booking.checkOutDate,
   });
+}
+
+// ─── Transit trip edges ─────────────────────────────────────────────────────
+
+/** Thrown when a proposed trip-edge assignment violates ADR-0028 invariants. */
+export class TransitValidationError extends Error {}
+
+const HHMM = /^\d{2}:\d{2}$/;
+
+/**
+ * Designate a Location as the trip's arrival, elevating it to `kind: transit` (ADR-0028 §1/§2) —
+ * the same "the gesture that attaches a constraint elevates the kind" rule `setLodgingDates`
+ * follows for lodging. The date component is always the trip's first date, read fresh here rather
+ * than trusted from the caller; the caller supplies only an optional time ("HH:MM"), never a date.
+ * `time: null` designates the edge with no known time yet, still anchoring the geography.
+ *
+ * At most one Location per Trip may hold `arriveAt`. Whichever Location held it before is released
+ * in the same transaction the new one is set, so "assign a different arrival" never needs a
+ * separate clear step and the two can never disagree. A partial unique index (schema.ts) backs
+ * this as a database guarantee, not just a write-path convention.
+ */
+export function setTripArrival(tripId: string, locationId: string, time: string | null): TripWithDetails {
+  const db = getDrizzle();
+  if (time != null && !HHMM.test(time)) throw new TransitValidationError("Invalid time (expected HH:MM)");
+  const t = db.select({ startDate: trip.startDate }).from(trip).where(eq(trip.id, tripId)).get();
+  if (!t) throw new TransitValidationError("Trip not found");
+  const target = db
+    .select({ id: location.id })
+    .from(location)
+    .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
+    .get();
+  if (!target) throw new TransitValidationError("Location is not in this trip");
+  const arriveAt = time != null ? `${t.startDate}T${time}` : t.startDate;
+
+  db.transaction((tx) => {
+    // Release whoever held the arrival before — clearing the field alone isn't enough if that was
+    // its only edge, or the release would leave a `kind: transit` row with both fields null.
+    const holder = tx
+      .select({ id: location.id, departAt: location.departAt })
+      .from(location)
+      .where(and(eq(location.tripId, tripId), isNotNull(location.arriveAt), ne(location.id, locationId)))
+      .get();
+    if (holder) {
+      tx.update(location)
+        .set({ arriveAt: null, ...(holder.departAt == null ? { kind: "activity" } : {}) })
+        .where(eq(location.id, holder.id))
+        .run();
+    }
+    tx.update(location).set({ kind: "transit", arriveAt }).where(eq(location.id, locationId)).run();
+  });
+  return requireTrip(tripId);
+}
+
+/** The departure mirror of `setTripArrival` — the trip's last date (ADR-0028 §1/§2). */
+export function setTripDeparture(tripId: string, locationId: string, time: string | null): TripWithDetails {
+  const db = getDrizzle();
+  if (time != null && !HHMM.test(time)) throw new TransitValidationError("Invalid time (expected HH:MM)");
+  const t = db.select({ endDate: trip.endDate }).from(trip).where(eq(trip.id, tripId)).get();
+  if (!t) throw new TransitValidationError("Trip not found");
+  const target = db
+    .select({ id: location.id })
+    .from(location)
+    .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
+    .get();
+  if (!target) throw new TransitValidationError("Location is not in this trip");
+  const departAt = time != null ? `${t.endDate}T${time}` : t.endDate;
+
+  db.transaction((tx) => {
+    const holder = tx
+      .select({ id: location.id, arriveAt: location.arriveAt })
+      .from(location)
+      .where(and(eq(location.tripId, tripId), isNotNull(location.departAt), ne(location.id, locationId)))
+      .get();
+    if (holder) {
+      tx.update(location)
+        .set({ departAt: null, ...(holder.arriveAt == null ? { kind: "activity" } : {}) })
+        .where(eq(location.id, holder.id))
+        .run();
+    }
+    tx.update(location).set({ kind: "transit", departAt }).where(eq(location.id, locationId)).run();
+  });
+  return requireTrip(tripId);
+}
+
+/**
+ * Release a Location from an edge role (ADR-0028). Clearing the *last* of `arriveAt`/`departAt`
+ * relegates the Location back to `kind: activity` — the same "removing the constraint drops the
+ * kind" rule `clearLodging` follows; clearing one of two still leaves it transit.
+ */
+export function clearTripEdge(tripId: string, locationId: string, which: "arrival" | "departure"): TripWithDetails {
+  const db = getDrizzle();
+  const row = db
+    .select({ arriveAt: location.arriveAt, departAt: location.departAt })
+    .from(location)
+    .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
+    .get();
+  if (!row) throw new TransitValidationError("Location is not in this trip");
+
+  const clearingArrival = which === "arrival";
+  const relegate = (clearingArrival ? row.departAt : row.arriveAt) == null;
+
+  db.update(location)
+    .set({
+      ...(clearingArrival ? { arriveAt: null } : { departAt: null }),
+      ...(relegate ? { kind: "activity" } : {}),
+    })
+    .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
+    .run();
+  return requireTrip(tripId);
 }
 
 // ─── Location mutations ───────────────────────────────────────────────────────

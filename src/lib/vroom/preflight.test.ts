@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { preflight } from "./preflight";
 import type { LocationInput } from "@/lib/solver";
 
-const loc = (fields: Partial<LocationInput> & { id: string }): LocationInput => ({ lat: 0, lng: 0, ...fields });
+const loc = (fields: Partial<LocationInput> & { id: string }): LocationInput => ({ lat: 0, lng: 0, kind: "activity", ...fields });
 
 // ── #152: ungeocoded + pending → "still looking this place up", not excluded from the reason set ──
 {
@@ -104,6 +104,36 @@ const loc = (fields: Partial<LocationInput> & { id: string }): LocationInput => 
   const { lodgingMetros, metroOf } = preflight(activities, lodgings, []);
   assert.ok(lodgingMetros.has("hotel"));
   assert.deepEqual(lodgingMetros.get("hotel"), [metroOf.get("a1")]);
+}
+
+// ── ADR-0028 §4: an edge Location with no coordinates warns regardless of enrichment status. The
+// only reachable way to end up coordinate-less is a permanently-unenrichable "done" row (no
+// placeId, no coords) — every write path that queues "pending" enrichment already has coords.
+// Gating the warning on "pending" alone left it unreachable in practice; a real ungeocoded edge
+// fell back to lodging silently, with no warning at all. ──
+{
+  const arrival = loc({ id: "airport", enrichmentStatus: "done" }); // 0,0 = no coords
+  const { warnings } = preflight([], [], [], { arrival });
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /airport/);
+  assert.match(warnings[0], /day 1/i);
+}
+
+// ── Same for departure, and for "failed" status too — any ungeocoded edge warns, not only a
+// pending one. ──
+{
+  const departure = loc({ id: "airport2", enrichmentStatus: "failed" });
+  const { warnings } = preflight([], [], [], { departure });
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /airport2/);
+  assert.match(warnings[0], /last day/i);
+}
+
+// ── A geocoded edge never warns, regardless of enrichment status. ──
+{
+  const arrival = loc({ id: "airport3", lat: 35, lng: 139, enrichmentStatus: "pending" });
+  const { warnings } = preflight([], [], [], { arrival });
+  assert.equal(warnings.length, 0);
 }
 
 console.log("✓ preflight.test.ts passed");

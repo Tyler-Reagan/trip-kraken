@@ -51,7 +51,14 @@ export interface LocationInput {
   /** #152: distinguishes "still being looked up" from "we couldn't find this place" — both read
    * as `!hasValidCoords`, but want different pre-flight reasons and different user actions. */
   enrichmentStatus?: "done" | "pending" | "failed";
-  kind?: "activity" | "transit" | "lodging";
+  /** Required — the candidate-pool split (below) and the trip-edge fields depend on it, and it is
+   * always populated by `optimize.ts`'s `toInput`. */
+  kind: "activity" | "transit" | "lodging";
+  /** A trip-edge Transit Location's own constraint fields (ADR-0028), carried through so
+   * `buildSolverInputDays` can compute Day 1 / the last Day's window honestly. Absent for
+   * non-transit kinds. */
+  arriveAt?: string | null;
+  departAt?: string | null;
 }
 
 /** A lodging's booking dates, reduced to the integer night-range it covers (ADR-0015): a booking
@@ -109,6 +116,11 @@ export interface OptimizationProblem {
   /** The Path kinds this run wants sourced (ADR-0024 §3) — a static declaration of what's being
    * asked for. Defaults to `DEFAULT_KINDS` for callers that don't need per-Trip resolution. */
   kinds?: PathKind[];
+  /** The trip's edges (ADR-0028) — at most one arrival id, one departure id, resolved by the
+   * caller from whichever Location(s) carry `arriveAt`/`departAt`. An id with no matching Location
+   * in `locations`, or one that turns out ungeocoded, is simply not usable — `solve()` falls back
+   * to the Lodging Anchor and warns, rather than failing. */
+  edges?: { arrivalId?: string; departureId?: string };
 }
 
 export interface Itinerary {
@@ -131,6 +143,7 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
     dayStartMins = 9 * 60,
     startDate,
     kinds = DEFAULT_KINDS,
+    edges,
   } = problem;
 
   if (locations.length === 0) return { days: [], unplaced: [], warnings: [] };
@@ -138,22 +151,35 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
   const days = numDays > 0 ? numDays : 1;
   const emptyDays = (): DayPlan[] => Array.from({ length: days }, (_, i) => ({ dayNumber: i + 1, locationIds: [] }));
 
-  // Anchors (lodgings, from stays) are held out of the candidate pool — never emitted as a
-  // Placement, only ever a Day's start/end (ADR-0005). Everything else is a placement candidate.
-  const lodgingIds = new Set(stays.map((s) => s.lodgingId));
-  const lodgings = locations.filter((l) => lodgingIds.has(l.id));
-  const activities = locations.filter((l) => !lodgingIds.has(l.id));
+  // Only an Activity is ever *placed* (CONTEXT.md: "the only kind the optimizer places"). Lodging
+  // and trip-edge Transit are both Anchors — held out of the candidate pool, never emitted as a
+  // Placement, only ever a Day's start/end (ADR-0005, ADR-0028).
+  const activities = locations.filter((l) => l.kind === "activity");
+  const lodgings = locations.filter((l) => l.kind === "lodging");
+  const transitEdges = locations.filter((l) => l.kind === "transit");
+
+  const arrivalLoc = edges?.arrivalId ? transitEdges.find((l) => l.id === edges.arrivalId) : undefined;
+  const departureLoc = edges?.departureId ? transitEdges.find((l) => l.id === edges.departureId) : undefined;
 
   const tripDates: IsoDate[] = startDate ? Array.from({ length: days }, (_, i) => addDaysIso(startDate, i)) : [];
 
-  const { placeable, unplaced, warnings, metroOf, lodgingMetros } = preflight(activities, lodgings, tripDates);
+  const { placeable, unplaced, warnings, metroOf, lodgingMetros } = preflight(activities, lodgings, tripDates, {
+    arrival: arrivalLoc,
+    departure: departureLoc,
+  });
 
   if (placeable.length === 0) return { days: emptyDays(), unplaced, warnings };
 
-  // Matrix points: every placeable Activity plus every geocoded lodging (Anchors) — one bijection
-  // (index in this array) reused for `location_index`/`start_index`/`end_index`/`job.id`, so there
-  // is no second id↔index map to keep in sync.
-  const matrixPoints = [...placeable, ...lodgings.filter(hasValidCoords)];
+  // An edge with no valid coordinates falls back to the Lodging Anchor rather than anchoring a Day
+  // on an unroutable point (ADR-0028 §4) — `preflight` already warned about it above.
+  const arrivalUsable = arrivalLoc != null && hasValidCoords(arrivalLoc);
+  const departureUsable = departureLoc != null && hasValidCoords(departureLoc);
+
+  // Matrix points: every placeable Activity, every geocoded lodging, and either usable edge
+  // Transit Location (Anchors) — one bijection (index in this array) reused for
+  // `location_index`/`start_index`/`end_index`/`job.id`, so there is no second id↔index map to
+  // keep in sync.
+  const matrixPoints = [...placeable, ...lodgings.filter(hasValidCoords), ...transitEdges.filter(hasValidCoords)];
   const departureTime = startDate ? new Date(Date.parse(startDate + "T00:00:00Z") + dayStartMins * 60000) : undefined;
   const matrix = await buildTravelMatrix(matrixPoints, { kinds, departureTime });
 
@@ -168,6 +194,12 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
     dayBudgetMinutes,
     metroOf,
     lodgingMetros,
+    edges: {
+      arrivalId: arrivalUsable ? arrivalLoc!.id : undefined,
+      departureId: departureUsable ? departureLoc!.id : undefined,
+      arriveAt: arrivalLoc?.arriveAt,
+      departAt: departureLoc?.departAt,
+    },
   });
   const solution = await postVroom(request);
   const { days: solvedDays, unplaced: solverUnplaced } = parseVroomSolution(solution, matrixPoints);

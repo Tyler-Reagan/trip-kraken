@@ -5,9 +5,9 @@ import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import Map, { Source, Layer, AttributionControl, MapMouseEvent } from "react-map-gl/maplibre";
 import type { MapRef, LayerProps } from "react-map-gl/maplibre";
 import type { FeatureCollection, LineString, Point } from "geojson";
-import { ChevronRight, Crosshair, Globe, MapPin, PanelLeftClose } from "lucide-react";
+import { ChevronRight, Crosshair, Globe, MapPin, PanelLeftClose, TrainFront } from "lucide-react";
 import { useTripStore, type FocusTarget } from "@/store/tripStore";
-import { deriveDays, type DerivedDay, type Location } from "@/types";
+import { deriveTripPlanDays, type DerivedDay, type Location } from "@/types";
 import { DAY_COLORS, dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { boundsOf, metroOfDay, metrosOf, type Bounds, type TripMetro } from "@/lib/tripMetros";
 
@@ -53,6 +53,9 @@ type TooltipState = {
   y: number;
   name: string;
   isBase: boolean;
+  /** Which Anchor kind an `isBase` point is (ADR-0028) — a Lodging or a trip-edge Transit
+   *  Location — so the tooltip doesn't call an airport "Lodging". Absent for a plain stop. */
+  anchorKind?: "lodging" | "transit";
   dayNumber?: number;
   order?: number;
   dayNumbers?: number[];
@@ -141,7 +144,7 @@ export default function MapView() {
   );
 
   // Day-clustered plan, projected from placements + lodging dates (ADR-0015).
-  const days = useMemo(() => (trip ? deriveDays(trip) : []), [trip]);
+  const days = useMemo(() => (trip ? deriveTripPlanDays(trip) : []), [trip]);
   // The shared metro source (#128 decision 3) — memoized per trip, same array the day cards read.
   const metros = useMemo(() => (trip ? metrosOf(trip) : []), [trip]);
 
@@ -161,12 +164,15 @@ export default function MapView() {
     const points: FeatureCollection<Point> = { type: "FeatureCollection", features: [] };
     const routes: FeatureCollection<LineString> = { type: "FeatureCollection", features: [] };
 
-    const lodgingMap: Record<string, { locationId: string; name: string; lat: number; lng: number; dayNumbers: number[] }> = {};
-    const addLodging = (loc: Location, dayNumber: number) => {
-      if (loc.lat === null || loc.lng === null) return;
-      const e = lodgingMap[loc.id];
+    // "Anchor" here covers both bookend kinds (ADR-0028): a Lodging or a trip-edge Transit
+    // Location. Both render as the same neutral marker — only the tooltip/panel text tells them
+    // apart, since a full distinct map icon would need a symbol layer this style doesn't load.
+    const anchorMap: Record<string, { locationId: string; name: string; lat: number; lng: number; kind: "lodging" | "transit"; dayNumbers: number[] }> = {};
+    const addAnchor = (loc: Location, dayNumber: number) => {
+      if (loc.lat === null || loc.lng === null || loc.kind === "activity") return;
+      const e = anchorMap[loc.id];
       if (e) { if (!e.dayNumbers.includes(dayNumber)) e.dayNumbers.push(dayNumber); }
-      else lodgingMap[loc.id] = { locationId: loc.id, name: loc.name, lat: loc.lat, lng: loc.lng, dayNumbers: [dayNumber] };
+      else anchorMap[loc.id] = { locationId: loc.id, name: loc.name, lat: loc.lat, lng: loc.lng, kind: loc.kind, dayNumbers: [dayNumber] };
     };
     const alphaFor = (dayNumbers: number[]) =>
       dayNumbers.includes(activeDayNumber) ? ALPHA_ACTIVE
@@ -201,8 +207,8 @@ export default function MapView() {
         });
       });
 
-      if (day.startAnchor) addLodging(day.startAnchor, day.dayNumber);
-      if (day.endAnchor) addLodging(day.endAnchor, day.dayNumber);
+      if (day.startAnchor) addAnchor(day.startAnchor, day.dayNumber);
+      if (day.endAnchor) addAnchor(day.endAnchor, day.dayNumber);
 
       const routeCoords: [number, number][] = [];
       if (day.startAnchor?.lat != null && day.startAnchor.lng != null) routeCoords.push([day.startAnchor.lng, day.startAnchor.lat]);
@@ -223,19 +229,20 @@ export default function MapView() {
       }
     }
 
-    // Render each lodging location as a single neutral-colored feature.
-    for (const lodging of Object.values(lodgingMap)) {
-      const sortedDays = lodging.dayNumbers.slice().sort((a: number, b: number) => a - b);
+    // Render each Anchor (Lodging or trip-edge Transit) as a single neutral-colored feature.
+    for (const anchor of Object.values(anchorMap)) {
+      const sortedDays = anchor.dayNumbers.slice().sort((a: number, b: number) => a - b);
       points.features.push({
         type: "Feature",
-        geometry: { type: "Point", coordinates: [lodging.lng, lodging.lat] },
+        geometry: { type: "Point", coordinates: [anchor.lng, anchor.lat] },
         properties: {
-          locationId: lodging.locationId,
-          name: lodging.name,
+          locationId: anchor.locationId,
+          name: anchor.name,
+          anchorKind: anchor.kind,
           dayNumbers: JSON.stringify(sortedDays),
           color: LODGING_COLOR,
           alpha: alphaFor(sortedDays),
-          isHighlighted: lodging.locationId === highlightedLocationId ? 1 : 0,
+          isHighlighted: anchor.locationId === highlightedLocationId ? 1 : 0,
           isBase: 1,
         },
       });
@@ -348,7 +355,10 @@ export default function MapView() {
       name: f.properties.name as string,
       isBase,
       ...(isBase
-        ? { dayNumbers: JSON.parse(f.properties.dayNumbers as string) as number[] }
+        ? {
+            anchorKind: f.properties.anchorKind as "lodging" | "transit",
+            dayNumbers: JSON.parse(f.properties.dayNumbers as string) as number[],
+          }
         : { dayNumber: f.properties.dayNumber as number, order: f.properties.order as number }
       ),
     };
@@ -466,7 +476,7 @@ export default function MapView() {
               <strong className="font-semibold">{tooltip.name}</strong>
               <br />
               {tooltip.isBase
-                ? <span className="opacity-70">Lodging · Days {tooltip.dayNumbers!.join(", ")}</span>
+                ? <span className="opacity-70">{tooltip.anchorKind === "transit" ? "Transit" : "Lodging"} · Days {tooltip.dayNumbers!.join(", ")}</span>
                 : <span className="opacity-70">Day {tooltip.dayNumber} · Stop {tooltip.order}</span>
               }
             </div>
@@ -529,11 +539,15 @@ function StopPanel({
         </button>
       </div>
       <div className="flex-1 overflow-y-auto py-1">
-        {day.startAnchor && <PanelAnchorRow loc={day.startAnchor} label="Woke here" onFocus={onFocus} />}
+        {day.startAnchor && (
+          <PanelAnchorRow loc={day.startAnchor} label={day.startAnchor.kind === "transit" ? "Arrived here" : "Woke here"} onFocus={onFocus} />
+        )}
         {day.stops.map((stop, i) => (
           <PanelStopRow key={stop.placement.id} loc={stop.location} dayNumber={day.dayNumber} index={i} onFocus={onFocus} />
         ))}
-        {day.endAnchor && <PanelAnchorRow loc={day.endAnchor} label="Overnight" onFocus={onFocus} />}
+        {day.endAnchor && (
+          <PanelAnchorRow loc={day.endAnchor} label={day.endAnchor.kind === "transit" ? "Departs from here" : "Overnight"} onFocus={onFocus} />
+        )}
         {day.stops.length === 0 && !day.startAnchor && !day.endAnchor && (
           <p className="px-2.5 py-3 text-xs text-faint italic">Nothing planned this day.</p>
         )}
@@ -580,8 +594,11 @@ function PanelStopRow({
   );
 }
 
-/** A lodging bookend — also the surviving "gray dot = lodging" key from the old legend, now
- *  attached to the actual place rather than floating over the canvas. */
+/** An Anchor bookend — a Lodging (the surviving "gray dot = lodging" key from the old legend) or,
+ *  per ADR-0028, a trip-edge Transit Location — attached to the actual place rather than floating
+ *  over the canvas. Both share the neutral dot; a Transit edge additionally carries the icon
+ *  already used for it in the Manifest, since the map's circle layer has no room for a second
+ *  distinct marker shape without a symbol layer this style doesn't load. */
 function PanelAnchorRow({
   loc, label, onFocus,
 }: {
@@ -590,6 +607,7 @@ function PanelAnchorRow({
   onFocus: (target: FocusTarget) => void;
 }) {
   const geocoded = loc.lat !== null && loc.lng !== null;
+  const isEdge = loc.kind === "transit";
   return (
     <button
       disabled={!geocoded}
@@ -598,9 +616,11 @@ function PanelAnchorRow({
       className="group w-full flex items-center gap-2 px-2.5 py-1.5 text-left transition-colors enabled:hover:bg-surface-2 disabled:cursor-not-allowed"
     >
       <span
-        className="w-5 h-5 rounded-full shrink-0 border-2"
+        className="w-5 h-5 rounded-full shrink-0 border-2 grid place-items-center"
         style={{ background: LODGING_COLOR, borderColor: "#374151" }}
-      />
+      >
+        {isEdge && <TrainFront className="w-3 h-3 text-gray-700" />}
+      </span>
       <span className="min-w-0 flex-1">
         <span className="block text-xs truncate text-sub group-hover:text-ink">{loc.name}</span>
         <span className="block text-meta text-faint">{label}</span>

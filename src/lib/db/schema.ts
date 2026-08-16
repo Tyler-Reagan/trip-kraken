@@ -17,7 +17,7 @@
  */
 
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const trip = sqliteTable("Trip", {
   id: text("id").primaryKey(),
@@ -74,13 +74,26 @@ export const location = sqliteTable("Location", {
   phone: text("phone"),
   // Lodging constraint fields, folded in from the removed Stay table (ADR-0015 §2/§5). Calendar
   // dates "YYYY-MM-DD", half-open: you sleep the nights in [checkInDate, checkOutDate). Nullable —
-  // populated only for kind=lodging. Transit constraint fields are parked (open bill).
+  // populated only for kind=lodging.
   checkInDate: text("checkInDate"),
   checkOutDate: text("checkOutDate"),
+  // Transit constraint fields (ADR-0028), paying ADR-0015's parked bill. Local ISO, date-or-
+  // datetime: "2026-09-14" designates a trip edge with no known time; "2026-09-14T14:00" designates
+  // it and constrains that Day's window. Either present makes the kind transit, the same gesture
+  // checkInDate/checkOutDate use for lodging. At most one Location per Trip carries each — enforced
+  // below by a partial unique index, not just by the write path.
+  arriveAt: text("arriveAt"),
+  departAt: text("departAt"),
   enrichmentStatus: text("enrichmentStatus", { enum: ["done", "pending", "failed"] })
     .notNull()
     .default("done"),
-});
+}, (t) => [
+  // The trip-edge uniqueness invariant (ADR-0028 §2). First index/unique constraint in this
+  // schema; drizzle-kit 0.31 does emit the partial WHERE clause for SQLite (verified against the
+  // generated migration and its snapshot), so this stays the single source of truth.
+  uniqueIndex("arrival_per_trip").on(t.tripId).where(sql`${t.arriveAt} is not null`),
+  uniqueIndex("departure_per_trip").on(t.tripId).where(sql`${t.departAt} is not null`),
+]);
 
 // The plan's stored unit (ADR-0015 §2), renamed Stop → Placement and re-parented from a Day to the
 // Trip+date directly (days dissolved). Only activities are placed; order is within a date. `locked`
