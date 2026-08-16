@@ -244,17 +244,39 @@ function AnchorRow({ loc, role, date }: { loc: Lodging | Transit; role: "start" 
 
 /** The hover-revealed affordance between two consecutive stops: opens along-route discovery for the
  *  corridor between them (#102). Rendered only when both ends have coordinates — a corridor can't be
- *  computed otherwise (the route endpoint would reject it), so there's nothing to offer. */
+ *  computed otherwise (the route endpoint would reject it), so there's nothing to offer.
+ *
+ *  Also where ADR-0026's self-heal (#171) surfaces: the one connector whose two ends match the
+ *  last removal's healed pair shows what it costs to travel between them — the read-side half of
+ *  "the gap closes" made visible, not just true underneath. */
 function RouteConnector({ from, to, date }: { from: Location; to: Location; date: string }) {
   const setRouteSearch = useTripStore((s) => s.setRouteSearch);
+  const healedPair = useTripStore((s) => s.healedPair);
   if (from.lat === null || to.lat === null) return null;
+
+  const healed = healedPair && healedPair.fromLocationId === from.id && healedPair.toLocationId === to.id ? healedPair : null;
+
   return (
-    <li className="group flex justify-center py-0.5 select-none">
+    <li className="group flex justify-center items-center gap-1.5 py-0.5 select-none">
+      {healed && (
+        <span
+          title={
+            healed.travelCost.basisOfCost === "straightLine"
+              ? "Estimated as a straight line — no real route found for this pair"
+              : `${Math.round(healed.travelCost.distanceMeters)}m, answered by ${healed.travelCost.answeredBy}`
+          }
+          className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-400 border border-brand-200 dark:border-brand-800"
+        >
+          <Route className="w-3 h-3" />
+          {formatDuration(Math.round(healed.travelCost.costAsMinutes))}
+          {healed.travelCost.basisOfCost === "straightLine" && " (straight-line)"}
+        </span>
+      )}
       <button
         onClick={() => setRouteSearch({ from, to, date })}
         title="Find places along the way between these two stops"
         aria-label={`Find places along the way from ${from.name} to ${to.name}`}
-        className="hover-reveal flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full text-brand-600 dark:text-brand-400 hover:bg-surface-2 transition-colors"
+        className={`flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full text-brand-600 dark:text-brand-400 hover:bg-surface-2 transition-colors ${healed ? "" : "hover-reveal"}`}
       >
         <Route className="w-3 h-3" />
         Along the way

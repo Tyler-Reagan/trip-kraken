@@ -154,3 +154,21 @@ export const isWalkingPath = (p: Path): p is WalkingPath => p.kind === "walking"
 export const isDrivingPath = (p: Path): p is DrivingPath => p.kind === "driving";
 export const isBicyclePath = (p: Path): p is BicyclePath => p.kind === "bicycle";
 export const isUnknownPath = (p: Path): p is UnknownPath => p.kind === undefined;
+
+/**
+ * ADR-0026's self-heal response shape (#171) — the one new pair a removed activity Placement's
+ * neighbors became, and what it costs to travel between them. Not a `Journey`: it carries the raw
+ * `TravelCost` from `describeJourney`'s first (and, today, only) `Path`, not a decomposed chain —
+ * the same simplification `describeJourney`'s own docblock already names as current, not a new one
+ * introduced here.
+ *
+ * `null` (never present in the API response at all) covers every case with nothing to heal: the
+ * removed Placement was first or last in its Day (the new neighbor is an Anchor, not a Placement —
+ * out of self-heal's scope, ADR-0026 §4), the Day is now empty, or a lodging Placement was removed
+ * (also out of scope, same section).
+ */
+export interface HealedPair {
+  fromLocationId: string;
+  toLocationId: string;
+  travelCost: TravelCost;
+}
