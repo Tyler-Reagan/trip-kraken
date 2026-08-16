@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { dayWindowsFor } from "./timeWindows";
 import type { LocationInput } from "@/lib/solver";
 
-const loc = (fields: Partial<LocationInput>): LocationInput => ({ id: "l1", lat: 35, lng: 139, ...fields });
+const loc = (fields: Partial<LocationInput>): LocationInput => ({ id: "l1", lat: 35, lng: 139, kind: "activity", ...fields });
 
 const dayStart = (date: string): number => Date.parse(date + "T00:00:00Z") / 1000;
 const SEC_PER_DAY = 86400;

@@ -19,6 +19,9 @@ import {
   createLocation,
   setLodgingDates,
   clearLodging,
+  setTripArrival,
+  setTripDeparture,
+  clearTripEdge,
   setPlacements,
   addPlacement,
   movePlacement,
@@ -28,10 +31,12 @@ import {
   getTripWithDetails,
   updateTrip,
   LodgingValidationError,
+  TransitValidationError,
 } from "@/lib/db";
 import {
   isActivity,
   isLodging,
+  isTransit,
   rolesOf,
   lodgingOnNight,
   lodgingCoversNight,
@@ -160,6 +165,55 @@ assert.ok(afterRemove.locations.some((l) => l.id === Q), "but its Location stays
 // clearLodging relegates a lodging back to a plain activity (removing its constraint).
 const relegated = clearLodging(trip.id, B);
 assert.ok(isActivity(relegated.locations.find((l) => l.id === B)!), "cleared lodging is an activity again");
+
+// ── Transit trip edges (ADR-0028): arriveAt/departAt are the kind-elevating gesture, the same as
+// lodging's dates. At most one Location per Trip may hold each — this temp DB runs the real
+// migrations, so the partial unique index backing that is genuinely present, not just asserted;
+// the write path's own release-prior-holder transaction is what's exercised below. ──
+const R = createLocation(trip.id, { name: "R (activity)" }).id;
+const S = createLocation(trip.id, { name: "S (activity)" }).id;
+
+const withArrival = setTripArrival(trip.id, R, "14:00");
+const r1 = withArrival.locations.find((l) => l.id === R)!;
+assert.ok(isTransit(r1), "setting arriveAt elevates R to kind=transit");
+if (isTransit(r1)) assert.equal(r1.arriveAt, "2026-06-24T14:00", "the date is the trip's own start date, composed server-side");
+
+// Assigning a different Location as the arrival releases R in the same transaction.
+const withNewArrival = setTripArrival(trip.id, S, null);
+const rAfter = withNewArrival.locations.find((l) => l.id === R)!;
+const sAfter = withNewArrival.locations.find((l) => l.id === S)!;
+assert.ok(isActivity(rAfter), "R lost its only edge field and relegated back to an activity");
+assert.ok(isTransit(sAfter), "S is now transit");
+if (isTransit(sAfter)) assert.equal(sAfter.arriveAt, "2026-06-24", "no time given — a bare date, still a designated edge");
+
+// A Location can hold both edges at once — the round-trip-through-one-airport case.
+const withDeparture = setTripDeparture(trip.id, S, "09:15");
+const sBoth = withDeparture.locations.find((l) => l.id === S)!;
+if (isTransit(sBoth)) {
+  assert.equal(sBoth.arriveAt, "2026-06-24", "the arrival is untouched by setting the departure");
+  assert.equal(sBoth.departAt, "2026-06-26T09:15", "the departure uses the trip's own end date");
+}
+
+// Clearing one of two edges leaves the Location transit; clearing the last relegates it.
+const afterClearArrival = clearTripEdge(trip.id, S, "arrival");
+const sOneEdge = afterClearArrival.locations.find((l) => l.id === S)!;
+assert.ok(isTransit(sOneEdge), "S still holds departAt — still transit");
+if (isTransit(sOneEdge)) assert.equal(sOneEdge.arriveAt, null, "arriveAt cleared");
+const afterClearBoth = clearTripEdge(trip.id, S, "departure");
+assert.ok(isActivity(afterClearBoth.locations.find((l) => l.id === S)!), "clearing the last edge relegates S to an activity");
+
+function expectTransitRejected(fn: () => void, label: string) {
+  assert.throws(fn, (e) => e instanceof TransitValidationError, `expected ${label} to be rejected`);
+}
+expectTransitRejected(() => setTripArrival(trip.id, R, "9pm"), "malformed time");
+expectTransitRejected(() => setTripArrival(trip.id, "not-a-location", "09:00"), "location not in trip");
+
+// A Trip date-range change re-stamps a stored edge's date component, preserving its time
+// (ADR-0028 §3) — the edge date is never independently editable.
+setTripArrival(trip.id, R, "07:45");
+const moved = updateTrip(trip.id, { startDate: "2026-06-23" });
+const rMoved = moved.locations.find((l) => l.id === R)!;
+if (isTransit(rMoved)) assert.equal(rMoved.arriveAt, "2026-06-23T07:45", "the date follows the trip's new start date; the time is preserved");
 
 // ── Day labels live in a {date → label} map on the Trip (days are not an entity, ADR-0015) ──
 const labelled = setDayLabel(trip.id, "2026-06-25", "Museum day");

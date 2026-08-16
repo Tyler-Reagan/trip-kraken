@@ -8,7 +8,7 @@ import { parseVroomSolution } from "./response";
 import type { LocationInput } from "@/lib/solver";
 import type { VroomSolution } from "./wire";
 
-const loc = (id: string): LocationInput => ({ id, lat: 0, lng: 0 });
+const loc = (id: string): LocationInput => ({ id, lat: 0, lng: 0, kind: "activity" });
 const matrixPoints: LocationInput[] = [loc("a1"), loc("a2"), loc("lodge")];
 
 // ── routes → days: job steps in order become locationIds; start/end steps are not Placements ──

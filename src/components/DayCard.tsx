@@ -4,11 +4,11 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { DerivedDay, ScheduledStop, Lodging, Location } from "@/types";
+import type { DerivedDay, ScheduledStop, Lodging, Transit, Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import { dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { metrosOf } from "@/lib/tripMetros";
-import { Crosshair, GripVertical, MapPin, Route, Search, Trash2 } from "lucide-react";
+import { Crosshair, GripVertical, MapPin, Route, Search, Trash2, TrainFront } from "lucide-react";
 import { dayDropId } from "./DayNavigator";
 
 interface Props {
@@ -198,12 +198,17 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
   );
 }
 
-/** A day's projected lodging bookend (ADR-0015): where you woke / sleep / dropped bags. Lodging is
- *  derived from booking dates, never a stored stop, so these rows are read-only anchors. */
-function AnchorRow({ loc, role, date }: { loc: Lodging; role: "start" | "end" | "checkin"; date: string }) {
+/** A day's projected bookend (ADR-0015, widened by ADR-0028): where you woke / sleep / dropped
+ *  bags at a Lodging, or the trip's arrival/departure Transit Location. Both are derived from
+ *  constraint fields, never a stored stop, so these rows are read-only anchors. */
+function AnchorRow({ loc, role, date }: { loc: Lodging | Transit; role: "start" | "end" | "checkin"; date: string }) {
   const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
-  const subtext = role === "checkin" ? "Check-in · drop bags" : role === "start" ? "Start of day" : "Overnight";
+  const isEdge = loc.kind === "transit";
+  const subtext = isEdge
+    ? role === "start" ? "Arrive" : "Depart"
+    : role === "checkin" ? "Check-in · drop bags" : role === "start" ? "Start of day" : "Overnight";
+  const badge = isEdge ? (role === "start" ? "Arrival" : "Departure") : role === "checkin" ? "Check-in" : "Stay";
 
   return (
     <li
@@ -215,10 +220,13 @@ function AnchorRow({ loc, role, date }: { loc: Lodging; role: "start" | "end" | 
       className="group flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-900/30"
     >
       <span className="shrink-0 px-1.5 h-5 flex items-center rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400">
-        {role === "checkin" ? "Check-in" : "Stay"}
+        {badge}
       </span>
       <div className="flex-1 min-w-0">
-        <p className="text-body truncate text-ink">{loc.name}</p>
+        <p className="text-body truncate text-ink flex items-center gap-1.5">
+          {isEdge && <TrainFront className="w-3.5 h-3.5 shrink-0" />}
+          {loc.name}
+        </p>
         <p className="text-meta mt-0.5 text-amber-600/80 dark:text-amber-400/80">{subtext}</p>
       </div>
       <button

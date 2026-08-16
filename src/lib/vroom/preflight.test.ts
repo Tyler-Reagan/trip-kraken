@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { preflight } from "./preflight";
 import type { LocationInput } from "@/lib/solver";
 
-const loc = (fields: Partial<LocationInput> & { id: string }): LocationInput => ({ lat: 0, lng: 0, ...fields });
+const loc = (fields: Partial<LocationInput> & { id: string }): LocationInput => ({ lat: 0, lng: 0, kind: "activity", ...fields });
 
 // ── #152: ungeocoded + pending → "still looking this place up", not excluded from the reason set ──
 {

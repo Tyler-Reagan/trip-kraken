@@ -15,7 +15,7 @@ import {
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { animated, to, useTransition, Globals } from "@react-spring/web";
-import { deriveDays, isActivity, type DerivedDay, type NearbyPlace, type ScheduledStop, type Location } from "@/types";
+import { deriveTripPlanDays, isActivity, type DerivedDay, type NearbyPlace, type ScheduledStop, type Location } from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import { dayColorCss } from "@/lib/dayColors";
 import DayCard from "./DayCard";
@@ -83,7 +83,7 @@ export default function DayNavigator() {
     Globals.assign({ skipAnimation: mq.matches });
   }, []);
 
-  const days = trip ? deriveDays(trip) : [];
+  const days = trip ? deriveTripPlanDays(trip) : [];
   const activeIdx = Math.max(0, Math.min(days.length - 1, days.findIndex((d) => d.dayNumber === activeDayNumber)));
 
   function go(nextIdx: number) {

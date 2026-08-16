@@ -11,7 +11,7 @@ import { makeTravelCost } from "@/types/path";
 import type { LocationInput, StayPlan } from "@/lib/solver";
 import type { VroomRequest } from "./wire";
 
-const loc = (fields: Partial<LocationInput> & { id: string }): LocationInput => ({ lat: 0, lng: 0, ...fields });
+const loc = (fields: Partial<LocationInput> & { id: string }): LocationInput => ({ lat: 0, lng: 0, kind: "activity", ...fields });
 
 /** A dense fake matrix, cell (i,j) = 100 + i*10 + j seconds, with a fractional cell injected at
  * (0, n-1) to exercise integer rounding. */
@@ -232,6 +232,149 @@ function vehicleById(req: VroomRequest, id: number) {
   });
   assert.ok(!("priority" in req.jobs[0]));
   assert.ok(!("costs" in req.vehicles[0]));
+}
+
+// ── #156 acceptance criterion: a trip with an edge arrival emits a day 1 start_index that is not
+// the day 1 lodging (ADR-0028) ──
+{
+  const a1 = loc({ id: "a1" });
+  const hotel = loc({ id: "hotel", lat: 35, lng: 139 });
+  const airport = loc({ id: "airport", lat: 35.5, lng: 139.5, kind: "transit" });
+  const matrixPoints = [a1, hotel, airport];
+  const stays: StayPlan[] = [{ lodgingId: "hotel", startNight: 1, endNight: 1 }];
+  const req = buildVroomRequest({
+    placeable: [a1],
+    stays,
+    matrixPoints,
+    matrix: fakeMatrix(3),
+    tripDates: ["2026-06-01"],
+    numDays: 1,
+    dayStartMins: 9 * 60,
+    dayBudgetMinutes: 480,
+    metroOf: new Map(),
+    lodgingMetros: new Map(),
+    edges: { arrivalId: "airport", arriveAt: "2026-06-01T14:00" },
+  });
+  const day1 = vehicleById(req, 1);
+  const airportIndex = matrixPoints.findIndex((p) => p.id === "airport");
+  const hotelIndex = matrixPoints.findIndex((p) => p.id === "hotel");
+  assert.equal(day1.start_index, airportIndex, "day 1 starts at the designated arrival");
+  assert.notEqual(day1.start_index, hotelIndex, "not at the day 1 lodging — the issue's own acceptance criterion");
+}
+
+// ── A dated-but-timeless edge still anchors the geography without constraining the clock ──
+{
+  const a1 = loc({ id: "a1" });
+  const airport = loc({ id: "airport", lat: 35.5, lng: 139.5, kind: "transit" });
+  const req = buildVroomRequest({
+    placeable: [a1],
+    stays: [],
+    matrixPoints: [a1, airport],
+    matrix: fakeMatrix(2),
+    tripDates: ["2026-06-01"],
+    numDays: 1,
+    dayStartMins: 9 * 60,
+    dayBudgetMinutes: 480,
+    metroOf: new Map(),
+    lodgingMetros: new Map(),
+    edges: { arrivalId: "airport", arriveAt: "2026-06-01" }, // bare date, no time known
+  });
+  const day1 = vehicleById(req, 1);
+  const defaultOpen = Date.parse("2026-06-01T00:00:00Z") / 1000 + 9 * 3600;
+  assert.equal(day1.start_index, 1, "the edge still anchors the route with no time known");
+  assert.equal(day1.time_window![0], defaultOpen, "but a bare date does not move the window's open time");
+}
+
+// ── A known arrival time makes day 1's window open later, honestly shorter rather than shifted
+// (ADR-0028 §5) — the close time is untouched, so a 14:00 landing leaves only 3 hours, not a full
+// budget starting late ──
+{
+  const a1 = loc({ id: "a1" });
+  const airport = loc({ id: "airport", lat: 35.5, lng: 139.5, kind: "transit" });
+  const req = buildVroomRequest({
+    placeable: [a1],
+    stays: [],
+    matrixPoints: [a1, airport],
+    matrix: fakeMatrix(2),
+    tripDates: ["2026-06-01"],
+    numDays: 1,
+    dayStartMins: 9 * 60,
+    dayBudgetMinutes: 480, // 8h — default window would be [09:00, 17:00]
+    metroOf: new Map(),
+    lodgingMetros: new Map(),
+    edges: { arrivalId: "airport", arriveAt: "2026-06-01T14:00" },
+  });
+  const [opensAt, closesAt] = vehicleById(req, 1).time_window!;
+  const dayStart = Date.parse("2026-06-01T00:00:00Z") / 1000;
+  assert.equal(opensAt, dayStart + 14 * 3600, "opens at the arrival time, not the default 09:00");
+  assert.equal(closesAt, dayStart + 17 * 3600, "closes at the untouched default — the day got shorter, not later");
+}
+
+// ── A known departure time makes the last day's window close earlier, symmetric to arrival ──
+{
+  const a1 = loc({ id: "a1" });
+  const airport = loc({ id: "airport", lat: 35.5, lng: 139.5, kind: "transit" });
+  const req = buildVroomRequest({
+    placeable: [a1],
+    stays: [],
+    matrixPoints: [a1, airport],
+    matrix: fakeMatrix(2),
+    tripDates: ["2026-06-01"],
+    numDays: 1,
+    dayStartMins: 9 * 60,
+    dayBudgetMinutes: 480,
+    metroOf: new Map(),
+    lodgingMetros: new Map(),
+    edges: { departureId: "airport", departAt: "2026-06-01T11:30" },
+  });
+  const [opensAt, closesAt] = vehicleById(req, 1).time_window!;
+  const dayStart = Date.parse("2026-06-01T00:00:00Z") / 1000;
+  assert.equal(opensAt, dayStart + 9 * 3600, "the open time is untouched by a departure constraint");
+  assert.equal(closesAt, dayStart + 11.5 * 3600, "closes at the departure — must reach the airport by then");
+}
+
+// ── A very late arrival that would fall after the default close clamps rather than emits a
+// backwards window (the same defence dayWindowsFor applies to overnight opening hours) ──
+{
+  const a1 = loc({ id: "a1" });
+  const airport = loc({ id: "airport", lat: 35.5, lng: 139.5, kind: "transit" });
+  const req = buildVroomRequest({
+    placeable: [a1],
+    stays: [],
+    matrixPoints: [a1, airport],
+    matrix: fakeMatrix(2),
+    tripDates: ["2026-06-01"],
+    numDays: 1,
+    dayStartMins: 9 * 60,
+    dayBudgetMinutes: 480, // default close would be 17:00
+    metroOf: new Map(),
+    lodgingMetros: new Map(),
+    edges: { arrivalId: "airport", arriveAt: "2026-06-01T22:00" },
+  });
+  const [opensAt, closesAt] = vehicleById(req, 1).time_window!;
+  assert.ok(opensAt <= closesAt, "the window is never backwards");
+  assert.equal(opensAt, closesAt, "a 22:00 landing past the default close clamps to a zero-length window, not negative");
+}
+
+// ── No edges at all: today's behaviour is bit-for-bit unchanged ──
+{
+  const a1 = loc({ id: "a1" });
+  const req = buildVroomRequest({
+    placeable: [a1],
+    stays: [],
+    matrixPoints: [a1],
+    matrix: fakeMatrix(1),
+    tripDates: ["2026-06-01"],
+    numDays: 1,
+    dayStartMins: 9 * 60,
+    dayBudgetMinutes: 480,
+    metroOf: new Map(),
+    lodgingMetros: new Map(),
+  });
+  const day1 = vehicleById(req, 1);
+  const dayStart = Date.parse("2026-06-01T00:00:00Z") / 1000;
+  assert.equal(day1.start_index, undefined);
+  assert.deepEqual(day1.time_window, [dayStart + 9 * 3600, dayStart + 9 * 3600 + 480 * 60]);
 }
 
 console.log("✓ request.test.ts passed");

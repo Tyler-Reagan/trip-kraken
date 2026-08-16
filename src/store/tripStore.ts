@@ -1,5 +1,13 @@
 import { create } from "zustand";
-import { deriveDays, type TripWithDetails, type Location, type Lodging, type NearbyPlace } from "@/types";
+import {
+  deriveTripPlanDays,
+  isTransit,
+  type TripWithDetails,
+  type Location,
+  type Lodging,
+  type Transit,
+  type NearbyPlace,
+} from "@/types";
 import type { RoadProfile } from "@/types/path";
 import { reorderPlacements, insertPlacement } from "@/lib/placementOrdering";
 import type { Unplaced } from "@/lib/solver";
@@ -92,6 +100,11 @@ interface TripStore {
     locationId: string,
     dates: { checkInDate: string; checkOutDate: string } | null
   ) => Promise<string | null>;
+  /** Designate (or update, or release) a Location as the trip's arrival or departure (ADR-0028).
+   *  `time` is `"HH:MM"` for a known time, `""` for a designated edge with no known time yet, or
+   *  `null` to release the edge — the date component is always the trip's own start/end date and
+   *  is never sent from the client. */
+  saveTransitEdge: (locationId: string, which: "arrival" | "departure", time: string | null) => Promise<string | null>;
   /** Add a discovery result to the trip (and, when `date` is set, place it on that day at
    *  `order`, else appended). Returns an error message or null. Shared by the tray's Add
    *  button and dropping a result card on a day card (#134). */
@@ -316,6 +329,54 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     return null;
   },
 
+  saveTransitEdge: async (locationId, which, time) => {
+    const tripId = get().tripId;
+    if (!tripId) return "No trip loaded";
+    const field = which === "arrival" ? "arriveAt" : "departAt";
+    const t = get().trip;
+    if (t) {
+      // The date component mirrors the write path (ADR-0028 §3): the trip's own start/end date,
+      // composed here only for the optimistic patch — the server recomputes it from its own read
+      // of the trip rather than trusting this value.
+      const edgeDate = which === "arrival" ? t.startDate : t.endDate;
+      const value = time === null ? null : time === "" ? edgeDate : `${edgeDate}T${time}`;
+      const relegateIfBareActivity = (l: Location): Location => {
+        const arriveAt = isTransit(l) ? l.arriveAt : null;
+        const departAt = isTransit(l) ? l.departAt : null;
+        if (arriveAt == null && departAt == null) {
+          const { arriveAt: _a, departAt: _d, ...rest } = l as Transit;
+          return { ...rest, kind: "activity" };
+        }
+        return { ...l, kind: "transit", arriveAt, departAt };
+      };
+      const patched: Location[] = t.locations.map((l) => {
+        if (l.id === locationId) {
+          const arriveAt = which === "arrival" ? value : isTransit(l) ? l.arriveAt : null;
+          const departAt = which === "departure" ? value : isTransit(l) ? l.departAt : null;
+          return relegateIfBareActivity({ ...l, kind: "transit", arriveAt, departAt } as Transit);
+        }
+        // Assigning a new edge releases whoever held it before (ADR-0028 §2's uniqueness
+        // invariant) — the optimistic patch has to uphold it too, or the client briefly shows two
+        // Locations both claiming the same edge.
+        if (value != null && isTransit(l) && l[field] != null) return relegateIfBareActivity({ ...l, [field]: null });
+        return l;
+      });
+      set({ trip: { ...t, locations: patched } });
+    }
+    const res = await fetch(`/api/trips/${tripId}/locations/${locationId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: time }),
+    });
+    if (!res.ok) {
+      await get().reload();
+      const data = await res.json().catch(() => ({}));
+      return (data as { error?: string }).error ?? "Failed to save transit time";
+    }
+    await get().reload();
+    return null;
+  },
+
   addDiscoveredPlace: async (place, date, order) => {
     const tripId = get().tripId;
     if (!tripId) return "No trip loaded";
@@ -440,7 +501,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     // itinerary-ward, so it must not emit a focus target and yank the camera out from under the
     // dot the user just clicked.
     const trip = get().trip;
-    const day = trip ? deriveDays(trip).find((d) => d.stops.some((s) => s.location.id === locationId)) : undefined;
+    const day = trip ? deriveTripPlanDays(trip).find((d) => d.stops.some((s) => s.location.id === locationId)) : undefined;
     set({
       highlightedLocationId: locationId,
       activeSurface: "itinerary",

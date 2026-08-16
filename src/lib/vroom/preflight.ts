@@ -35,7 +35,12 @@ export interface PreflightResult {
   lodgingMetros: Map<string, number[]>;
 }
 
-export function preflight(activities: LocationInput[], lodgings: LocationInput[], tripDates: IsoDate[]): PreflightResult {
+export function preflight(
+  activities: LocationInput[],
+  lodgings: LocationInput[],
+  tripDates: IsoDate[],
+  edges?: { arrival?: LocationInput; departure?: LocationInput }
+): PreflightResult {
   const unplaced: Unplaced[] = [];
   const warnings: string[] = [];
 
@@ -71,6 +76,16 @@ export function preflight(activities: LocationInput[], lodgings: LocationInput[]
     if (!hasValidCoords(l) && l.enrichmentStatus === "pending") {
       warnings.push(`"${l.id}" is still being looked up — its days will have no anchor until it's found.`);
     }
+  }
+
+  // A pending trip-edge Transit Location is the same shape of missing Anchor, one Day narrower
+  // (ADR-0028 §4) — the identical "warn, don't block" answer #152 already settled for lodging:
+  // optimize still runs, that Day falls back to its Lodging Anchor instead.
+  if (edges?.arrival && !hasValidCoords(edges.arrival) && edges.arrival.enrichmentStatus === "pending") {
+    warnings.push(`"${edges.arrival.id}" is still being looked up — day 1 will start from lodging until it's found.`);
+  }
+  if (edges?.departure && !hasValidCoords(edges.departure) && edges.departure.enrichmentStatus === "pending") {
+    warnings.push(`"${edges.departure.id}" is still being looked up — the last day will end at lodging until it's found.`);
   }
 
   // Reason: no lodging covers this area of the trip (ADR-0020's coverage detector, unchanged). No

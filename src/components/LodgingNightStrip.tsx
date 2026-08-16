@@ -63,7 +63,9 @@ function ModalShell({ title, onClose, children }: { title: string; onClose: () =
 }
 
 /** A single select — no typed dates, since the drag-select already fixed the range. */
-function AssignExisting({ activities, onAssign, onCancel }: { activities: Location[]; onAssign: (id: string) => void; onCancel: () => void }) {
+/** A single select over candidate Locations, plus Assign/Cancel — shared by the night strip's
+ *  drag-select assignment and, per ADR-0028 §7, the Manifest's transit edge slots. */
+export function AssignExisting({ activities, onAssign, onCancel }: { activities: Location[]; onAssign: (id: string) => void; onCancel: () => void }) {
   const [locationId, setLocationId] = useState("");
   return (
     <div className="flex items-center gap-2">

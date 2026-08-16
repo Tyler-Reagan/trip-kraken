@@ -19,7 +19,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "@/lib/db/schema";
 import { solve } from "@/lib/solver";
 import { optimizeTrip } from "@/lib/optimize";
-import { createTripWithLocations, createLocation, setLodgingDates, updateLocation, getTripWithDetails } from "@/lib/db";
+import { createTripWithLocations, createLocation, setLodgingDates, setTripArrival, updateLocation, getTripWithDetails } from "@/lib/db";
 import { isActivity } from "@/types";
 import type { VroomRequest, VroomSolution, VroomStep } from "@/lib/vroom/wire";
 
@@ -86,7 +86,7 @@ async function main() {
 // ── VROOM_URL unset → loud failure, not a silent straight-line plan (ADR-0023 Consequences) ──
 await withEnv({ VROOM_URL: undefined }, async () => {
   await assert.rejects(
-    () => solve({ locations: [{ id: "a", lat: 35, lng: 139 }], numDays: 1 }),
+    () => solve({ locations: [{ id: "a", lat: 35, lng: 139, kind: "activity" }], numDays: 1 }),
     /VROOM_URL is not set/
   );
 });
@@ -95,7 +95,7 @@ await withEnv({ VROOM_URL: undefined }, async () => {
 await withEnv({ VROOM_URL: "http://localhost:8080" }, async () => {
   global.fetch = (async () => ({ ok: false, status: 503, text: async () => "down" }) as Response) as typeof fetch;
   await assert.rejects(
-    () => solve({ locations: [{ id: "a", lat: 35, lng: 139 }], numDays: 1 }),
+    () => solve({ locations: [{ id: "a", lat: 35, lng: 139, kind: "activity" }], numDays: 1 }),
     /vroomClient: HTTP 503/
   );
 });
@@ -106,8 +106,8 @@ await withEnv({ VROOM_URL: "http://localhost:8080" }, async () => {
   mockFetch({}, calls);
   const itinerary = await solve({
     locations: [
-      { id: "a1", lat: 35.0, lng: 139.0 },
-      { id: "a2", lat: 35.01, lng: 139.01 },
+      { id: "a1", lat: 35.0, lng: 139.0, kind: "activity" },
+      { id: "a2", lat: 35.01, lng: 139.01, kind: "activity" },
     ],
     numDays: 1,
   });
@@ -133,8 +133,8 @@ await withEnv({ VROOM_URL: "http://localhost:8080" }, async () => {
   );
   const itinerary = await solve({
     locations: [
-      { id: "placeable", lat: 35.0, lng: 139.0 },
-      { id: "pending", lat: 0, lng: 0, enrichmentStatus: "pending" },
+      { id: "placeable", lat: 35.0, lng: 139.0, kind: "activity" },
+      { id: "pending", lat: 0, lng: 0, kind: "activity", enrichmentStatus: "pending" },
     ],
     numDays: 1,
   });
@@ -168,8 +168,8 @@ await withEnv(
     );
     await solve({
       locations: [
-        { id: "a1", lat: 35.0, lng: 139.0 },
-        { id: "a2", lat: 35.01, lng: 139.01 },
+        { id: "a1", lat: 35.0, lng: 139.0, kind: "activity" },
+        { id: "a2", lat: 35.01, lng: 139.01, kind: "activity" },
       ],
       numDays: 1,
       kinds: ["walking"],
@@ -229,6 +229,37 @@ await withEnv({ VROOM_URL: "http://localhost:8080", OSRM_FOOT_URL: undefined, OS
   const again = await optimizeTrip(trip.id);
   assert.equal(again.trip.placements.length, after.trip.placements.length, "re-optimize replaces, never appends");
   assert.equal(getTripWithDetails(trip.id)!.placements.length, 3, "exactly the three activities remain placed");
+});
+
+// ── A trip-edge Transit Location is an Anchor, never a Placement (ADR-0028 §4) — the #156
+// acceptance criterion at the optimizeTrip layer, not just request.test.ts's unit level ──
+await withEnv({ VROOM_URL: "http://localhost:8080", OSRM_FOOT_URL: undefined, OSRM_CAR_URL: undefined }, async () => {
+  const calls = { vroom: 0, osrm: 0 };
+  let capturedJobCount = -1;
+  mockFetch(
+    { vroom: (body) => { capturedJobCount = body.jobs.length; return fakeVroomSolve(body); } },
+    calls
+  );
+
+  const trip = createTripWithLocations({
+    name: "Edge trip",
+    sourceUrl: "",
+    startDate: "2026-06-24",
+    endDate: "2026-06-26",
+    locations: [
+      { name: "H", lat: 35.0, lng: 139.0 },
+      { name: "Airport", lat: 35.6, lng: 140.4 },
+      { name: "X", lat: 35.01, lng: 139.01 },
+    ],
+  });
+  const id = (n: string) => trip.locations.find((l) => l.name === n)!.id;
+  setLodgingDates(trip.id, id("H"), { checkInDate: "2026-06-24", checkOutDate: "2026-06-27" });
+  setTripArrival(trip.id, id("Airport"), "14:00");
+
+  const after = await optimizeTrip(trip.id);
+  const placed = new Set(after.trip.placements.map((p) => p.locationId));
+  assert.ok(!placed.has(id("Airport")), "the arrival is an Anchor, never a Placement");
+  assert.equal(capturedJobCount, 1, "only the real Activity became a VROOM job — the airport never did");
 });
 
 fs.rmSync(dir, { recursive: true, force: true });

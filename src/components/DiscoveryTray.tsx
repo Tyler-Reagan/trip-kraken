@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { ChevronDown, ChevronUp, X, ArrowRight, Star } from "lucide-react";
-import { deriveDays, type NearbyPlace } from "@/types";
+import { deriveTripPlanDays, type NearbyPlace } from "@/types";
 import { useTripStore, type DiscoveryMode } from "@/store/tripStore";
 import { placeDragId } from "./DayNavigator";
 
@@ -82,7 +82,7 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
 
   // The day the search places adds on: the date the scope was opened with, else (nearby) the
   // day the anchor is placed on (ADR-0015 — days are derived).
-  const days = trip ? deriveDays(trip) : [];
+  const days = trip ? deriveTripPlanDays(trip) : [];
   const anchorDate =
     mode === "route"
       ? routeSearch?.date ?? null
