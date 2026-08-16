@@ -158,10 +158,22 @@ A Location kept in the Trip but ignored by the optimizer — present, but not pl
 **Unplaced**:
 An Activity the optimizer *tried* to place and could not, carrying a reason — either decided
 before the solve (no coordinates yet, no lodging covers its area, closed on every Trip date) or
-returned by the solver itself with no reason given. Distinct from **Excluded**, which the user
-chose; an Unplaced Activity wanted a Placement and didn't get one. A narrower case of
-**Unassigned**, which doesn't care why.
+returned by the solver itself. Distinct from **Excluded**, which the user chose; an Unplaced
+Activity wanted a Placement and didn't get one. A narrower case of **Unassigned**, which doesn't
+care why.
 _Avoid_: excluded, dropped, filtered
+
+**Diagnosis (Unplaced)**:
+Why the solver dropped an Activity, in real minutes — the Day would need more hours, the Activity
+closes before you could reach it, every Day that reaches it is full, no Day is based near enough
+(ADR-0023 §8, amended 2026-08-16). The solver itself gives no reason, so this is obtained by asking
+it a *hypothetical*: what would break if this Activity were scheduled on that Day anyway. It is
+therefore a claim about one Day, and always names it.
+A Diagnosis enriches an Unplaced reason and never becomes a **Placement** — the Activity was not
+scheduled, and asking where it *would* have gone is not the same as putting it there. Best-effort
+by design: a Trip whose diagnosis never arrives still has its Plan, and its Unplaced Activities
+still say they couldn't fit.
+_Avoid_: violation, feasibility violation, penalty
 
 **Unassigned (candidate)**:
 An activity Location with no Placement yet — in the cast, awaiting the Plan.

@@ -286,6 +286,58 @@ duration from category is the real fix.
 > on "no route." The two are complementary: §7 stops a hopeless cell from ever being asked; the
 > provider's decline is the safety net for the cells that still reach it.
 
+> ### Amended 2026-08-16 — §8's mechanism is corrected: the pass probes Unplaced Activities, it does
+> not replay the Plan
+>
+> §8 describes the second pass as "a second call in **plan mode**, feeding the solved routes back as
+> `vehicle.steps`." Implemented literally (#155), that is dead code, and measurably so.
+>
+> **A solved route replayed unchanged reports zero violations, every time.** Verified against the
+> running container on real solves before any code was written, not inferred from API.md. It cannot
+> be otherwise: a Placement exists *because* VROOM confirmed it fits under hard constraints, so
+> re-checking it against those same constraints has nothing new to find. §8's own premise — that
+> hard time windows make an assigned stop structurally unable to violate its hours — is precisely
+> what makes the replay uninformative. The two halves of §8 were inconsistent with each other.
+>
+> **What plan mode can answer is the question §8 says the pass exists for.** §8's stated motivation
+> is the unassigned pile: "a stack of hard constraints produces a pile of unassigned stops with no
+> explanation." So the pass appends each **Unplaced** Activity to a Day's steps and asks what that
+> would break. The Day's real Placements ride along as context — a probe's arrival depends on what
+> is already scheduled around it — but the reply is read for one thing only.
+>
+> **Call 2's output is never a Plan, and the types enforce it rather than a convention.**
+> `VroomPlanStep` declares no `location_index`, `arrival` or `waiting_time`, and `VroomPlanSolution`
+> declares no `unassigned`, though VROOM sends all of them. `parseVroomSolution` therefore cannot
+> accept a plan-mode reply: it needs `location_index` to reach a Location and `unassigned` to build
+> `Unplaced`, and neither exists on those types. A forced Activity cannot become a Placement by
+> accident, because there is no code path that would compile.
+>
+> **One probe per Day per round**, which is what makes attribution sound rather than merely tidy. A
+> Day short of hours reports `lead_time` on the route's **`start`** step and/or `delay` on its
+> **`end`** step; `max_tasks` lands on whichever step tips the Day over. With one probe on a Day,
+> each is unambiguously the probe's doing, because the route without it was feasible. With two, they
+> are a joint effect neither can be charged for. Rounds cost `ceil(probes / Days)` calls — one for a
+> real Trip, the budget §8 assumed — and are capped so a pathological Trip cannot spend unboundedly.
+>
+> **Two response details corrected against the container**, both of which a docs-only reading gets
+> wrong. A Day's shortfall is reported at the route's *edges*, not on any job step, and it can fall
+> **before the Day opens as readily as after it closes** — an end-only reading returned no diagnosis
+> at all for the first real dropped Activity this was run against, because the entire spill sat on
+> `start`. The honest magnitude is the **sum** of both ends: the hours the Day would have to grow
+> by. Separately, `skills` and `max_tasks` arrive as a bare `cause` with **no `duration`**, so a
+> finding from them carries no magnitude rather than a fabricated zero.
+>
+> **The pass stays optional and failure-tolerant, as a type obligation.** `postVroomPlan` returns
+> `VroomPlanSolution | null` and has no throwing path, so there is no error for a caller to
+> mishandle and the `null` branch is one the compiler insists on. `postVroom` keeps the opposite
+> contract — the Plan must fail loudly. This is also what makes the glpk deployment constraint above
+> a degradation rather than an outage: a VROOM built without libglpk costs a traveller a better
+> sentence, never their Plan.
+>
+> §8's deleted `FeasibilityViolation` is not resurrected by any of this. The findings attach to
+> `Unplaced`, which already existed — an Activity that wanted a Placement and didn't get one now
+> says why, in real minutes.
+
 ## Alternatives considered
 
 - **Keep the two-phase heuristic and improve it.** Rejected: the defect is structural, not a tuning
