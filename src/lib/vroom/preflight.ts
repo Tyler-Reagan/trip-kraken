@@ -78,14 +78,21 @@ export function preflight(
     }
   }
 
-  // A pending trip-edge Transit Location is the same shape of missing Anchor, one Day narrower
+  // An ungeocoded trip-edge Transit Location is the same shape of missing Anchor, one Day narrower
   // (ADR-0028 §4) — the identical "warn, don't block" answer #152 already settled for lodging:
   // optimize still runs, that Day falls back to its Lodging Anchor instead.
-  if (edges?.arrival && !hasValidCoords(edges.arrival) && edges.arrival.enrichmentStatus === "pending") {
-    warnings.push(`"${edges.arrival.id}" is still being looked up — day 1 will start from lodging until it's found.`);
+  //
+  // Selected on coordinates alone, not gated to enrichmentStatus === "pending" the way #152's
+  // lodging warning is: every write path that leaves a Location "pending" already carries valid
+  // coordinates (Add Location and the My Maps import both supply lat/lng up front), so a
+  // coordinate-less edge is reachable only at status "done" (never enrichable — no placeId, no
+  // coordinates) or "failed". Gating on "pending" left this warning dead code — a real ungeocoded
+  // edge fell back silently, with nothing to tell the user why.
+  if (edges?.arrival && !hasValidCoords(edges.arrival)) {
+    warnings.push(`"${edges.arrival.id}" has no coordinates — day 1 will start from lodging instead.`);
   }
-  if (edges?.departure && !hasValidCoords(edges.departure) && edges.departure.enrichmentStatus === "pending") {
-    warnings.push(`"${edges.departure.id}" is still being looked up — the last day will end at lodging until it's found.`);
+  if (edges?.departure && !hasValidCoords(edges.departure)) {
+    warnings.push(`"${edges.departure.id}" has no coordinates — the last day will end at lodging instead.`);
   }
 
   // Reason: no lodging covers this area of the trip (ADR-0020's coverage detector, unchanged). No
