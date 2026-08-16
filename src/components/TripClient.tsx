@@ -11,6 +11,7 @@ import MapPopupWindow from "./MapPopupWindow";
 import Manifest from "./Manifest";
 import DayNavigator from "./DayNavigator";
 import TransitEstimateCaveat from "./TransitEstimateCaveat";
+import DistantMetroWarning from "./DistantMetroWarning";
 
 type ActiveSurface = "itinerary" | "places";
 
@@ -129,6 +130,10 @@ export default function TripClient({ trip: initial }: Props) {
           </button>
         </div>
       </div>
+
+      {/* Pre-optimize (#110): visible on both surfaces, and regardless of whether a plan already
+          exists — the point is catching a geographic split before the user (re-)optimizes. */}
+      <DistantMetroWarning />
 
       {/* Surface switch · map popup toggle (itinerary) */}
       <div className="flex items-center gap-3">
