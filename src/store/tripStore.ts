@@ -8,7 +8,7 @@ import {
   type Transit,
   type NearbyPlace,
 } from "@/types";
-import type { RoadProfile } from "@/types/path";
+import type { HealedPair, RoadProfile } from "@/types/path";
 import { reorderPlacements, insertPlacement } from "@/lib/placementOrdering";
 import type { Unplaced } from "@/lib/solver";
 
@@ -66,6 +66,13 @@ interface TripStore {
   /** Non-fatal conditions from the last optimize run (#152), e.g. a pending lodging with no Anchor
    *  yet — surfaced in `OptimizeModal`, not per-Activity. */
   optimizeWarnings: string[];
+  /** ADR-0026's self-heal (#171): the one new pair the last `removePlacement` call made adjacent,
+   *  and what it costs to travel between them — `null` when that removal had nothing to heal
+   *  (ADR-0026 §4's scope limits) or hasn't happened yet. A property of that one call, the same way
+   *  `unplaced` is a property of the last `optimize()` — kept outside `trip` and cleared by every
+   *  other mutation that could move a Placement, so a stale healed pair from an earlier removal
+   *  never survives to label the wrong two stops. */
+  healedPair: HealedPair | null;
 
   // Setters
   setTrip: (trip: TripWithDetails) => void;
@@ -144,6 +151,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   showAddLocation: false,
   unplaced: [],
   optimizeWarnings: [],
+  healedPair: null,
   isEnriching: false,
   enrichProgress: null,
   _pollTimer: null,
@@ -219,6 +227,9 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   optimize: async (opts) => {
     const tripId = get().tripId;
     if (!tripId) return;
+    // A full re-solve can rearrange or discard the healed pair's two Placements entirely — never
+    // leave a stale self-heal label pointing at stops that may not even be adjacent any more.
+    set({ healedPair: null });
     // fetch only rejects on a network failure — an HTTP 500 (e.g. an unreachable VROOM, which
     // fails loudly by design) resolves with ok: false. Throw on it so callers surface the error
     // instead of silently reloading an unchanged plan.
@@ -255,6 +266,8 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   addPlacement: async (locationId, date, order) => {
     const tripId = get().tripId;
     if (!tripId) return;
+    // A new insertion can land right on top of the healed pair's gap — stale by construction.
+    set({ healedPair: null });
     // Optimistic: insert the placement locally (mirroring the server's shift-siblings logic via
     // the shared placementOrdering helper) so the stop appears on the day with no round-trip lag.
     const t = get().trip;
@@ -273,6 +286,8 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   movePlacement: async (placementId, date, order) => {
     const tripId = get().tripId;
     if (!tripId) return;
+    // A reorder can move either half of the healed pair away from the other — stale by construction.
+    set({ healedPair: null });
     // Optimistic: reproduce the server's move/shift/re-densify logic locally via the shared
     // placementOrdering helper, so a dragged stop moves instantly instead of waiting on reload().
     const t = get().trip;
@@ -291,7 +306,11 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     // Optimistic: drop the placement immediately so the stop leaves the day without a round-trip lag.
     const t = get().trip;
     if (t) set({ trip: { ...t, placements: t.placements.filter((p) => p.id !== placementId) } });
-    await fetch(`/api/trips/${tripId}/placements/${placementId}`, { method: "DELETE" });
+    const res = await fetch(`/api/trips/${tripId}/placements/${placementId}`, { method: "DELETE" });
+    // ADR-0026 self-heal (#171): rides on this response only, the same way unplaced/warnings ride
+    // on optimize()'s — reload() below refetches the trip itself and would not otherwise carry it.
+    const body = await res.json().catch(() => ({}));
+    set({ healedPair: body?.healedPair ?? null });
     await get().reload();
   },
 
@@ -380,6 +399,8 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   addDiscoveredPlace: async (place, date, order) => {
     const tripId = get().tripId;
     if (!tripId) return "No trip loaded";
+    // Same reasoning as addPlacement: a new stop can land inside the healed pair's gap.
+    set({ healedPair: null });
     try {
       const res = await fetch(`/api/trips/${tripId}/locations`, {
         method: "POST",
