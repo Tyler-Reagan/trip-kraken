@@ -20,6 +20,12 @@
  * `src/lib/vroom/wire.ts` enforces — nothing past this file speaks VROOM's vocabulary):
  *
  *   preflight → buildTravelMatrix → buildVroomRequest → postVroom → parseVroomSolution
+ *                                                                          ↓
+ *                                                                   diagnoseUnplaced
+ *
+ * The last step is a diagnostic, not a stage: it runs after the Plan is settled, only ever adds a
+ * reason to an Activity that already failed to get one, and is allowed to fail without taking the
+ * solve with it (ADR-0023 §8, amended 2026-08-16).
  *
  * Exclusions must be decided before the matrix is built, not after (ADR-0023 §7's 2026-08-12
  * amendment): a Location we can't place must never reach `buildTravelMatrix` at all, or every
@@ -35,6 +41,7 @@ import { preflight } from "@/lib/vroom/preflight";
 import { buildVroomRequest } from "@/lib/vroom/request";
 import { postVroom } from "@/lib/vroom/client";
 import { parseVroomSolution } from "@/lib/vroom/response";
+import { diagnoseUnplaced } from "@/lib/vroom/diagnose";
 
 /** A candidate Location as the solver sees it — id, coordinates, and the optimizer-relevant
  * fields projected off the full domain `Location` (`optimize.ts`'s `toInput`). `lat`/`lng` default
@@ -84,12 +91,36 @@ export interface DayPlan {
   timing?: PlacementTiming[];
 }
 
+/** What the plan-mode pass found when it asked VROOM to evaluate an Unplaced Activity *as if* it
+ * had been scheduled (ADR-0023 §8). Every cause here is a claim about one Day — "put it on day 4
+ * and this breaks" — so `dayNumber` is part of the finding, not incidental to it.
+ *
+ * Causes are ours, not VROOM's (#155: "mapped to domain language, not passed through raw"):
+ * - `day-full`       — the Day already carries its maximum Placements
+ * - `out-of-reach`   — no Day serving this Location's area had room for it
+ * - `after-closing`  — it would arrive `seconds` after the Location stops admitting visitors
+ * - `before-opening` — it would have to be visited `seconds` before the Location opens
+ * - `day-too-short`  — the Day would need `seconds` more hours than it has to absorb it
+ */
+export interface UnplacedDiagnosis {
+  cause: "day-full" | "out-of-reach" | "after-closing" | "before-opening" | "day-too-short";
+  /** Seconds past the limit. Only the two time-based causes carry one — VROOM reports `skills`
+   * and `max_tasks` as a bare cause with no magnitude. */
+  seconds?: number;
+  dayNumber: number;
+}
+
 /** An Activity the optimizer could not place, with a reason (CONTEXT.md's "Unplaced" entry) — not
  * "excluded", which is the user's own `Location.excluded` flag and means something different. */
 export interface Unplaced {
   locationId: string;
   code: "ungeocoded-pending" | "ungeocoded-failed" | "no-lodging-coverage" | "closed-all-days" | "solver";
   reason: string;
+  /** Present only on a `code: "solver"` entry the plan-mode pass could diagnose (ADR-0023 §8).
+   * The pre-flight codes already know their own reason and are never probed. Absent whenever the
+   * diagnostic was skipped, failed, or found nothing — it is an enrichment of `reason`, never a
+   * precondition for showing one. */
+  diagnosis?: UnplacedDiagnosis;
 }
 
 /** The Path kinds this run wants sourced (ADR-0024 §3) when a caller doesn't resolve its own —
@@ -209,5 +240,11 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
   const byDayNumber = new Map(solvedDays.map((d) => [d.dayNumber, d]));
   const resolvedDays = Array.from({ length: days }, (_, i) => byDayNumber.get(i + 1) ?? { dayNumber: i + 1, locationIds: [] });
 
-  return { days: resolvedDays, unplaced: [...unplaced, ...solverUnplaced], warnings };
+  // The plan-mode pass (ADR-0023 §8) — diagnosis only, and strictly after the Plan is settled.
+  // It asks what would break if a dropped Activity were scheduled anyway; its answer enriches an
+  // `Unplaced` reason and can never become a Placement. Best-effort by construction: it returns
+  // `solverUnplaced` unchanged rather than throwing, so a solve that succeeded stays succeeded.
+  const diagnosed = await diagnoseUnplaced(request, solution, solverUnplaced, matrixPoints);
+
+  return { days: resolvedDays, unplaced: [...unplaced, ...diagnosed], warnings };
 }

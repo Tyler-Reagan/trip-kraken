@@ -101,3 +101,73 @@ export interface VroomSolution {
   routes: VroomRoute[];
   unassigned: VroomUnassignedJob[];
 }
+
+/* ────────────────────────────── Plan mode (ADR-0023 §8) ──────────────────────────────
+ *
+ * The second, diagnostic call — `options: { c: true }`, VROOM's "plan mode". It takes a route we
+ * hand it and *evaluates* it instead of searching for one, softening every constraint and
+ * reporting what each step breaks.
+ *
+ * These types are deliberately separate from the ones above rather than optional fields on them,
+ * because the two calls answer different questions and only one of them produces truth:
+ *
+ * - **Call 1** (`VroomRequest` → `VroomSolution`) decides the Plan. Its routes *are* the
+ *   Placements.
+ * - **Call 2** (`VroomPlanRequest` → `VroomPlanSolution`) asks a hypothetical: "if this Activity
+ *   went here, what would break?" Its route is a question we posed, not a plan we adopted. The
+ *   only thing we may read from it is `violations`.
+ *
+ * So `VroomPlanStep` carries **no `location_index`, no `arrival`, no `waiting_time`**, and
+ * `VroomPlanSolution` carries **no `unassigned`** — not because VROOM omits them (it sends all of
+ * them) but because declaring them would let a plan-mode response be read as a Plan.
+ * `parseVroomSolution` cannot accept a `VroomPlanSolution`: it needs `location_index` to map a
+ * step back to a Location and `unassigned` to build `Unplaced`, and neither exists here. That is
+ * the boundary, enforced by the compiler rather than by a comment.
+ *
+ * Plan mode needs a glpk-linked VROOM build (ADR-0023's 2026-08-07 amendment); ours is, because
+ * docker-compose.yml builds `vroom-docker` from source rather than using the Homebrew formula.
+ */
+
+/** A step we ask plan mode to evaluate. Array order is the route; `id` is set only for a job. */
+export interface VroomPlanStepInput {
+  type: "start" | "job" | "end";
+  id?: number;
+}
+
+export interface VroomPlanVehicle extends VroomVehicle {
+  steps: VroomPlanStepInput[];
+}
+
+export interface VroomPlanRequest {
+  jobs: VroomJob[];
+  vehicles: VroomPlanVehicle[];
+  matrices: Record<string, VroomMatrix>;
+  /** `c` for "check" — evaluate the given routes rather than searching for new ones. A job listed
+   * in `jobs` but absent from every vehicle's `steps` is simply reported unassigned, not an error,
+   * which is what lets a request carry only the Days being probed. */
+  options: { c: true };
+}
+
+/** `duration` is in seconds and is **not** always present: verified against the running container,
+ * `delay` carries one, while `skills` and `max_tasks` arrive with a bare `cause`. */
+export interface VroomViolation {
+  cause: string;
+  duration?: number;
+}
+
+export interface VroomPlanStep {
+  type: "start" | "job" | "end";
+  id?: number;
+  violations?: VroomViolation[];
+}
+
+export interface VroomPlanRoute {
+  vehicle: number;
+  steps: VroomPlanStep[];
+}
+
+export interface VroomPlanSolution {
+  code: number;
+  error?: string;
+  routes: VroomPlanRoute[];
+}

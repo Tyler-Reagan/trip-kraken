@@ -33,7 +33,8 @@ export function parseVroomSolution(solution: VroomSolution, matrixPoints: Locati
   });
 
   // VROOM's unassigned[] carries {id, type} and never says why — an honest "couldn't fit" rather
-  // than inventing a cause; the richer per-step diagnosis is #155's job (ADR-0023 §8's second pass).
+  // than inventing a cause. `diagnose.ts` may replace this sentence with a real one afterwards
+  // (ADR-0023 §8's second pass); this stays the truthful fallback for when it can't.
   const unplaced: Unplaced[] = solution.unassigned.map((u) => ({
     locationId: matrixPoints[u.id]?.id ?? String(u.id),
     code: "solver",
