@@ -4,7 +4,8 @@ import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { ScheduledStop, Location } from "@/types";
 import type { Unplaced } from "@/lib/solver";
 import { useTripStore } from "@/store/tripStore";
-import { GripVertical, Search, Trash2 } from "lucide-react";
+import { CalendarOff, Clock, GripVertical, HelpCircle, MapPinOff, PackageX, Search, Trash2, type LucideIcon } from "lucide-react";
+import { dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { UNASSIGNED_DROP_ID } from "./DayNavigator";
 
 interface Props {
@@ -33,6 +34,66 @@ function formatDuration(mins: number): string {
   return `${h}h ${m}m`;
 }
 
+/**
+ * One human category per Unplaced entry (#109) — coarser than `Unplaced.code`/`diagnosis.cause`
+ * on purpose. A trip-level summary needs a handful of buckets a traveller recognizes at a glance,
+ * not the solver's fine-grained taxonomy (`day-full` vs `day-too-short` are the same story to a
+ * user: this day couldn't take it).
+ *
+ * `ungeocoded-pending`/`ungeocoded-failed` are deliberately absent: `UnassignedRow` already shows
+ * those via the enrichment dot/exclaim next to the name, and a second icon here would say the same
+ * thing twice.
+ */
+type Category = { icon: LucideIcon; label: string };
+
+function categoryOf(u: Unplaced): Category | null {
+  switch (u.code) {
+    case "no-lodging-coverage":
+      return { icon: MapPinOff, label: "No nearby lodging" };
+    case "closed-all-days":
+      return { icon: CalendarOff, label: "Closed the whole trip" };
+    case "solver":
+      switch (u.diagnosis?.cause) {
+        case "out-of-reach":
+          return { icon: MapPinOff, label: "Too far from every day" };
+        case "day-full":
+        case "day-too-short":
+          return { icon: PackageX, label: "No day has room" };
+        case "after-closing":
+        case "before-opening":
+          return { icon: Clock, label: "Hours don't line up" };
+        default:
+          return { icon: HelpCircle, label: "Couldn't fit anywhere" };
+      }
+    default:
+      return null;
+  }
+}
+
+/** A one-line rollup, grouped into the same coarse buckets `categoryOf` shows per-row (#109's
+ * "day- and/or trip-level summary" criterion) — omitted entirely when there's nothing to say. */
+function UnplacedSummary({ items }: { items: Unplaced[] }) {
+  const counted = items.filter((u) => !u.code.startsWith("ungeocoded"));
+  if (counted.length === 0) return null;
+
+  const byLabel = new Map<string, number>();
+  for (const u of counted) {
+    const label = categoryOf(u)?.label ?? "Couldn't fit anywhere";
+    byLabel.set(label, (byLabel.get(label) ?? 0) + 1);
+  }
+
+  return (
+    <p className="text-xs text-faint">
+      {[...byLabel].map(([label, count], i) => (
+        <span key={label}>
+          {i > 0 && " · "}
+          {count} {label.toLowerCase()}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 export default function UnassignedCard({ locations, unplacedByLocationId, draggingStop, dragId, schedulable = true }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: UNASSIGNED_DROP_ID });
   const isDragTarget = isOver && draggingStop !== null;
@@ -52,6 +113,8 @@ export default function UnassignedCard({ locations, unplacedByLocationId, draggi
         </span>
       </div>
 
+      <UnplacedSummary items={locations.flatMap((l) => unplacedByLocationId.get(l.id) ?? [])} />
+
       {locations.length === 0 ? (
         <p className="text-sm text-faint italic py-1 text-center">
           Drag stops here to unschedule them
@@ -70,6 +133,33 @@ export default function UnassignedCard({ locations, unplacedByLocationId, draggi
         </ul>
       )}
     </div>
+  );
+}
+
+/** The per-row indicator (#109): an icon naming the cause in human terms, `unplaced.reason`'s
+ * ready-made sentence (already carries the magnitude in minutes where the diagnosis has one — see
+ * `diagnosisReason` in `vroom/plan.ts`), and — only when the diagnosis names one — a day badge
+ * colored the same as that day everywhere else in the app (`dayColorCss`), so "day 2" reads as the
+ * same day 2 the map and timeline already taught the user to recognize. */
+function UnplacedReason({ unplaced }: { unplaced: Unplaced }) {
+  const category = categoryOf(unplaced);
+  const Icon = category?.icon;
+  return (
+    <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 flex items-start gap-1">
+      {Icon && <Icon className="w-3 h-3 shrink-0 mt-0.5" aria-hidden="true" />}
+      <span>
+        {unplaced.diagnosis && (
+          <span
+            className="inline-block w-3.5 h-3.5 rounded-full text-center mr-1 align-text-bottom text-[9px] font-bold leading-[14px]"
+            style={{ backgroundColor: dayColorCss(unplaced.diagnosis.dayNumber), color: dayTextColor(unplaced.diagnosis.dayNumber) }}
+            title={`Day ${unplaced.diagnosis.dayNumber}`}
+          >
+            {unplaced.diagnosis.dayNumber}
+          </span>
+        )}
+        {unplaced.reason}
+      </span>
+    </p>
   );
 }
 
@@ -148,7 +238,7 @@ function UnassignedRow({
         {loc.excluded ? (
           <p className="text-xs text-faint italic mt-0.5">Excluded — won&apos;t be scheduled</p>
         ) : unplaced ? (
-          <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">{unplaced.reason}</p>
+          <UnplacedReason unplaced={unplaced} />
         ) : (
           <p className="text-xs text-faint mt-0.5">
             {hoursText} · {durText}
