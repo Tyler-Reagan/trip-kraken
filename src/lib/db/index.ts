@@ -156,6 +156,15 @@ export interface TripNameCollision {
   suggestedName: string;
 }
 
+/** Thrown by `createTripWithLocations` when the DB's unique index rejects a name the app-level
+ *  `checkTripNameCollision` pre-check missed — the race it exists to close (#121). Carries the same
+ *  shape the pre-check returns, so a caller handles both identically. */
+export class TripNameCollisionError extends Error {
+  constructor(public readonly collision: TripNameCollision) {
+    super(`Trip name collision: "${collision.existingTrips[0]?.name}"`);
+  }
+}
+
 /**
  * Guards trip creation against silently producing indistinguishable trips. `Trip.id` is a random
  * UUID — it never collides, so it was never actually the identity a duplicate check should key
@@ -191,33 +200,45 @@ export function createTripWithLocations(data: {
 }): TripWithDetails {
   const tripId = newId();
 
-  getDrizzle().transaction((tx) => {
-    tx.insert(trip)
-      .values({
-        id: tripId,
-        name: data.name,
-        sourceUrl: data.sourceUrl ?? null,
-        startDate: data.startDate,
-        endDate: data.endDate,
-      })
-      .run();
-    for (const loc of data.locations) {
-      // Imported places start as activities; kind is elevated later by the gesture that attaches a
-      // constraint (e.g. setLodgingDates). enrichment is pending so they get geocoded.
-      tx.insert(location)
+  try {
+    getDrizzle().transaction((tx) => {
+      tx.insert(trip)
         .values({
-          id: newId(),
-          tripId,
-          name: loc.name,
-          address: loc.address ?? null,
-          lat: loc.lat ?? null,
-          lng: loc.lng ?? null,
-          placeId: loc.placeId ?? null,
-          enrichmentStatus: "pending",
+          id: tripId,
+          name: data.name,
+          sourceUrl: data.sourceUrl ?? null,
+          startDate: data.startDate,
+          endDate: data.endDate,
         })
         .run();
+      for (const loc of data.locations) {
+        // Imported places start as activities; kind is elevated later by the gesture that attaches
+        // a constraint (e.g. setLodgingDates). enrichment is pending so they get geocoded.
+        tx.insert(location)
+          .values({
+            id: newId(),
+            tripId,
+            name: loc.name,
+            address: loc.address ?? null,
+            lat: loc.lat ?? null,
+            lng: loc.lng ?? null,
+            placeId: loc.placeId ?? null,
+            enrichmentStatus: "pending",
+          })
+          .run();
+      }
+    });
+  } catch (e) {
+    // The DB is the final word on uniqueness (#121) — the app-level checkTripNameCollision
+    // pre-check is best-effort and can lose a race between two concurrent creates. Translate the
+    // constraint violation into the same shape the pre-check returns, so a caller handles both
+    // identically.
+    if (e instanceof Error && "code" in e && e.code === "SQLITE_CONSTRAINT_UNIQUE" && e.message.includes("Trip.name")) {
+      const collision = checkTripNameCollision(data.name);
+      if (collision) throw new TripNameCollisionError(collision);
     }
-  });
+    throw e;
+  }
 
   return requireTrip(tripId);
 }
@@ -697,6 +718,18 @@ export type EnrichableLocation = {
   lng: number | null;
   placeId: string | null;
 };
+
+/** Every Location still `enrichmentStatus: 'pending'`, across every Trip — the durable work-list
+ *  ADR-0009 decided on (#124): no separate jobs table, the pending rows *are* the queue. Read once
+ *  at server startup to re-enqueue anything the in-memory queue lost to a process restart. */
+export function getPendingLocationIds(): string[] {
+  return getDrizzle()
+    .select({ id: location.id })
+    .from(location)
+    .where(eq(location.enrichmentStatus, "pending"))
+    .all()
+    .map((r) => r.id);
+}
 
 export function getEnrichableLocations(tripId: string): EnrichableLocation[] {
   return getDrizzle()

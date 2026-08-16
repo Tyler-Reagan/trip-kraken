@@ -9,13 +9,15 @@
  * The consumer serializes all enrichment calls and enforces a 150ms inter-call
  * delay to stay within Google's ~10 QPS rate limit.
  *
- * ⚠️ Known limitation: the queue is in-memory. Pending items are lost on
- *    process restart. Locations left with enrichmentStatus='pending' after a
- *    restart are surfaced by the "Retry" button in the UI. (ADR-0009 replaces this
- *    with pending-rows-as-queue + startup auto-recovery in a later branch.)
+ * The queue itself is still in-memory and still loses pending items on process
+ * restart — but per ADR-0009, `enrichmentStatus = 'pending'` rows *are* the durable
+ * work-list, not a separate jobs table. `recoverPendingEnrichment` (called once from
+ * `src/instrumentation.ts` on server startup, #124) re-scans for them and re-enqueues,
+ * so a restart no longer strands a Location — only the UI's manual "Retry" affordance
+ * for `'failed'` rows remains a human-triggered path.
  */
 
-import { getLocationForEnrichment, applyEnrichment, markEnrichmentFailed } from "@/lib/db";
+import { getLocationForEnrichment, applyEnrichment, markEnrichmentFailed, getPendingLocationIds } from "@/lib/db";
 import { enrichLocation } from "@/lib/places";
 
 type QueueItem = { locationId: string };
@@ -23,6 +25,7 @@ type QueueItem = { locationId: string };
 const g = globalThis as unknown as {
   _enrichQueue?: QueueItem[];
   _enrichRunning?: boolean;
+  _enrichRecovered?: boolean;
 };
 
 function getQueue(): QueueItem[] {
@@ -75,4 +78,19 @@ export function enqueueLocationEnrichment(locationId: string): void {
       console.error("[enrichmentQueue] consumer error:", err)
     );
   });
+}
+
+/**
+ * ADR-0009's startup auto-recovery (#124): re-scan for every Location still `'pending'` — left
+ * that way by a server restart, deploy, or crash dropping the in-memory queue — and re-enqueue
+ * each one. Called once from `src/instrumentation.ts`. Guarded on `globalThis` the same way the
+ * queue itself is, so a stray double-call in the same process (e.g. a dev-server re-init) doesn't
+ * re-enqueue what the first call already picked up.
+ */
+export function recoverPendingEnrichment(): void {
+  if (g._enrichRecovered) return;
+  g._enrichRecovered = true;
+  for (const locationId of getPendingLocationIds()) {
+    enqueueLocationEnrichment(locationId);
+  }
 }

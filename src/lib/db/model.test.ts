@@ -16,6 +16,8 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "@/lib/db/schema";
 import {
   createTripWithLocations,
+  TripNameCollisionError,
+  getPendingLocationIds,
   createLocation,
   setLodgingDates,
   clearLodging,
@@ -251,6 +253,43 @@ const blank = createTripWithLocations({ name: "Blank trip", sourceUrl: null, sta
 assert.equal(blank.sourceUrl, null, "blank-slate trip has a null sourceUrl");
 assert.equal(blank.locations.length, 0, "blank-slate trip starts with no locations");
 assert.equal(numDaysOf(blank.startDate, blank.endDate), 5, "blank trip still has a real calendar");
+
+// ── #124: getPendingLocationIds is the durable work-list ADR-0009 decided on — every 'pending'
+// Location, across every Trip, regardless of 'done'/'failed' rows in between ──
+{
+  const t1 = createTripWithLocations({ name: "Pending scan trip A", sourceUrl: null, startDate: "2026-11-01", endDate: "2026-11-02", locations: [] });
+  const t2 = createTripWithLocations({ name: "Pending scan trip B", sourceUrl: null, startDate: "2026-11-01", endDate: "2026-11-02", locations: [] });
+  const before = new Set(getPendingLocationIds());
+  const pendingA = createLocation(t1.id, { name: "Still looking this up", enrichmentStatus: "pending" });
+  const doneA = createLocation(t1.id, { name: "Already enriched", enrichmentStatus: "done" });
+  const failedB = createLocation(t2.id, { name: "Gave up", enrichmentStatus: "failed" });
+  const pendingB = createLocation(t2.id, { name: "Also still looking", enrichmentStatus: "pending" });
+  const after = new Set(getPendingLocationIds());
+  const newlyPending = [...after].filter((id) => !before.has(id));
+  assert.deepEqual(newlyPending.sort(), [pendingA.id, pendingB.id].sort(), "only the two pending rows, from either trip, not done/failed");
+  assert.ok(!after.has(doneA.id) && !after.has(failedB.id));
+}
+
+// ── #121: DB-layer trip-name uniqueness closes the race checkTripNameCollision alone can't ──
+// (a concurrent create that never went through the app-level pre-check).
+createTripWithLocations({ name: "Race trip", sourceUrl: null, startDate: "2026-10-01", endDate: "2026-10-03", locations: [] });
+assert.throws(
+  () => createTripWithLocations({ name: "Race trip", sourceUrl: null, startDate: "2026-10-01", endDate: "2026-10-03", locations: [] }),
+  (e) => e instanceof TripNameCollisionError,
+  "a second create with the same name is rejected even without the app-level pre-check running first"
+);
+try {
+  createTripWithLocations({ name: "Race trip", sourceUrl: null, startDate: "2026-10-01", endDate: "2026-10-03", locations: [] });
+  assert.fail("expected TripNameCollisionError");
+} catch (e) {
+  assert.ok(e instanceof TripNameCollisionError);
+  assert.equal(e.collision.duplicate, true);
+  assert.equal(e.collision.existingTrips.length, 1, "the one existing 'Race trip' is reported");
+  assert.equal(e.collision.suggestedName, "Race trip (2)", "carries the same suggestion checkTripNameCollision would compute");
+}
+// A distinct name is unaffected.
+const raceTrip2 = createTripWithLocations({ name: "Race trip (2)", sourceUrl: null, startDate: "2026-10-01", endDate: "2026-10-03", locations: [] });
+assert.equal(raceTrip2.name, "Race trip (2)");
 
 fs.rmSync(dir, { recursive: true, force: true });
 console.log("✓ model.test.ts passed");
