@@ -30,6 +30,9 @@ interface Geocodable {
 }
 
 export interface MetroCluster<A extends Geocodable, L extends Geocodable> {
+  /** May be **empty**: a lodging covering no activity-founded metro founds its own (ADR-0020,
+   * amended 2026-08-17), and a metro you sleep in with nothing planned yet has no activities at
+   * all. Consumers must not assume `activities[0]` exists. */
   activities: A[];
   centroid: Point;
   /** Every lodging within METRO_CLUSTER_RADIUS_METERS of the centroid — a metro can have more than
@@ -51,23 +54,20 @@ function centroidOf(points: Point[]): Point {
   };
 }
 
-/**
- * Groups `activities` into metro clusters and matches each to every covering `lodging` within
- * METRO_CLUSTER_RADIUS_METERS of the cluster's centroid. Activities without real coordinates (not
- * yet geocoded) are dropped — they carry no geography to cluster on.
- */
-export function clusterByMetro<A extends Geocodable, L extends Geocodable>(
-  activities: A[],
-  lodgings: L[]
-): MetroCluster<A, L>[] {
-  const remaining = activities
-    .map((activity) => ({ activity, point: pointOf(activity) }))
-    .filter((r): r is { activity: A; point: Point } => r.point !== null);
-  const validLodgings = lodgings
-    .map((l) => ({ lodging: l, point: pointOf(l) }))
-    .filter((r): r is { lodging: L; point: Point } => r.point !== null);
+type Placed<T> = { item: T; point: Point };
 
-  const groups: { activity: A; point: Point }[][] = [];
+function placed<T extends Geocodable>(items: T[]): Placed<T>[] {
+  return items
+    .map((item) => ({ item, point: pointOf(item) }))
+    .filter((r): r is Placed<T> => r.point !== null);
+}
+
+/** Single-linkage grouping at METRO_CLUSTER_RADIUS_METERS — one member within the radius pulls the
+ * whole group in, so a metro's spread merges regardless of how many members it has. Shared by both
+ * founding passes below so they can't drift into two thresholds. */
+function groupByProximity<T>(items: Placed<T>[]): Placed<T>[][] {
+  const remaining = [...items];
+  const groups: Placed<T>[][] = [];
 
   while (remaining.length > 0) {
     const bucket = [remaining.shift()!];
@@ -84,11 +84,53 @@ export function clusterByMetro<A extends Geocodable, L extends Geocodable>(
     groups.push(bucket);
   }
 
-  return groups.map((group) => {
+  return groups;
+}
+
+/**
+ * Groups a trip's Locations into metros (ADR-0020, amended 2026-08-17). Locations without real
+ * coordinates (not yet geocoded) are dropped — they carry no geography to group on.
+ *
+ * Two founding passes, in this order, and the order is the point:
+ *
+ * 1. **Activities found metros**, each matched to every lodging within the radius of its centroid —
+ *    a metro can have several (a mid-stay hotel change), so this is never collapsed to "the" lodging.
+ * 2. **A lodging covering none of them founds its own**, merging with other such lodgings. A place
+ *    you sleep is a destination whether or not anything is planned there yet, and without this a
+ *    lodging-only region has no metro at all — which reaches `request.ts`'s "no anchor resolved"
+ *    fallback and hands that Day *every* metro's skills.
+ *
+ * Running the second pass over what the first one left, rather than seeding one pass with both
+ * kinds, is what keeps it safe: a lodging sitting between two activity groups would **bridge** them
+ * into a single metro under single-linkage, silently changing coverage for trips unrelated to the
+ * case this exists for. Pass 2 cannot bridge, because the groups it might have bridged are closed.
+ */
+export function clusterByMetro<A extends Geocodable, L extends Geocodable>(
+  activities: A[],
+  lodgings: L[]
+): MetroCluster<A, L>[] {
+  const validLodgings = placed(lodgings);
+
+  const activityFounded = groupByProximity(placed(activities)).map((group) => {
     const centroid = centroidOf(group.map((g) => g.point));
-    const covering = validLodgings
-      .filter((l) => haversineMeters(l.point, centroid) <= METRO_CLUSTER_RADIUS_METERS)
-      .map((l) => l.lodging);
-    return { activities: group.map((g) => g.activity), centroid, lodgings: covering };
+    return {
+      activities: group.map((g) => g.item),
+      centroid,
+      lodgings: validLodgings
+        .filter((l) => haversineMeters(l.point, centroid) <= METRO_CLUSTER_RADIUS_METERS)
+        .map((l) => l.item),
+    };
   });
+
+  // Reference identity, not id: these are the very objects pass 1 just put in its `lodgings`.
+  const covered = new Set(activityFounded.flatMap((m) => m.lodgings));
+  const lodgingFounded = groupByProximity(validLodgings.filter((l) => !covered.has(l.item))).map((group) => ({
+    activities: [] as A[],
+    centroid: centroidOf(group.map((g) => g.point)),
+    lodgings: group.map((g) => g.item),
+  }));
+
+  // Activity-founded first, so an existing trip's ordinals don't shift when a lodging-founded
+  // metro appears — `preflight.ts` uses the index as the skill ordinal.
+  return [...activityFounded, ...lodgingFounded];
 }

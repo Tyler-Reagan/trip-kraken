@@ -8,7 +8,9 @@
  * label, the days each metro touches, and the bounds to fit the camera to.
  *
  * Clustered over the activities the map actually draws (the days' stops), never every Location in
- * the trip — otherwise a metro's bounds could fit to a point that isn't on screen.
+ * the trip — otherwise a metro's bounds could fit to a point that isn't on screen. Lodgings are
+ * the one exception, and only for a metro they founded themselves (ADR-0020, amended 2026-08-17):
+ * there is no activity to fit to, and the alternative is the destination not appearing at all.
  */
 
 import { clusterByMetro } from "@/lib/metroCluster";
@@ -56,10 +58,17 @@ const REGION_THEN_US_ZIP = /([A-Za-z][A-Za-z\s]*?)\s*,?\s*\d{5}(?:-\d{4})?\b/;
  *  usually omits the postal code entirely (our own places.ts fixtures never carry one), so the
  *  postal-anchored patterns are the exception rather than the rule — the common case falls
  *  through to the last comma-separated segment, which is where the city/prefecture normally
- *  lands. Only falls back to the activity's own name when the address has no segments to anchor
- *  on at all (a single, comma-free line). */
-export function metroLabel(metro: { activities: { name: string; address: string | null }[] }): string {
-  const first = metro.activities[0];
+ *  lands. Only falls back to the location's own name when the address has no segments to anchor
+ *  on at all (a single, comma-free line).
+ *
+ *  Reads a lodging when the metro has no activities — a lodging-founded metro (ADR-0020, amended
+ *  2026-08-17) is exactly the case where the *only* thing that can name the destination is the
+ *  place you sleep, and "this area" on the map is what the amendment exists to stop. */
+export function metroLabel(metro: {
+  activities: { name: string; address: string | null }[];
+  lodgings?: { name: string; address: string | null }[];
+}): string {
+  const first = metro.activities[0] ?? metro.lodgings?.[0];
   const address = first?.address;
   const fallback = first?.name ?? "this area";
   if (!address) return fallback;
@@ -93,12 +102,20 @@ export function metrosOf(trip: TripWithDetails): TripMetro[] {
   if (cached) return cached;
 
   const days = deriveTripPlanDays(trip);
+
+  // Which Days each Location touches — Placements *and* Anchors (ADR-0020, amended 2026-08-17). A
+  // Day holding only an arrival and a Lodging is somewhere; keyed on stops alone it was nowhere,
+  // and dropped out of the metro tier entirely rather than showing under the city it belongs to.
   const daysByLocationId = new Map<string, number[]>();
+  const touches = (locationId: string, dayNumber: number) => {
+    const seen = daysByLocationId.get(locationId);
+    if (seen) { if (!seen.includes(dayNumber)) seen.push(dayNumber); }
+    else daysByLocationId.set(locationId, [dayNumber]);
+  };
   for (const day of days) {
-    for (const stop of day.stops) {
-      const seen = daysByLocationId.get(stop.location.id);
-      if (seen) { if (!seen.includes(day.dayNumber)) seen.push(day.dayNumber); }
-      else daysByLocationId.set(stop.location.id, [day.dayNumber]);
+    for (const stop of day.stops) touches(stop.location.id, day.dayNumber);
+    for (const anchor of [day.startAnchor, day.endAnchor]) {
+      if (anchor) touches(anchor.id, day.dayNumber);
     }
   }
 
@@ -109,10 +126,20 @@ export function metrosOf(trip: TripWithDetails): TripMetro[] {
     .map((cluster) => ({
       id: metroKey(cluster),
       label: metroLabel(cluster),
-      dayNumbers: [...new Set(cluster.activities.flatMap((a) => daysByLocationId.get(a.id) ?? []))].sort((a, b) => a - b),
+      // A travel Day belongs to both metros it touches; `metroOfDay` resolves it to whichever
+      // comes first in trip order, which is the one the traveller woke in.
+      dayNumbers: [
+        ...new Set([
+          ...cluster.activities.flatMap((a) => daysByLocationId.get(a.id) ?? []),
+          ...cluster.lodgings.flatMap((l) => daysByLocationId.get(l.id) ?? []),
+        ]),
+      ].sort((a, b) => a - b),
+      // Stops, deliberately: these two say "what is drawn here", and a lodging is not a stop.
       locationIds: new Set(cluster.activities.map((a) => a.id)),
       stopCount: cluster.activities.length,
-      bounds: boundsOf(cluster.activities)!, // a cluster only forms from geocoded activities
+      // Non-null holds for both founding passes: an activity-founded metro has activities, and a
+      // lodging-founded one has lodgings — each already filtered to real coordinates upstream.
+      bounds: boundsOf(cluster.activities.length > 0 ? cluster.activities : cluster.lodgings)!,
     }))
     .sort((a, b) => (a.dayNumbers[0] ?? Infinity) - (b.dayNumbers[0] ?? Infinity));
 

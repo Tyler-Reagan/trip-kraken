@@ -110,8 +110,58 @@ function scattered(center: { lat: number; lng: number }, count: number): Activit
   const farLodging = lodging(TOKYO.lat, TOKYO.lng);
   const clusters = clusterByMetro(scattered(OSAKA, 4), [farLodging]);
 
-  assert.equal(clusters.length, 1);
-  assert.deepEqual(clusters[0].lodgings, [], "a lodging outside the metro radius is not a match");
+  const activityFounded = clusters.filter((c) => c.activities.length > 0);
+  assert.equal(activityFounded.length, 1);
+  assert.deepEqual(activityFounded[0].lodgings, [], "a lodging outside the metro radius is not a match");
+}
+
+// ── A lodging covering no activity-founded metro founds its own ──────────────
+// ADR-0020, amended 2026-08-17. The real shape: three nights booked in a region with nothing
+// planned yet. Before this, that region had no metro at all, and the Days anchored on it reached
+// request.ts's "no anchor resolved" fallback and were handed *every* metro's skills.
+
+{
+  const atami = { lat: 35.0880435, lng: 139.0639024 }; // >75km from both Tokyo and Osaka
+  const stay = lodging(atami.lat, atami.lng);
+  const clusters = clusterByMetro([...scattered(OSAKA, 4), ...scattered(TOKYO, 2)], [stay]);
+
+  assert.equal(clusters.length, 3, "the lodging-only region becomes its own metro");
+  const founded = clusters.find((c) => c.activities.length === 0);
+  assert.ok(founded, "a metro may hold zero activities");
+  assert.deepEqual(founded!.lodgings.map((l) => l.id), [stay.id]);
+
+  // The property the optimizer actually depends on: it belongs to exactly one metro, so its Days
+  // get one skill ordinal rather than the union of every metro's.
+  const memberships = clusters.filter((c) => c.lodgings.some((l) => l.id === stay.id));
+  assert.equal(memberships.length, 1, "an isolated lodging joins exactly one metro — its own");
+}
+
+// ── Founding is a second pass, so a lodging can never bridge two activity metros ──
+// The rejected alternative (seeding one pass with activities *and* lodgings) would merge Osaka and
+// Tokyo here under single-linkage, silently changing coverage for trips unrelated to the fix.
+
+{
+  // Two activity groups ~400km apart, with a lodging placed midway — within the radius of neither
+  // group's members, but the bridging risk is what this pins.
+  const midpoint = { lat: (OSAKA.lat + TOKYO.lat) / 2, lng: (OSAKA.lng + TOKYO.lng) / 2 };
+  const between = lodging(midpoint.lat, midpoint.lng);
+  const clusters = clusterByMetro([...scattered(OSAKA, 3), ...scattered(TOKYO, 3)], [between]);
+
+  const activityFounded = clusters.filter((c) => c.activities.length > 0);
+  assert.equal(activityFounded.length, 2, "Osaka and Tokyo stay separate metros");
+  for (const c of activityFounded) {
+    assert.ok(c.activities.length === 3, "neither activity metro absorbed the other");
+  }
+}
+
+// ── An already-covered lodging does not also found a redundant metro ─────────
+
+{
+  const nearby = lodging(OSAKA.lat + 0.01, OSAKA.lng + 0.01);
+  const clusters = clusterByMetro(scattered(OSAKA, 4), [nearby]);
+
+  assert.equal(clusters.length, 1, "a lodging inside an activity metro joins it rather than founding a second");
+  assert.deepEqual(clusters[0].lodgings.map((l) => l.id), [nearby.id]);
 }
 
 // ── Activities without real coordinates are excluded, not clustered as (0,0) ─
