@@ -53,3 +53,6 @@ status to **Superseded by ADR-NNNN**.
 | [0024](0024-osrm-facts-source-and-capability-dispatched-registry.md) | OSRM as primary road Facts; capability-dispatched provider registry | Accepted |
 | [0025](0025-bff-over-http-services-and-deployment-posture.md) | The app stays a BFF; VROOM and OSRM are upstream HTTP services | Accepted |
 | [0026](0026-self-heal-plan-repair.md) | A removed activity Placement self-heals its Day locally; re-optimize stays optional, never forced | Accepted |
+| [0027](0027-stadia-basemap-over-carto.md) | Stadia Maps replaces CARTO as the basemap provider | Accepted |
+| [0028](0028-transit-constraint-fields-and-trip-edges.md) | Transit carries `arriveAt` / `departAt`; trip edges are unique by construction | Accepted |
+| [0029](0029-map-renders-path-geometry-at-request-time.md) | The map renders one line per Path, from geometry fetched at request time and held only in memory | Accepted |
