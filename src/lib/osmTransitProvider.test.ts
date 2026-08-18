@@ -15,6 +15,12 @@
  * at all, to exercise the decline path (ADR-0024 §4 — no station in range is no longer a
  * fabricated straight-line walk, it's `null`; the registry's terminal `haversine` entry is what
  * fills it now).
+ *
+ * An outlying stop further up the loop, with a point ~1,200m from it, covers the two-radius split
+ * (ADR-0019, amended 2026-08-17): near enough to be walkable, far enough that the dense-urban
+ * radius alone would have declined it. The pair either side of that boundary is the point — the
+ * decoy above proves the dense radius still refuses to over-reach, this proves the wider one
+ * engages when it has to.
  */
 
 import assert from "node:assert/strict";
@@ -100,6 +106,15 @@ function buildFixture(): TransitGraph {
     stationName: "Decoy", lat: 35.703, lng: 139.7731, sequence: 0,
   });
 
+  // An outlying station further up the loop, backing the isolated-access case below: the real
+  // shape is a resort Lodging sitting above its town, with its one station a long-but-walkable
+  // way downhill and nothing at all inside the dense-urban radius (ADR-0019, amended 2026-08-17).
+  graph.stopNodes.set("loop-outlying", {
+    id: "loop-outlying", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
+    stationName: "Outlying", lat: 35.8, lng: 139.7731, sequence: 3,
+  });
+  graph.rideEdges.push({ fromStopId: "loop-akihabara", toStopId: "loop-outlying", distanceMeters: 11_000 });
+
   return graph;
 }
 
@@ -119,6 +134,9 @@ const nearTokyoForShinkansen = P(35.6813, 139.767); // ~10m from shinkansen-toky
 const nearCompareA = P(35.0001, 139.0001); // ~10m from compare-subway-a
 const nearCompareB = P(35.0001, 141.0001); // ~10m from compare-subway-b
 const isolated = P(36.5, 140.5); // far from every stop node in the fixture
+// ~1,200m due north of loop-outlying: outside STATION_SNAP_RADIUS_METERS (800), inside
+// ISOLATED_ACCESS_RADIUS_METERS (2000). The SOKI ATAMI shape that motivated the amendment.
+const aboveOutlyingStation = P(35.81078, 139.7731);
 
 /** Every call in this file below expects a real routed answer, never a decline — this just
  * removes the null-check noise from each assertion while still failing loudly if one arrives. */
@@ -159,10 +177,35 @@ const nearestStops = snapStations(spatialIndex, nearAkihabara);
 assert.ok(nearestStops.some((s) => s.id === "decoy-near-akihabara"), "the farther decoy is in range too");
 assert.equal(nearestStops[0]?.id, "loop-akihabara", "the nearest stop in range is Akihabara, not the farther decoy");
 
-// ── No station in range: declines (ADR-0024 §4) rather than fabricating a straight-line walk —
-//    the registry's terminal haversine entry is what fills this cell now, not this provider ──
+// ── ...and a point that snaps inside the dense radius never reaches for the wider one ──
+// loop-tokyo sits ~1.9km from nearAkihabara: outside STATION_SNAP_RADIUS_METERS but inside
+// ISOLATED_ACCESS_RADIUS_METERS, so its absence here is what proves the second reach stayed
+// dormant. Without this the two radii would silently collapse into one wide one, which is the
+// exact outcome the amendment measured and rejected.
+assert.ok(
+  !nearestStops.some((s) => s.id === "loop-tokyo"),
+  "a point with stations inside the dense radius does not pull in ones beyond it"
+);
+
+// ── Nothing inside the dense radius: reaches once more rather than declining (ADR-0019, amended
+//    2026-08-17). Before this, such a point declined and the cell fell through to a road provider,
+//    which answers an inter-city pair as a hundreds-of-kilometre walk. ──
+const outlyingSnaps = snapStations(spatialIndex, aboveOutlyingStation);
+assert.equal(outlyingSnaps[0]?.id, "loop-outlying", "the one walkable station beyond the dense radius is found");
+
+const outlyingJourney = await describe(aboveOutlyingStation, nearAkihabara, ["rail"]);
+assert.equal(outlyingJourney[0].kind, "rail", "an isolated-access journey still routes as rail");
+// 1,200m at WALK_SPEED_KMH is ~16 minutes, so the access walk cannot have been treated as free:
+// the ride alone would come in under this.
+assert.ok(
+  outlyingJourney[0].travelCost.durationSeconds > 900,
+  "the access walk to the outlying station is priced into the journey, not ignored"
+);
+
+// ── No station in either radius: declines (ADR-0024 §4) rather than fabricating a straight-line
+//    walk — the registry's terminal haversine entry is what fills this cell now, not this provider ──
 const noStationJourney = await provider.describeJourney(isolated, nearAkihabara, ["rail"]);
-assert.equal(noStationJourney, null, "no station within snap range declines the whole journey");
+assert.equal(noStationJourney, null, "no station within either radius declines the whole journey");
 
 // ── costMatrix backs the same provider surface in bulk, consistent with describeJourney ──
 const matrix = await provider.costMatrix([nearAkihabara, nearOtemachi, isolated], ["rail"]);

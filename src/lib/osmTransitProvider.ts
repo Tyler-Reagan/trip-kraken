@@ -13,16 +13,23 @@
  * `getTransitGraph()` singleton; tests supply a small hand-built fixture instead) and every query
  * is a local search over it.
  *
- * Station-snapping + decline (ADR-0019, decline behavior revised by ADR-0024 §4): a point
- * connects to every stop node within `STATION_SNAP_RADIUS_METERS` via a walk edge (distance ÷ walk
- * speed) — not just the nearest, so the search can still pick whichever entry line is actually
- * shortest. A point with no stop node in range **declines** (`null`) rather than fabricating a
- * straight-line walk — the registry's terminal `haversine` entry is what fills a declined cell now,
- * so this provider no longer needs its own straight-line fallback (lifting it out is the ADR-0024
- * §4 change: "the matrix builder deletes the hardcoded version"). A pair that both snap but turn
- * out disconnected in the graph is a different failure (nationwide rail should be one connected
- * component) and throws rather than declining — ADR-0017/0018's fail-loud precedent, not a
- * station-snapping decline case.
+ * Station-snapping + decline (ADR-0019, decline behavior revised by ADR-0024 §4, radii split by
+ * ADR-0019's 2026-08-17 amendment): a point connects to every stop node within
+ * `STATION_SNAP_RADIUS_METERS` via a walk edge (distance ÷ walk speed) — not just the nearest, so
+ * the search can still pick whichever entry line is actually shortest. A point with nothing in that
+ * range reaches once more at `ISOLATED_ACCESS_RADIUS_METERS` (see `snapStations`) before it
+ * **declines** (`null`) rather than fabricating a straight-line walk — the registry's terminal
+ * `haversine` entry is what fills a declined cell now, so this provider no longer needs its own
+ * straight-line fallback (lifting it out is the ADR-0024 §4 change: "the matrix builder deletes the
+ * hardcoded version"). A pair that both snap but turn out disconnected in the graph is a different
+ * failure (nationwide rail should be one connected component) and throws rather than declining —
+ * ADR-0017/0018's fail-loud precedent, not a station-snapping decline case.
+ *
+ * A decline is never inert, which is what makes the radius load-bearing rather than a tuning knob:
+ * the cell falls to the next capable registry entry, and `osrm`'s foot profile will answer an
+ * inter-city pair with a real, routed, hundreds-of-kilometre walk that is stamped `routingService`
+ * and so reads as a good cell. That trap is still open (ADR-0019's amendment records it); widening
+ * the radius removed one Trip's trigger for it, not the trap itself.
  *
  * `describeJourney` returns a single-element `Path[]` (ADR-0022 P1): a real journey may cross
  * several lines/Operators, which should decompose into several single-kind Paths, but
@@ -55,6 +62,13 @@ export const WALK_SPEED_KMH = 4.5;
 
 /** How far a Location may be from a stop node and still be considered "at" that station. */
 export const STATION_SNAP_RADIUS_METERS = 800;
+
+/** The one-more-try radius for a Location with *nothing* inside `STATION_SNAP_RADIUS_METERS`
+ * (ADR-0019, amended 2026-08-17). At `WALK_SPEED_KMH` this is a 27-minute access walk — generous
+ * on purpose, and the point past which a walk stops being credible, so beyond it the provider goes
+ * back to declining. Never widen the primary radius to this instead: the two are asking different
+ * questions, and a blanket widening measurably multiplies the seed count of every urban search. */
+export const ISOLATED_ACCESS_RADIUS_METERS = 2000;
 
 function minutesForMeters(distanceMeters: number, speedKmh: number): number {
   return distanceMeters / 1000 / speedKmh * 60;
@@ -113,14 +127,28 @@ function buildAdjacency(graph: TransitGraph): Adjacency {
   return adjacency;
 }
 
-/** All stop nodes within `STATION_SNAP_RADIUS_METERS` of `point`, nearest first — the multi-entry
- * snap set a search seeds from, and the pure function the "nearest station" test asserts on directly. */
+/** The stop nodes `point` may enter the network at, nearest first — the multi-entry snap set a
+ * search seeds from, and the pure function the "nearest station" test asserts on directly.
+ *
+ * Two radii, tried in order (ADR-0019, amended 2026-08-17), because they answer two different
+ * questions. Inside `STATION_SNAP_RADIUS_METERS` the several stop nodes in range are a real *choice
+ * of entrance*, which is why every one of them is returned rather than the nearest. A point with
+ * nothing in that range has no choice to model — there is one station and the only question is
+ * whether it is reachable on foot — so it reaches once more at `ISOLATED_ACCESS_RADIUS_METERS`.
+ *
+ * The second reach is therefore dead for any point the first one answers, which is the property
+ * that makes it affordable: urban snapping is bit-identical to before, and only a point that would
+ * otherwise have declined pays for the wider search. */
 export function snapStations(spatialIndex: SpatialIndex, point: Point): StopNode[] {
-  return spatialIndex
-    .nearby(point.lat, point.lng, STATION_SNAP_RADIUS_METERS)
-    .map((stop) => ({ stop, meters: haversineMeters(point, stop) }))
-    .sort((a, b) => a.meters - b.meters)
-    .map((s) => s.stop);
+  const within = (radiusMeters: number): StopNode[] =>
+    spatialIndex
+      .nearby(point.lat, point.lng, radiusMeters)
+      .map((stop) => ({ stop, meters: haversineMeters(point, stop) }))
+      .sort((a, b) => a.meters - b.meters)
+      .map((s) => s.stop);
+
+  const inSnapRadius = within(STATION_SNAP_RADIUS_METERS);
+  return inSnapRadius.length > 0 ? inSnapRadius : within(ISOLATED_ACCESS_RADIUS_METERS);
 }
 
 /** Multi-source Dijkstra over the graph, seeded from every stop node snapped to the origin — each
