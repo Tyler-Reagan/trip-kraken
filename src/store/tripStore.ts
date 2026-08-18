@@ -253,8 +253,16 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     const tripId = get().tripId;
     if (!tripId) return;
     // Optimistic: reflect the edit immediately (exclude toggle, duration), then reconcile on reload.
+    // "visitDuration" in fields, not fields.visitDuration != null: a duration edit stales the plan
+    // whether it sets, changes, or clears the value, and `unplaced`/`optimizeWarnings` were computed
+    // from whatever it was before this edit either way.
     const t = get().trip;
-    if (t) set({ trip: { ...t, locations: t.locations.map((l) => (l.id === locationId ? { ...l, ...fields } : l)) } });
+    if (t) {
+      set({
+        trip: { ...t, locations: t.locations.map((l) => (l.id === locationId ? { ...l, ...fields } : l)) },
+        ...("visitDuration" in fields ? { unplaced: [], optimizeWarnings: [] } : {}),
+      });
+    }
     await fetch(`/api/trips/${tripId}/locations/${locationId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

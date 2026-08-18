@@ -30,6 +30,18 @@ export async function PATCH(
   const body = await req.json();
   const { excluded, note, name, visitDuration, checkInDate, checkOutDate, arriveAt, departAt } = body;
 
+  // A pure range check with no DB lookup — the wrong weight for LodgingValidationError/
+  // TransitValidationError's throw/catch machinery below, which backs multi-rule DB-backed
+  // validation. Returns directly rather than throwing, so it doesn't need the try/catch boundary.
+  if (visitDuration !== undefined && visitDuration !== null) {
+    if (!Number.isInteger(visitDuration) || visitDuration < 15 || visitDuration > 1440) {
+      return NextResponse.json(
+        { error: "visitDuration must be an integer between 15 and 1440 minutes, or null." },
+        { status: 400 }
+      );
+    }
+  }
+
   try {
     if (checkInDate === null) {
       clearLodging(tripId, locationId);
