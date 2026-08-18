@@ -264,3 +264,41 @@ classifier is ingestion work, #87's domain). Concrete leads for that follow-up:
   depending on inconsistently-applied tags.
 - Ordinary commuter/subway classification (route-tag-based, no `service` dependency) is unaffected
   and already correct — this bug is scoped entirely to the two high-speed-adjacent line types.
+
+> ### Amended 2026-08-17 — station-snapping widens *conditionally*; one radius could not serve both densities
+>
+> §"Station-snapping and the walking fallback" specifies "a small walking radius" and ships one
+> constant, `STATION_SNAP_RADIUS_METERS = 800`. A single radius is wrong, and this amendment splits
+> it in two: 800 m stays as the primary radius, and a Location with **no** stop node inside it
+> reaches once more at `ISOLATED_ACCESS_RADIUS_METERS = 2000` before declining.
+>
+> **The failure this fixes.** A real Trip put a Lodging (SOKI ATAMI) 1,203 m from its nearest stop
+> node — an onsen resort above its town, a 16-minute walk from the platform, and 403 m outside the
+> radius. The provider declined every cell touching it. Under ADR-0024 §4 that decline is not
+> inert: the cell falls to the next capable entry, and `osrm` answered the Osaka→Atami Anchor-to-
+> Anchor stretch as a **426 km walk costing 5,125 minutes**. Three Days anchored on that Lodging
+> were each ~4,645 minutes past a 480-minute budget carrying *no* Placements, so they held none,
+> and the Activities that should have gone elsewhere became Unplaced. The Diagnosis named an
+> Activity and a Day; neither was the cause.
+>
+> **Why not simply raise the one constant.** Measured against the real ingested graph, a blanket
+> 1,500 m costs cities far more than it pays the countryside — OBJ Osaka goes 10 → 96 stop nodes in
+> range (9.6×), CINQS 54 → 114, and every one of those becomes a seed of the multi-source Dijkstra
+> that runs per pair. Urban cells are most of the matrix, so the trip is real. Conditional widening
+> leaves every Location that already snaps **bit-identical** — the wider reach is dead code for them
+> — and spends the extra search only where the alternative is no rail at all.
+>
+> This is also the more honest model. Inside a dense radius the several stop nodes in range are a
+> genuine *choice of entrance*, which is why §"Station-snapping" seeds all of them rather than the
+> nearest. A Location with nothing inside 800 m has no choice to model: there is one station, and
+> the question collapses to whether you can reach it. Two radii because there are two questions.
+>
+> **2,000 m is where a walk stops being credible**, not a tuning knob: at `WALK_SPEED_KMH` it is a
+> 27-minute access leg, already generous. Beyond it the provider still declines, and the cell still
+> degrades visibly as `straightLine` — §"Station-snapping" and ADR-0017 keep that ending.
+>
+> **Not fixed here, and now sharper.** `osrm` returning a 426 km foot route is its own defect: it is
+> a real routed answer, stamped `routingService`, and therefore indistinguishable from a good cell.
+> Widening the snap radius removes this Trip's trigger, not the trap — any Location beyond 2,000 m
+> from rail still reaches it. ADR-0024 §4's decline ladder assumes each rung degrades *gracefully*,
+> and a foot profile asked to cross a country does not. Owed by a separate change.
