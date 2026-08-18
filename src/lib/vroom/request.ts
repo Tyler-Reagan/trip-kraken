@@ -10,6 +10,7 @@ import type { IsoDate } from "@/types";
 import type { TravelCost } from "@/types/path";
 import { anchorsOnDate } from "@/lib/anchors";
 import { dayWindowsFor } from "@/lib/vroom/timeWindows";
+import { resolveVisitDuration } from "@/lib/visitDuration";
 import type { LocationInput, StayPlan } from "@/lib/solver";
 import type { VroomJob, VroomRequest, VroomVehicle } from "@/lib/vroom/wire";
 
@@ -123,14 +124,15 @@ function buildSolverInputDays(
   });
 }
 
-function vehicleForDay(day: SolverInputDay, placementsPerDayCap: number): VroomVehicle {
+function vehicleForDay(day: SolverInputDay): VroomVehicle {
   return {
     id: day.dayNumber,
     ...(day.wakeAt != null ? { start_index: day.wakeAt } : {}), // Anchor you woke at
     ...(day.sleepAt != null ? { end_index: day.sleepAt } : {}), // Anchor you sleep at
-    time_window: [day.opensAt, day.closesAt], // the Day's usable hours
-    max_tasks: placementsPerDayCap,
-    ...(day.reachableMetros.length > 0 ? { skills: day.reachableMetros } : {}),
+    time_window: [day.opensAt, day.closesAt], // the Day's usable hours — §6 rung 0, and now the
+    // only limiter: rung 1 (`max_tasks`) is removed as of ADR-0023 §6's 2026-08-18 amendment, since
+    // real `service` durations (see jobForActivity) make this window load-bearing on its own.
+    ...(day.reachableMetros.length > 0 ? { skills: day.reachableMetros } : {}), // rung 2, unaffected
     profile: TRIP_PROFILE,
   };
 }
@@ -141,10 +143,10 @@ function jobForActivity(
   tripDates: IsoDate[],
   metroOf: Map<string, number>
 ): VroomJob {
-  // service = visitDuration ?? 0 replaces the deleted DEFAULT_VISIT_MINS = 60 (ADR-0023 §9) — the
-  // constant was invented, and under a hard Day window it would consume real time we have no
-  // evidence is needed.
-  const service = Math.round((activity.visitDuration ?? 0) * 60);
+  // service resolves an unset visitDuration to DEFAULT_VISIT_MINUTES (ADR-0023 §9, amended
+  // 2026-08-18) — reverses the deleted DEFAULT_VISIT_MINS = 60, now that the default is visible
+  // and editable in the UI rather than an invisible solver constant.
+  const service = Math.round(resolveVisitDuration(activity.visitDuration) * 60);
   const windows = dayWindowsFor(activity, tripDates);
   const metro = metroOf.get(activity.id);
   return {
@@ -157,21 +159,18 @@ function jobForActivity(
 }
 
 export function buildVroomRequest(input: BuildVroomRequestInput): VroomRequest {
-  const { placeable, matrixPoints, matrix, tripDates, numDays, metroOf, lodgingMetros } = input;
+  const { placeable, matrixPoints, matrix, tripDates, metroOf, lodgingMetros } = input;
 
   const indexOf = new Map(matrixPoints.map((p, i) => [p.id, i]));
   const allMetroOrdinals = [...new Set([...metroOf.values(), ...[...lodgingMetros.values()].flat()])];
 
-  const placementsPerDayCap = Math.ceil(placeable.length / numDays); // §6 rung 1, slack 0 — the
-  // 2026-08-07 amendment corrects §6's own guidance: slack IS the balance knob, and zero
-  // measurably beats any nonzero value tested (CoV 0.11–0.16 at slack 0 vs 0.52 at slack 1). Do
-  // not cushion it. No costs.fixed anywhere in this module — §6 forbids it by name, since it
-  // biases toward *fewer* used vehicles, the wrong direction for a holiday.
+  // No costs.fixed anywhere in this module — §6 forbids it by name, since it biases toward
+  // *fewer* used vehicles, the wrong direction for a holiday.
 
   const tripDaysArr = buildSolverInputDays(input, indexOf, allMetroOrdinals);
 
   const jobs: VroomJob[] = placeable.map((a) => jobForActivity(a, indexOf.get(a.id)!, tripDates, metroOf));
-  const vehicles: VroomVehicle[] = tripDaysArr.map((day) => vehicleForDay(day, placementsPerDayCap));
+  const vehicles: VroomVehicle[] = tripDaysArr.map(vehicleForDay);
 
   const durations = matrix.map((row) => row.map((cell) => Math.round(cell.durationSeconds)));
 

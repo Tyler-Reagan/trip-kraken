@@ -6,6 +6,7 @@ import type { Unplaced } from "@/lib/solver";
 import { useTripStore } from "@/store/tripStore";
 import { CalendarOff, Clock, GripVertical, HelpCircle, MapPinOff, PackageX, Search, Trash2, type LucideIcon } from "lucide-react";
 import { dayColorCss, dayTextColor } from "@/lib/dayColors";
+import { formatDuration, resolveVisitDuration } from "@/lib/visitDuration";
 import { UNASSIGNED_DROP_ID } from "./DayNavigator";
 
 interface Props {
@@ -24,14 +25,6 @@ function formatHoursSubtext(loc: Location): string {
   if (!loc.openTime && !loc.closeTime) return "No hours";
   if (loc.openTime === "00:00" && loc.closeTime === "23:59") return "Always open";
   return `${loc.openTime ?? "?"}–${loc.closeTime ?? "?"}`;
-}
-
-function formatDuration(mins: number): string {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
 }
 
 /**
@@ -188,7 +181,7 @@ function UnassignedRow({
 
   const isInspected = inspectedLocationId === loc.id;
   const hoursText = formatHoursSubtext(loc);
-  const durText = loc.visitDuration !== null ? formatDuration(loc.visitDuration) : "—";
+  const durText = formatDuration(resolveVisitDuration(loc.visitDuration));
 
   async function doRemoveLocation() {
     await fetch(`/api/trips/${tripId}/locations/${loc.id}`, { method: "DELETE" });

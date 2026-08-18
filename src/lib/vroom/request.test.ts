@@ -31,7 +31,8 @@ function vehicleById(req: VroomRequest, id: number) {
   return req.vehicles.find((v) => v.id === id)!;
 }
 
-// ── max_tasks: slack 0, Math.ceil(placeable/numDays) ──
+// ── max_tasks is never sent (ADR-0023 §6, amended 2026-08-18): rung 1 is removed now that
+//    real service durations make the Day's time_window load-bearing on its own ──
 {
   const placeable = [loc({ id: "a1" }), loc({ id: "a2" }), loc({ id: "a3" })];
   const matrixPoints = placeable;
@@ -48,7 +49,7 @@ function vehicleById(req: VroomRequest, id: number) {
     lodgingMetros: new Map(),
   });
   assert.equal(req.vehicles.length, 2);
-  for (const v of req.vehicles) assert.equal(v.max_tasks, Math.ceil(3 / 2), "max_tasks is ceil(placeable/days) with no cushion");
+  for (const v of req.vehicles) assert.equal(v.max_tasks, undefined, "no per-day task cap is ever sent");
 }
 
 // ── Per-day start_index/end_index, differing on a travel day; same-lodging days omit end_index ──
@@ -174,7 +175,7 @@ function vehicleById(req: VroomRequest, id: number) {
   assert.equal(vehicleById(req, 1).skills, undefined);
 }
 
-// ── service = visitDuration ?? 0, in seconds ──
+// ── service = resolveVisitDuration(visitDuration), in seconds ──
 {
   const a1 = loc({ id: "a1", visitDuration: 90 });
   const a2 = loc({ id: "a2" }); // no visitDuration
@@ -191,7 +192,7 @@ function vehicleById(req: VroomRequest, id: number) {
     lodgingMetros: new Map(),
   });
   assert.equal(jobById(req, 0).service, 90 * 60, "visitDuration converts to seconds");
-  assert.equal(jobById(req, 1).service, 0, "an unset visitDuration is 0 service, not the deleted DEFAULT_VISIT_MINS");
+  assert.equal(jobById(req, 1).service, 30 * 60, "an unset visitDuration resolves to DEFAULT_VISIT_MINUTES (ADR-0023 §9, amended 2026-08-18)");
 }
 
 // ── The matrix profile key is "trip", matching every vehicle's profile, and durations are integers ──

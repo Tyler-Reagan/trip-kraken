@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { Star, X } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 import { isActivity, type Location } from "@/types";
+import VisitDurationEditor from "@/components/VisitDurationEditor";
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Mon–Sun display order
@@ -55,65 +55,6 @@ function HoursDisplay({ loc }: { loc: Location }) {
   return <p className="text-xs">{loc.openTime ?? "?"}–{loc.closeTime ?? "?"}</p>;
 }
 
-function formatDuration(mins: number): string {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
-}
-
-function DurationEditor({ loc }: { loc: Location }) {
-  const tripId = useTripStore((s) => s.tripId);
-  const reload = useTripStore((s) => s.reload);
-
-  const savedH = loc.visitDuration != null ? Math.floor(loc.visitDuration / 60) : 0;
-  const savedM = loc.visitDuration != null ? loc.visitDuration % 60 : 0;
-  const [hours, setHours] = useState(savedH);
-  const [mins, setMins] = useState(savedM);
-
-  useEffect(() => {
-    setHours(loc.visitDuration != null ? Math.floor(loc.visitDuration / 60) : 0);
-    setMins(loc.visitDuration != null ? loc.visitDuration % 60 : 0);
-  }, [loc.visitDuration]);
-
-  async function handleBlur() {
-    if (!tripId) return;
-    const total = hours * 60 + mins;
-    if (total === (loc.visitDuration ?? 0)) return;
-    await fetch(`/api/trips/${tripId}/locations/${loc.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ visitDuration: total === 0 ? null : total }),
-    });
-    await reload();
-  }
-
-  const inputCls =
-    "w-7 text-sm text-center bg-surface-2 border border-line border-line-strong rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-brand-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
-
-  return (
-    <div className="flex items-center gap-1">
-      <span className="text-xs text-sub w-20">Visit duration</span>
-      <input
-        type="number" min={0} max={23} value={hours}
-        onChange={(e) => setHours(Math.min(23, Math.max(0, parseInt(e.target.value) || 0)))}
-        onBlur={handleBlur}
-        className={inputCls}
-        aria-label="Hours"
-      />
-      <span className="text-xs text-faint">h</span>
-      <input
-        type="number" min={0} max={59} value={mins}
-        onChange={(e) => setMins(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
-        onBlur={handleBlur}
-        className={inputCls}
-        aria-label="Minutes"
-      />
-      <span className="text-xs text-faint">m</span>
-    </div>
-  );
-}
 
 export default function LocationInspector() {
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
@@ -179,7 +120,12 @@ export function LocationInspectorContent({ loc }: { loc: Location }) {
       </div>
 
       {/* Duration editor — only activities are scheduled, so only they carry a visit duration */}
-      {isActivity(loc) && <DurationEditor loc={loc} />}
+      {isActivity(loc) && (
+        <div className="text-xs text-sub space-y-0.5">
+          <p className="font-medium text-sub text-xs">Visit duration</p>
+          <VisitDurationEditor loc={loc} />
+        </div>
+      )}
 
       {/* Categories */}
       {loc.categories && loc.categories.length > 0 && (

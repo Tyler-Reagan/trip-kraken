@@ -5,12 +5,14 @@ import { useTripStore } from "@/store/tripStore";
 import { isActivity, isLodging, type Location, type TripWithDetails } from "@/types";
 import { NightStrip } from "./LodgingNightStrip";
 import { TransitSection } from "./TransitEdgeSlots";
+import VisitDurationEditor from "./VisitDurationEditor";
 
 /**
  * The Manifest (ADR-0015 / ADR-0010) — the trip's inventory of places, grouped by `kind`. It is the
  * create-and-discover surface: every place lives here regardless of role, and intrinsic facts are
- * edited inline. Lodging dates are the kind-elevating gesture; duration/hours editing lives in the
- * Inspector (open by clicking a row). The day-by-day plan is the Timeline (separate surface).
+ * edited inline, including an Activity's visit duration directly on its row (ADR-0023 §9, amended
+ * 2026-08-18) — hours editing still lives in the Inspector (open by clicking a row). The day-by-day
+ * plan is the Timeline (separate surface).
  */
 
 /**
@@ -35,10 +37,6 @@ function LodgingSection({ trip, activities }: { trip: TripWithDetails; activitie
 function ActivityRow({ loc }: { loc: Location }) {
   const updateLocation = useTripStore((s) => s.updateLocation);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
-  const duration =
-    loc.visitDuration != null
-      ? `${Math.floor(loc.visitDuration / 60) ? `${Math.floor(loc.visitDuration / 60)}h ` : ""}${loc.visitDuration % 60 ? `${loc.visitDuration % 60}m` : ""}`.trim() || "—"
-      : "—";
 
   return (
     <div className={`card p-3 flex items-center gap-3 ${loc.excluded ? "opacity-50" : ""}`}>
@@ -61,7 +59,7 @@ function ActivityRow({ loc }: { loc: Location }) {
           {loc.rating.toFixed(1)}
         </span>
       )}
-      <span className="text-xs text-sub w-12 text-right shrink-0">{duration}</span>
+      <VisitDurationEditor loc={loc} />
       {loc.enrichmentStatus === "pending" && (
         <span className="text-xs text-faint animate-pulse shrink-0">…</span>
       )}

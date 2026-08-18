@@ -8,6 +8,7 @@ import type { DerivedDay, ScheduledStop, Lodging, Transit, Location } from "@/ty
 import { useTripStore } from "@/store/tripStore";
 import { dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { metrosOf } from "@/lib/tripMetros";
+import { formatDuration, resolveVisitDuration } from "@/lib/visitDuration";
 import { Crosshair, GripVertical, MapPin, Route, Search, Trash2, TrainFront } from "lucide-react";
 import { dayDropId } from "./DayNavigator";
 
@@ -19,14 +20,6 @@ interface Props {
 }
 
 const LIGHT_DAY_THRESHOLD = 240;
-
-function formatDuration(mins: number): string {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
-}
 
 function formatHoursSubtext(loc: Location, dayOfWeek: number): string {
   if (loc.hoursJson) {
@@ -57,7 +50,13 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
   });
 
   const dayOfWeek = new Date(day.date + "T00:00:00").getDay();
-  const totalMinutes = day.stops.reduce((sum, s) => sum + (s.location.visitDuration ?? 0), 0);
+  // Reflects what the Plan was actually built on (ADR-0023 §9, amended 2026-08-18): an unset
+  // Activity still costs DEFAULT_VISIT_MINUTES in the solver, so the total must count it too, or
+  // this figure would read lower than the Day the optimizer actually produced.
+  const totalMinutes = day.stops.reduce((sum, s) => sum + resolveVisitDuration(s.location.visitDuration), 0);
+  // Unlike the total above, this stays a raw check on purpose — "Light day" is a signal about
+  // durations someone actually chose, and a Day made entirely of invented defaults isn't evidence
+  // of anything.
   const anyHasDuration = day.stops.some((s) => s.location.visitDuration !== null);
   const isLightDay = anyHasDuration && totalMinutes < LIGHT_DAY_THRESHOLD && day.stops.length > 0;
   const nearbyAnchorLoc: Location | null = day.startAnchor ?? day.stops[0]?.location ?? null;
@@ -314,7 +313,9 @@ function StopRow({ id, stop, index, dayNumber, dayOfWeek, date }: StopRowProps) 
   });
 
   const hoursText = formatHoursSubtext(loc, dayOfWeek);
-  const durText = loc.visitDuration !== null ? formatDuration(loc.visitDuration) : "—";
+  // Resolved, not raw-or-dash: the total above already counts an unset duration as
+  // DEFAULT_VISIT_MINUTES, so a per-stop "—" here would read as "not counted" when it is.
+  const durText = formatDuration(resolveVisitDuration(loc.visitDuration));
 
   useEffect(() => {
     if (isHighlighted && highlightRef.current) highlightRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
