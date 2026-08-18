@@ -89,8 +89,14 @@ interface OsrmTableResponse {
   destinations?: OsrmWaypoint[];
 }
 
+/** A stopped or wedged container must fail fast, not hang the caller (ADR-0029). At ADR-0026's one
+ * lookup per request an unbounded wait was survivable; the map issues a pair per shift across the
+ * whole Trip, so one hung socket would hold the batch open indefinitely. Local containers answer in
+ * milliseconds — this bound is for the pathological case, not the slow one. */
+const OSRM_TIMEOUT_MS = 5000;
+
 async function fetchOsrmJson<T>(url: string, profile: Profile): Promise<T> {
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(OSRM_TIMEOUT_MS) });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`osrmProvider (${profile}): HTTP ${res.status} ${text}`);

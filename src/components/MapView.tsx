@@ -8,8 +8,11 @@ import type { FeatureCollection, LineString, Point } from "geojson";
 import { ChevronRight, Crosshair, Globe, MapPin, PanelLeftClose, TrainFront } from "lucide-react";
 import { useTripStore, type FocusTarget } from "@/store/tripStore";
 import { deriveTripPlanDays, type DerivedDay, type Location } from "@/types";
+import type { PathEndpoint } from "@/types/path";
 import { DAY_COLORS, dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { boundsOf, metroOfDay, metrosOf, type Bounds, type TripMetro } from "@/lib/tripMetros";
+import { pairKey, pairsOfDay } from "@/lib/pathPairs";
+import { usePathGeometry } from "@/lib/usePathGeometry";
 
 // #145: CARTO's keyless basemap endpoint is outside its published license (enterprise/grant-only,
 // no self-serve tier). Stadia's Alidade Smooth Dark is the visual replacement — see ADR-0027 for
@@ -159,6 +162,11 @@ export default function MapView() {
 
   const activeDay = days.find((d) => d.dayNumber === activeDayNumber) ?? null;
 
+  // Real Path geometry for the Day lines (ADR-0029). Held by pair and requested only where missing,
+  // so a drag costs the pairs it made newly adjacent rather than the whole Trip.
+  const roadProfile = trip?.roadProfile ?? "walking";
+  const pathGeometry = usePathGeometry(trip?.id ?? null, days, roadProfile);
+
   // Build GeoJSON for route lines and stop dots
   const { pointsGeoJSON, routesGeoJSON } = useMemo(() => {
     const points: FeatureCollection<Point> = { type: "FeatureCollection", features: [] };
@@ -210,22 +218,40 @@ export default function MapView() {
       if (day.startAnchor) addAnchor(day.startAnchor, day.dayNumber);
       if (day.endAnchor) addAnchor(day.endAnchor, day.dayNumber);
 
-      const routeCoords: [number, number][] = [];
-      if (day.startAnchor?.lat != null && day.startAnchor.lng != null) routeCoords.push([day.startAnchor.lng, day.startAnchor.lat]);
-      // Check-in waypoint: drop bags at the new lodging on arrival, before the day's stops
-      // (same place as the overnight anchor below; ADR-0013 Phase 2).
-      if (day.checkInWaypoint?.lat != null && day.checkInWaypoint.lng != null) routeCoords.push([day.checkInWaypoint.lng, day.checkInWaypoint.lat]);
-      for (const s of geocodedStops) routeCoords.push([s.location.lng, s.location.lat]);
-      if (day.endAnchor?.lat != null && day.endAnchor.lng != null) routeCoords.push([day.endAnchor.lng, day.endAnchor.lat]);
-
-      if (routeCoords.length >= 2) {
-        // Route lines overlap and thicken each other, so only the day in view draws one at full
-        // strength; its metro siblings hint at their shape, the rest stay off entirely.
+      // One line per Path, not one per Day (ADR-0029 §1). The Day's chain — start Anchor, check-in
+      // waypoint, stops, end Anchor — is `pairsOfDay`'s rule now, not this component's.
+      //
+      // Route lines overlap and thicken each other, so only the day in view draws at full strength;
+      // its metro siblings hint at their shape, the rest stay off entirely. Every Path of a Day
+      // shares that one opacity, so the solid/dashed distinction reads as provenance rather than as
+      // emphasis (§3).
+      const routeAlpha = isActive ? 0.65 : browsedDays.has(day.dayNumber) ? 0.18 : 0;
+      const drawStraight = (from: PathEndpoint, to: PathEndpoint) => {
         routes.features.push({
           type: "Feature",
-          geometry: { type: "LineString", coordinates: routeCoords },
-          properties: { color, alpha: isActive ? 0.65 : browsedDays.has(day.dayNumber) ? 0.18 : 0 },
+          geometry: { type: "LineString", coordinates: [[from.lng, from.lat], [to.lng, to.lat]] },
+          properties: { color, alpha: routeAlpha, dashed: 1 },
         });
+      };
+
+      for (const pair of pairsOfDay(day)) {
+        const paths = pathGeometry.get(pairKey(roadProfile, pair));
+
+        // Not yet answered (§7 — the canvas never waits), or refused outright by the router.
+        if (!paths?.length) {
+          drawStraight(pair.from, pair.to);
+          continue;
+        }
+
+        for (const path of paths) {
+          // Presence of geometry, not `basisOfCost` — "is there a real shape to draw" is the
+          // question, and it stays right for a rail Path with a real Basis and no shape yet (#142).
+          if (path.geometry) {
+            routes.features.push({ type: "Feature", geometry: path.geometry, properties: { color, alpha: routeAlpha, dashed: 0 } });
+          } else {
+            drawStraight(path.from, path.to);
+          }
+        }
       }
     }
 
@@ -249,8 +275,12 @@ export default function MapView() {
     }
 
     return { pointsGeoJSON: points, routesGeoJSON: routes };
-  }, [days, activeDayNumber, browsedDays, highlightedLocationId]);
+  }, [days, activeDayNumber, browsedDays, highlightedLocationId, pathGeometry, roadProfile]);
 
+  // ADR-0029 §3: a Path with no real shape draws dashed, in the same day colour and opacity — the
+  // traveler sees that we are guessing at that stretch, not that it matters more or less. Same
+  // data-driven technique the colour and opacity above already use; `line-dasharray` is
+  // `cross-faded-data-driven` in the pinned MapLibre (5.21.1 / style-spec 24.7.0).
   const routeLayer: LayerProps = {
     id: "routes",
     type: "line",
@@ -258,6 +288,7 @@ export default function MapView() {
       "line-color": ["get", "color"],
       "line-opacity": ["get", "alpha"],
       "line-width": 3,
+      "line-dasharray": ["case", ["==", ["get", "dashed"], 1], ["literal", [2, 1.5]], ["literal", [1, 0]]],
     },
     layout: { "line-cap": "round", "line-join": "round" },
   };
