@@ -104,3 +104,52 @@ to the mask and untouched by this ADR.
   `unplaced` entry for the distant cluster instead of clustering it onto an arbitrary day — a
   behavior change from before this ADR, but the intended one: it's the same "no bed in this city"
   case the ADR exists to catch, just with one lodging instead of zero.
+
+> ### Amended 2026-08-17 — a Lodging founds a Metro; Activities are no longer the only founders
+>
+> This ADR made `clusterByMetro` the single coverage detector but never said what *founds* a Metro,
+> and the implementation answered it by accident: clusters are grown from Activities, and Lodgings
+> are only matched to a finished cluster's centroid afterwards. A region you sleep in with no
+> Activities planned therefore has **no Metro at all**. `CONTEXT.md` gains a **Metro** entry stating
+> the rule this amendment settles, because the concept drove three subsystems while appearing in no
+> glossary — which is exactly how it went unsettled.
+>
+> **The failure this fixes.** A Trip with a Lodging in Atami (three nights) and Activities only in
+> Tokyo and Osaka produced two Metros. The Atami Lodging matched neither — 328 km from Osaka's
+> centroid, 91 km from Tokyo's — so it mapped to no ordinal at all. `request.ts`'s vehicle builder
+> then hit this clause:
+>
+> ```ts
+> reachableMetros = union.size > 0 ? [...union] : allMetroOrdinals;
+> ```
+>
+> That fallback is correct for the case it was written for — an **ungeocoded** Anchor, where knowing
+> nothing makes "serve everyone" safer than "serve no one". It is exactly backwards for a *geocoded*
+> Lodging that founded no Metro: there we know precisely where the traveller is. The three Atami
+> Days were handed every Metro's skills and took Osaka Activities 500 km away, and the Days then
+> displayed as Osaka because a Day's Metro is read off the Activities placed on it. One cause, three
+> symptoms.
+>
+> **Founding is a second pass, not a wider first one.** Activity-founded Metros are grown first and
+> left untouched; only a Lodging that covers none of them founds its own, merging with other such
+> Lodgings within the radius. Clustering Activities and Lodgings together in one pass was rejected:
+> under single-linkage a Lodging sitting between two Activity groups would **bridge** them into one
+> Metro, silently changing coverage for trips that have nothing to do with this bug. The second pass
+> cannot bridge, because the groups it might have bridged are already closed.
+>
+> **A Metro may now hold zero Activities**, which the type always allowed and no consumer expected.
+> `tripMetros.ts` asserted the opposite in a comment (`boundsOf(cluster.activities)!` — "a cluster
+> only forms from geocoded activities"); that non-null assertion becomes a lie and is fixed to fall
+> back to the Metro's Lodgings, as does the label, which read `activities[0]`. `preflight.ts` and the
+> lodging wizard already guarded on `activities.length`, so both are correct unchanged.
+>
+> **A Day's Metro now reads from its Anchors too**, not only its Placements. This is the same
+> premise applied to the Day axis: a Day holding only an arrival and a Lodging is somewhere, and was
+> previously nowhere — absent from the map's metro tier entirely. A travel Day belongs to both
+> Metros it touches, and `metroOfDay` resolves it to the earlier one in trip order, which is the one
+> the traveller wakes in.
+>
+> **Not changed here:** the `allMetroOrdinals` fallback stays. With Lodgings founding Metros, an
+> empty union once again means what its comment always claimed — no Anchor resolved, i.e. genuinely
+> ungeocoded — and permissiveness is right for that case. The bug was never the fallback; it was
+> reaching it with a perfectly good coordinate.

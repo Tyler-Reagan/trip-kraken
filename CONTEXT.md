@@ -73,6 +73,25 @@ _Avoid_: stop, visit, waypoint, item
 A date in the Trip; clusters the Placements that fall on it and may carry a label. Derived
 from the Trip's date range, not an entity in its own right.
 
+**Metro**:
+A destination-scale grouping of a Trip's Locations — one city and its spread, held apart from the
+next destination. Derived and never stored: single-linkage grouping at one radius, recomputed every
+read, with no known count in advance (which is why it is grown by radius rather than partitioned
+into k groups).
+
+A Metro is founded by **Activities** *or* by a **Lodging** (ADR-0020, amended 2026-08-17). The
+second half is not a special case bolted on: a place you sleep is a destination whether or not you
+have planned anything there yet, and a model in which only Activities found a Metro cannot express
+"I am staying here for three nights and have not decided what to do." A Lodging that no
+Activity-founded Metro already covers founds its own, which may legitimately hold **zero**
+Activities — every consumer must tolerate that.
+
+Load-bearing in three places, all reading one detector rather than re-deriving it: which Metros a
+Day may serve (its Anchors'), whether an Activity has any Lodging covering it, and the map's metro
+tier. A Day belongs to every Metro its Anchors or Placements fall in, so a travel Day honestly
+belongs to two.
+_Avoid_: city, region, area, cluster (a **Station cluster** is a different thing entirely)
+
 **Path**:
 The one travel primitive (ADR-0021), on the edge axis the way Location is the one place
 primitive on the node axis: one unbroken stretch of travel — the unit travel cost, transit
