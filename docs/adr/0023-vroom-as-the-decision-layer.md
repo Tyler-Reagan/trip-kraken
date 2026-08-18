@@ -338,6 +338,71 @@ duration from category is the real fix.
 > `Unplaced`, which already existed — an Activity that wanted a Placement and didn't get one now
 > says why, in real minutes.
 
+> ### Amended 2026-08-18 — rung 1 is removed; §9's `DEFAULT_VISIT_MINS` reversal is itself reversed
+>
+> Two changes, landed together because neither means anything without the other: a flat
+> `DEFAULT_VISIT_MINUTES = 30` replaces §9's `service = visitDuration ?? 0`, and `vehicle.max_tasks`
+> (rung 1) is removed from every vehicle `request.ts` builds. Reversing §9 and only §9 would be
+> inert — `max_tasks` still bound at `ceil(24 activities / 16 days) = 2` on the Trip that motivated
+> both changes, so 30 minutes of `service` against a 480-minute window was 6% of the budget, nowhere
+> near enough to matter. Reversing only rung 1 would be worse than doing nothing — `service` staying
+> `0` under no count cap at all lets VROOM's fourth tier cram the whole Trip onto day 1, exactly the
+> failure `DEFAULT_DAY_BUDGET_MINUTES`'s own bound exists to prevent.
+>
+> **§9's `service = visitDuration ?? 0` is reversed, answering both of §9's original reasons, not
+> just one.** §9 gave two: inventing a number is dishonest under a hard window with no evidence it's
+> needed, and category-seeded duration was named as "the real fix." The first no longer applies —
+> `DEFAULT_VISIT_MINUTES` is shown on every Activity row and editable inline (15-minute step,
+> `src/components/VisitDurationEditor.tsx`), so consuming window time is the intended mechanism, not
+> an invisible constant's side effect. The second is retired outright, not deferred: a
+> category→minutes table is itself a pile of smaller invented numbers, carries its own
+> miscategorization failure mode, and needs maintaining as categories drift — where the traveller
+> editing their own Trip has ground truth no heuristic does. `visitDuration` stays `NULL` until a
+> traveller sets it; `DEFAULT_VISIT_MINUTES` is resolved at read time
+> (`src/lib/visitDuration.ts`'s `resolveVisitDuration`), in both the request builder and the UI, off
+> one shared constant — never backfilled to the column.
+>
+> **§6's rung 1 (`max_tasks`) is removed; rung 0 (this section's own honest `time_window` + real
+> `service`) is now load-bearing on its own, and rung 2 (`skills`, ADR-0020) is untouched.** The
+> table's rung 0 was already named "the principled one [that] ships as the default" — rung 1 existed
+> only because rung 0 had nothing to bind on with every `service` at zero. `plan.ts`'s
+> `hasRoom = (v) => v.max_tasks == null || load(v) < v.max_tasks` was already null-safe, so removing
+> the cap makes every Day always have task-count room from that check's perspective, which is
+> correct; `UnplacedDiagnosis.cause: "day-full"` becomes unreachable as a result and is left in place
+> as harmless dead code from a retired constraint, not ripped out for one unreachable `switch` arm.
+>
+> **This supersedes the Consequences section's "Translator code... may now be written against rung
+> '1+2'."** That line recorded the 2026-08-07 amendment's finding as settled guidance; it no longer
+> is, superseded by measurement below, not by fiat.
+>
+> **Why the 2026-08-07 amendment's finding doesn't excuse skipping a fresh measurement.** That
+> amendment reported rung 1+2 holding "identically across every `visitDuration` coverage level
+> tested" (0–100%) on its 41-activity fixture. `docs/research/vroom-day-balance-a.md:273` names
+> coverage crossing ~35% as an explicit re-run trigger, and this change takes real-trip coverage to
+> 100%; that fixture also carried capacity 40 against demand 35, and OSRM has since replaced
+> haversine as the fixture's road provider — the doc's other named trigger. Citing the old result
+> would have been citing evidence that had already named its own expiry condition.
+>
+> **Measured directly against the Trip both bugs were found on** (`4262d8bb-…`, 24 Activities, 16
+> Days, Tokyo/Shizuoka/Osaka), before this change vs. after, at the default 8h day budget: **4
+> Unplaced Activities (the Amerikamura core split by the count cap) → 0.** The Osaka leg's tightest
+> cluster — the Amerikamura shops plus the Aquarium — now lands together: one Day (of 7 Osaka Days)
+> holds 7 stops in one solve, with two Days genuinely empty at the trip's edges (the arrival day, the
+> departure day) rather than artificially thinned to keep every Day's count near-equal. This is the
+> geographic coherence the whole change was for: VROOM was already minimizing travel time and so
+> already preferred grouping a tight cluster onto one Day — rung 1 was what overrode that preference,
+> not what was needed to achieve it.
+>
+> **The named regression risk is real, not hypothetical, and was checked rather than assumed away.**
+> At the day-budget slider's 4h floor — still 8h at the default, only reachable by deliberately
+> lowering it — re-solving the same Trip produces **2** new Unplaced Activities (of 24), each with an
+> honest, specific reason (`"Day 1 would need 158 more min to fit this in"`,
+> `"Day 9 would need 305 more min to fit this in"`) rather than a silent `code: 0` empty route. Two
+> shops out of twenty-four failing to fit a 4-hour day once real dwell time is counted is the tighter
+> budget doing its job honestly, not a defect — but it is exactly the kind of thing that would have
+> failed silently before ADR-0023 §8's diagnostic pass existed, which is why this was measured rather
+> than presumed safe from the 8h result alone.
+
 ## Alternatives considered
 
 - **Keep the two-phase heuristic and improve it.** Rejected: the defect is structural, not a tuning
