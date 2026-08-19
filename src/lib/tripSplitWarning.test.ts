@@ -27,6 +27,7 @@ const activity = (name: string, lat: number, lng: number, extra: Partial<Activit
   hoursJson: null,
   phone: null,
   enrichmentStatus: "done",
+  enrichmentError: null,
   kind: "activity",
   ...extra,
 });

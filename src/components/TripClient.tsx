@@ -72,7 +72,16 @@ export default function TripClient({ trip: initial }: Props) {
   // in practice since the column was always null.
   const showTransitCaveat = hasPlan && !trip.transitCaveatDismissed;
   const pendingCount = trip.locations.filter((l) => l.enrichmentStatus === "pending").length;
-  const failedCount = trip.locations.filter((l) => l.enrichmentStatus === "failed").length;
+  const failed = trip.locations.filter((l) => l.enrichmentStatus === "failed");
+  const failedCount = failed.length;
+  // Naming them is the point: "Retry (1)" alone says something is wrong without saying what, and a
+  // user can't judge whether a retry is worth it — or fix the name themselves — without knowing
+  // which place failed and why.
+  const retryTitle = failedCount
+    ? `Retry looking these up:\n${failed
+        .map((l) => `• ${l.name}${l.enrichmentError ? ` — ${l.enrichmentError}` : ""}`)
+        .join("\n")}`
+    : undefined;
   const numDays = numDaysOf(trip.startDate, trip.endDate);
 
   useEffect(() => {
@@ -116,7 +125,7 @@ export default function TripClient({ trip: initial }: Props) {
               onClick={enrich}
               disabled={isEnriching}
               className="btn-secondary text-sm disabled:opacity-40"
-              title="Retry fetching details for locations that failed to look up"
+              title={retryTitle}
             >
               {isEnriching
                 ? enrichProgress

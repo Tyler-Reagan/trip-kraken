@@ -92,6 +92,11 @@ export const location = sqliteTable("Location", {
   enrichmentStatus: text("enrichmentStatus", { enum: ["done", "pending", "failed"] })
     .notNull()
     .default("done"),
+  // Why the last enrichment attempt failed, for the Retry affordance to explain itself. Null
+  // whenever `enrichmentStatus` isn't 'failed'. The two failure modes reach here from different
+  // places — a thrown lookup error, and a lookup that simply matched nothing — and the UI can only
+  // tell a user which one happened if the distinction is kept.
+  enrichmentError: text("enrichmentError"),
 }, (t) => [
   // The trip-edge uniqueness invariant (ADR-0028 §2). First index/unique constraint in this
   // schema; drizzle-kit 0.31 does emit the partial WHERE clause for SQLite (verified against the

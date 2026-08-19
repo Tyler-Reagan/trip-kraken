@@ -749,8 +749,14 @@ export function getLocationForEnrichment(locationId: string): EnrichableLocation
   );
 }
 
-export function markEnrichmentFailed(locationId: string): void {
-  getDrizzle().update(location).set({ enrichmentStatus: "failed" }).where(eq(location.id, locationId)).run();
+/** `reason` is what the Retry affordance shows the user, so it must read as a sentence about this
+ *  place, not as a stack frame. */
+export function markEnrichmentFailed(locationId: string, reason: string): void {
+  getDrizzle()
+    .update(location)
+    .set({ enrichmentStatus: "failed", enrichmentError: reason })
+    .where(eq(location.id, locationId))
+    .run();
 }
 
 /**
@@ -760,10 +766,12 @@ export function markEnrichmentFailed(locationId: string): void {
  */
 export function applyEnrichment(locationId: string, e: Partial<LocationEnrichment>): boolean {
   if (Object.keys(e).length === 0) {
-    markEnrichmentFailed(locationId);
+    markEnrichmentFailed(locationId, "No matching place found for this name.");
     return false;
   }
-  const set: Partial<typeof location.$inferInsert> = { enrichmentStatus: "done" };
+  // Clearing the error alongside the status: a row that succeeds on retry must not keep showing
+  // why it failed the time before.
+  const set: Partial<typeof location.$inferInsert> = { enrichmentStatus: "done", enrichmentError: null };
   if (e.placeId != null) set.placeId = e.placeId;
   if (e.lat != null) set.lat = e.lat;
   if (e.lng != null) set.lng = e.lng;

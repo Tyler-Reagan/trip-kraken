@@ -27,6 +27,7 @@ const activity = (name: string, lat: number | null = 35 + n, lng: number | null 
   hoursJson: null,
   phone: null,
   enrichmentStatus: "done",
+  enrichmentError: null,
   kind: "activity",
 });
 

@@ -488,6 +488,40 @@ export function NightStrip({ trip, lodgings, activities }: { trip: TripWithDetai
         <span>{fmtNight(nights[nights.length - 1])}</span>
       </div>
 
+      {/* The stays, named. The strip alone is unlabeled by design, which leaves the drag gesture as
+          the only route to editing one — and a stay whose dates fall outside the trip has no block
+          to drag at all, so it was invisible *and* uneditable. This row list is the way back to
+          every lodging regardless of where its dates landed. */}
+      {lodgings.length > 0 && (
+        <ul className="space-y-0.5">
+          {lodgings.map((l, i) => {
+            const covers = nights.some((d) => lodgingCoversNight(l, d));
+            return (
+              <li key={l.id}>
+                <button
+                  onClick={() => setEditing((e) => (e === l.id ? null : l.id))}
+                  onMouseEnter={() => setHovered(l.id)}
+                  onMouseLeave={() => setHovered((h) => (h === l.id ? null : h))}
+                  className="w-full flex items-center gap-2 px-1.5 py-1 rounded-md text-left hover:bg-surface-2"
+                  title="Edit dates or remove"
+                >
+                  <span className={`w-2.5 h-2.5 rounded-sm shrink-0 ${PALETTE[i % PALETTE.length]}`} />
+                  <span className="flex-1 min-w-0 text-sm text-ink truncate">{l.name}</span>
+                  <span className="shrink-0 text-xs text-faint tabular-nums">
+                    {fmtNight(l.checkInDate)} → {fmtNight(l.checkOutDate)}
+                  </span>
+                </button>
+                {!covers && (
+                  <p className="pl-6 text-[11px] text-danger-600 dark:text-danger-400">
+                    Outside the trip&rsquo;s nights — no block on the strip above.
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
       {pendingAssign && (
         <div className="card p-3 space-y-2">
           <p className="text-xs text-faint">

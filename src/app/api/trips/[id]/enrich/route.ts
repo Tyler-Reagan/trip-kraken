@@ -24,8 +24,8 @@ export async function POST(
       const result = await enrichLocation(loc);
       if (applyEnrichment(loc.id, result)) enriched++;
       else errors++;
-    } catch {
-      markEnrichmentFailed(loc.id);
+    } catch (err) {
+      markEnrichmentFailed(loc.id, err instanceof Error ? err.message : String(err));
       errors++;
     }
 
