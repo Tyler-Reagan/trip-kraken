@@ -161,7 +161,10 @@ export default function TripClient({ trip: initial }: Props) {
 
       {/* Body */}
       {activeSurface === "places" ? (
-        <div className="flex flex-col lg:flex-row gap-4 items-start">
+        // items-start only once this is a row: in the stacked column below `lg` it makes the
+        // Manifest shrink to its content width and hug the left instead of filling. The inspector
+        // carries its own `self-start`, so the container never needed it for that.
+        <div className="flex flex-col lg:flex-row gap-4 lg:items-start">
           <div className="flex-1 min-w-0">
             <Manifest />
           </div>
