@@ -280,7 +280,11 @@ export default function MapView() {
   // ADR-0029 §3: a Path with no real shape draws dashed, in the same day colour and opacity — the
   // traveler sees that we are guessing at that stretch, not that it matters more or less. Same
   // data-driven technique the colour and opacity above already use; `line-dasharray` is
-  // `cross-faded-data-driven` in the pinned MapLibre (5.21.1 / style-spec 24.7.0).
+  // `cross-faded-data-driven` in the pinned MapLibre (5.x / style-spec 24.7.0).
+  //
+  // maplibre-gl is pinned to the 5.x line, not the latest 6.x: under this app's Next.js/Turbopack
+  // dev setup, 6.x's worker bundle fails to load ("non-JavaScript MIME type of text/html"),
+  // leaving the map blank. Revisit the pin once that's resolved upstream or in Turbopack.
   const routeLayer: LayerProps = {
     id: "routes",
     type: "line",
