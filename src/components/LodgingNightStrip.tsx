@@ -9,6 +9,7 @@ import { metroKey, metroLabel } from "@/lib/tripMetros";
 import {
   addDaysIso,
   lodgingCoversNight,
+  numDaysOf,
   tripDates,
   type IsoDate,
   type Location,
@@ -40,7 +41,13 @@ function nightsOf(trip: TripWithDetails): IsoDate[] {
 const fmtNight = (d: IsoDate) =>
   new Date(d + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
-const PALETTE = ["bg-brand-500", "bg-emerald-500", "bg-amber-500", "bg-violet-500", "bg-rose-500"];
+// The strip's axis endpoints (no weekday) — distinct from `fmtNight` above, which labels an actual
+// stay's dates. The trip's own date range is already stated in the page header, so the axis carries
+// only what that header doesn't: which end of the strip is which.
+const fmtAxis = (d: IsoDate) =>
+  new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+export const PALETTE = ["bg-brand-500", "bg-emerald-500", "bg-amber-500", "bg-violet-500", "bg-rose-500"];
 
 function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
@@ -483,9 +490,11 @@ export function NightStrip({ trip, lodgings, activities }: { trip: TripWithDetai
         })}
       </div>
 
-      <div className="flex justify-between text-xs text-faint">
-        <span>{fmtNight(nights[0])}</span>
-        <span>{fmtNight(nights[nights.length - 1])}</span>
+      {/* An axis, not data — bare month/day (no weekday, no year) and quieter than the per-stay
+          ranges below, which are the thing worth reading. */}
+      <div className="flex justify-between text-[11px] text-faint tabular-nums">
+        <span>{fmtAxis(nights[0])}</span>
+        <span>{fmtAxis(nights[nights.length - 1])}</span>
       </div>
 
       {/* The stays, named. The strip alone is unlabeled by design, which leaves the drag gesture as
@@ -500,31 +509,58 @@ export function NightStrip({ trip, lodgings, activities }: { trip: TripWithDetai
             // use — that shared label is the whole point: it is what tells you *which* group of
             // places this stay is the base for, without reading coordinates off a map.
             const metro = metros.find((m) => m.lodgings.some((x) => x.id === l.id));
+            // Half-open [checkInDate, checkOutDate) — the number of nights slept is the day count
+            // minus the checkout-only day. Reuses the same derivation `nightsOf` above applies to
+            // the whole trip, just over one stay's own range.
+            const nightCount = numDaysOf(l.checkInDate, l.checkOutDate) - 1;
             return (
               <li key={l.id}>
                 <button
                   onClick={() => setEditing((e) => (e === l.id ? null : l.id))}
                   onMouseEnter={() => setHovered(l.id)}
                   onMouseLeave={() => setHovered((h) => (h === l.id ? null : h))}
-                  className="w-full flex items-baseline gap-2 px-1.5 py-1 rounded-md text-left hover:bg-surface-2"
+                  className="w-full flex items-center gap-2 px-1.5 py-1 rounded-md text-left hover:bg-surface-2"
                   title="Edit dates or remove"
                 >
-                  <span className={`w-2.5 h-2.5 rounded-sm shrink-0 self-center ${PALETTE[i % PALETTE.length]}`} />
-                  <span className="min-w-0 text-sm text-ink truncate">{l.name}</span>
-                  {/* Hidden below `sm` for the same reason the activity row's locality is: a metro
-                      truncated to "T…" is noise where the full word was information. */}
-                  {metro && (
-                    <span className="hidden sm:inline min-w-0 text-xs text-faint truncate shrink">
-                      {metroLabel(metro)}
+                  {/* Fixed-width badge column, not inline with the name: this is what keeps the
+                      colour-dot column *and* the name column flush-left below, the same way the
+                      strip's own lanes align. The dot is always visible (it's the key back to the
+                      bar above); the metro name promotes into a chip alongside it from `sm` up —
+                      below `sm` a chip's own name would be the thing truncated to noise, same
+                      reasoning as the activity row's locality. `bg-surface`, not `bg-surface-2/3`:
+                      surface-3 and canvas are the same value in light mode, so a surface-3 chip
+                      would render invisible on the page background. 24 (not 32): measured against
+                      real metro labels the chip itself tops out around 80px ("Shizuoka") — 32
+                      reserved space for a label wider than any real one, stranding the name column
+                      behind dead air. 24 keeps a few px of buffer and lets `truncate` catch an
+                      outlier rather than reserving for one. */}
+                  <span className="shrink-0 w-4 sm:w-24 inline-flex items-center">
+                    <span
+                      className={`inline-flex items-center gap-1.5 max-w-full ${
+                        metro ? "sm:pl-1.5 sm:pr-2 sm:py-0.5 sm:rounded-md sm:bg-surface sm:border sm:border-line-strong" : ""
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-sm shrink-0 ${PALETTE[i % PALETTE.length]}`} aria-hidden />
+                      {metro && (
+                        <span className="hidden sm:inline truncate text-xs font-semibold text-sub">
+                          {metroLabel(metro)}
+                        </span>
+                      )}
                     </span>
-                  )}
+                  </span>
+                  <span className="min-w-0 text-sm text-ink truncate">{l.name}</span>
                   <span className="flex-1" />
-                  <span className="shrink-0 text-xs text-faint tabular-nums">
+                  <span className="shrink-0 text-xs font-semibold text-ink tabular-nums">
                     {fmtNight(l.checkInDate)} → {fmtNight(l.checkOutDate)}
+                    {nightCount > 0 && (
+                      <span className="hidden sm:inline font-normal text-faint">
+                        {" "}· {nightCount} night{nightCount === 1 ? "" : "s"}
+                      </span>
+                    )}
                   </span>
                 </button>
                 {!covers && (
-                  <p className="pl-6 text-[11px] text-danger-600 dark:text-danger-400">
+                  <p className="pl-6 sm:pl-[6.5rem] text-[11px] text-danger-600 dark:text-danger-400">
                     Outside the trip&rsquo;s nights — no block on the strip above.
                   </p>
                 )}

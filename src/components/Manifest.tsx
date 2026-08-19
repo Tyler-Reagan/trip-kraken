@@ -7,7 +7,7 @@ import { useTripStore } from "@/store/tripStore";
 import { clusterByMetro } from "@/lib/metroCluster";
 import { localityOf, metroKey, metroLabel } from "@/lib/tripMetros";
 import { isActivity, isLodging, type Location, type Lodging, type TripWithDetails } from "@/types";
-import { NightStrip } from "./LodgingNightStrip";
+import { NightStrip, PALETTE } from "./LodgingNightStrip";
 import { TransitSection } from "./TransitEdgeSlots";
 import VisitDurationEditor from "./VisitDurationEditor";
 
@@ -109,7 +109,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 }
 
 /** Activities sharing a metro, in the order the metro first appears in the trip's own list. */
-type ActivityGroup = { key: string; label: string; items: Location[]; hasLodging: boolean };
+type ActivityGroup = { key: string; label: string; items: Location[]; hasLodging: boolean; lodgingColor: string | null };
 
 /**
  * Groups activities by metro through #116's `clusterByMetro` — the same detector the optimizer's
@@ -132,6 +132,9 @@ function groupByMetro(activities: Location[], lodgings: Lodging[]): ActivityGrou
       label: metroLabel(c),
       items: c.activities,
       hasLodging: c.lodgings.length > 0,
+      // The same swatch the night strip paints this metro's stay with, so the group and its
+      // lodging read as one thing rather than two lists that happen to share a word.
+      lodgingColor: c.lodgings[0] ? PALETTE[lodgings.findIndex((l) => l.id === c.lodgings[0].id) % PALETTE.length] : null,
     }))
     .sort((a, b) => firstIndex(a.items) - firstIndex(b.items));
 
@@ -140,7 +143,7 @@ function groupByMetro(activities: Location[], lodgings: Lodging[]): ActivityGrou
   // Coverage is meaningless for places with no coordinates — flagging "no lodging" on a group
   // whose members aren't anywhere yet would be noise dressed as a warning.
   if (unplaced.length > 0) {
-    groups.push({ key: "__unplaced", label: "Not yet located", items: unplaced, hasLodging: true });
+    groups.push({ key: "__unplaced", label: "Not yet located", items: unplaced, hasLodging: true, lodgingColor: null });
   }
 
   return groups;
@@ -166,13 +169,18 @@ function MetroGroup({ group }: { group: ActivityGroup }) {
         className="flex items-center gap-2 w-full text-left group/hdr"
       >
         <ChevronRight
-          className={`w-3.5 h-3.5 shrink-0 text-faint transition-transform ${open ? "rotate-90" : ""}`}
+          className={`w-4 h-4 shrink-0 text-sub transition-transform ${open ? "rotate-90" : ""}`}
           aria-hidden
         />
-        <span className="text-xs font-semibold text-sub group-hover/hdr:text-ink">{group.label}</span>
-        <span className="text-xs text-faint tabular-nums">{group.items.length}</span>
+        {group.lodgingColor && (
+          <span className={`w-3 h-3 rounded-sm shrink-0 ${group.lodgingColor}`} aria-hidden />
+        )}
+        <span className="text-lg font-semibold text-ink group-hover/hdr:text-brand-600 dark:group-hover/hdr:text-brand-400">{group.label}</span>
+        <span className="text-sm font-semibold text-sub tabular-nums">{group.items.length}</span>
         {!group.hasLodging && (
-          <span className="text-[11px] text-amber-600 dark:text-amber-400">no lodging</span>
+          <span className="text-xs font-semibold px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+            no lodging
+          </span>
         )}
         {/* A hairline running to the right edge is what makes this read as a boundary rather than
             as another row of text — the groups need separating, and a rule costs no height. */}
