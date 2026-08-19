@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { useState } from "react";
+import { AlertTriangle, X } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 
 /**
@@ -12,19 +13,28 @@ import { useTripStore } from "@/store/tripStore";
  * portability principle rules out hover-only paths outright, so on touch the button said "Retry
  * (1)" and nothing else, ever. Naming the places in the DOM fixes both at once.
  *
- * Not dismissible, unlike {@link DistantMetroWarning} beside it. That warning describes a *choice*
- * a user may have made deliberately (a city they aren't visiting); this describes work that didn't
- * finish, and the affordance to clear it is the retry itself.
+ * Dismissal is session-local and keyed to *which* places are failing, the same shape
+ * {@link DistantMetroWarning} uses and for the same reason: a bare boolean would go permanently
+ * silent, so a later import failing a different place would never be surfaced. Retrying and failing
+ * again on the same set stays dismissed; a changed set reappears. Nothing here is persisted — a
+ * reload is a fresh look at the trip.
  */
 export default function EnrichmentFailureNotice() {
   const trip = useTripStore((s) => s.trip);
   const isEnriching = useTripStore((s) => s.isEnriching);
   const enrichProgress = useTripStore((s) => s.enrichProgress);
   const enrich = useTripStore((s) => s.enrich);
+  const [dismissedSignature, setDismissedSignature] = useState<string | null>(null);
   if (!trip) return null;
 
   const failed = trip.locations.filter((l) => l.enrichmentStatus === "failed");
   if (failed.length === 0) return null;
+
+  // Keyed on ids, not the count: swapping one failed place for another leaves the count identical
+  // while the thing the user dismissed is no longer what's on screen.
+  const signature = failed.map((l) => l.id).sort().join("|");
+  if (signature === dismissedSignature) return null;
+
   const one = failed.length === 1;
 
   return (
@@ -55,17 +65,26 @@ export default function EnrichmentFailureNotice() {
           ))}
         </ul>
       </div>
-      <button
-        onClick={enrich}
-        disabled={isEnriching}
-        className="btn-secondary text-xs py-1 px-3 shrink-0 disabled:opacity-40"
-      >
-        {isEnriching
-          ? enrichProgress
-            ? `${enrichProgress.enriched}/${enrichProgress.total}`
-            : "Retrying…"
-          : "Retry"}
-      </button>
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          onClick={enrich}
+          disabled={isEnriching}
+          className="btn-secondary text-xs py-1 px-3 disabled:opacity-40"
+        >
+          {isEnriching
+            ? enrichProgress
+              ? `${enrichProgress.enriched}/${enrichProgress.total}`
+              : "Retrying…"
+            : "Retry"}
+        </button>
+        <button
+          onClick={() => setDismissedSignature(signature)}
+          className="tap-target shrink-0 text-faint hover:text-ink"
+          aria-label="Dismiss"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
