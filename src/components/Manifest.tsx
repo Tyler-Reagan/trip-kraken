@@ -5,7 +5,7 @@ import { useState } from "react";
 import { ChevronRight, Map as MapIcon, Star } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 import { clusterByMetro } from "@/lib/metroCluster";
-import { metroKey, metroLabel } from "@/lib/tripMetros";
+import { localityOf, metroKey, metroLabel } from "@/lib/tripMetros";
 import { isActivity, isLodging, type Location, type Lodging, type TripWithDetails } from "@/types";
 import { NightStrip } from "./LodgingNightStrip";
 import { TransitSection } from "./TransitEdgeSlots";
@@ -18,10 +18,12 @@ import VisitDurationEditor from "./VisitDurationEditor";
  * 2026-08-18) — hours editing still lives in the Inspector (open by clicking a row). The day-by-day
  * plan is the Timeline (separate surface).
  *
- * Width is capped rather than filling the page column: a row puts the name hard left and its
- * controls hard right, so at full width a short name leaves a lake of empty space down the middle
- * of every row. Capping is the honest fix — the alternative (letting the controls float in after
- * the name) makes the right edge ragged across a 24-row list.
+ * The row fills the column rather than the column being narrowed to the row. An activity row was
+ * a name at one end and controls at the other with nothing between, and the empty middle was a
+ * symptom rather than the disease: at this width the row was simply under-informative. It now
+ * carries the locality — the ward or city *below* the metro its group already names — which is the
+ * grain at which a traveller decides what belongs on the same day. Content earns the width; capping
+ * it only hid that the row had nothing more to say.
  */
 
 /**
@@ -43,9 +45,10 @@ function LodgingSection({ trip, activities }: { trip: TripWithDetails; activitie
   );
 }
 
-function ActivityRow({ loc }: { loc: Location }) {
+function ActivityRow({ loc, metro }: { loc: Location; metro: string }) {
   const updateLocation = useTripStore((s) => s.updateLocation);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
+  const locality = localityOf(loc.address, metro);
 
   return (
     <div className={`card p-3 flex items-center gap-3 ${loc.excluded ? "opacity-50" : ""}`}>
@@ -56,11 +59,23 @@ function ActivityRow({ loc }: { loc: Location }) {
         className="rounded border-line-strong text-brand-600 focus:ring-brand-500 shrink-0"
         title={loc.excluded ? "Excluded from the plan — click to include" : "Included — click to exclude"}
       />
+      {/* Not flex-1: the slack belongs in one gutter before the controls, not between every
+          descriptive item. Name, locality, and rating all describe the place, so they cluster; the
+          duration stepper is the only control and holds the right edge on its own. */}
       <button
         onClick={() => setInspectedLocationId(loc.id)}
-        className="flex-1 min-w-0 text-left hover:text-brand-600 dark:hover:text-brand-400"
+        className="min-w-0 shrink text-left group"
       >
-        <span className="text-sm text-ink truncate block">{loc.name}</span>
+        <span className="flex items-baseline gap-2 min-w-0">
+          <span className="text-sm text-ink truncate group-hover:text-brand-600 dark:group-hover:text-brand-400">
+            {loc.name}
+          </span>
+          {/* The locality qualifies the name rather than being a second fact about the row, so it
+              sits beside it — a second line would double the height of all 24 rows to say one
+              word. Below `sm` it goes entirely: truncated to "To…" it is worse than absent, and
+              the group heading already names the area. */}
+          {locality && <span className="hidden sm:inline text-xs text-faint truncate shrink">{locality}</span>}
+        </span>
         {/* The reason, on the row, in words — not a tooltip. A failed lookup is the one thing here
             a user has to act on, and "which one, and why" is the whole of what they need. */}
         {loc.enrichmentStatus === "failed" && (
@@ -75,6 +90,7 @@ function ActivityRow({ loc }: { loc: Location }) {
           {loc.rating.toFixed(1)}
         </span>
       )}
+      <span className="flex-1" />
       <VisitDurationEditor loc={loc} />
       {loc.enrichmentStatus === "pending" && (
         <span className="text-xs text-faint animate-pulse shrink-0">…</span>
@@ -93,7 +109,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 }
 
 /** Activities sharing a metro, in the order the metro first appears in the trip's own list. */
-type ActivityGroup = { key: string; label: string; items: Location[] };
+type ActivityGroup = { key: string; label: string; items: Location[]; hasLodging: boolean };
 
 /**
  * Groups activities by metro through #116's `clusterByMetro` — the same detector the optimizer's
@@ -111,16 +127,35 @@ function groupByMetro(activities: Location[], lodgings: Lodging[]): ActivityGrou
 
   const groups: ActivityGroup[] = clusters
     .filter((c) => c.activities.length > 0)
-    .map((c) => ({ key: metroKey(c), label: metroLabel(c), items: c.activities }))
+    .map((c) => ({
+      key: metroKey(c),
+      label: metroLabel(c),
+      items: c.activities,
+      hasLodging: c.lodgings.length > 0,
+    }))
     .sort((a, b) => firstIndex(a.items) - firstIndex(b.items));
 
   const placed = new Set(groups.flatMap((g) => g.items.map((a) => a.id)));
   const unplaced = activities.filter((a) => !placed.has(a.id));
-  if (unplaced.length > 0) groups.push({ key: "__unplaced", label: "Not yet located", items: unplaced });
+  // Coverage is meaningless for places with no coordinates — flagging "no lodging" on a group
+  // whose members aren't anywhere yet would be noise dressed as a warning.
+  if (unplaced.length > 0) {
+    groups.push({ key: "__unplaced", label: "Not yet located", items: unplaced, hasLodging: true });
+  }
 
   return groups;
 }
 
+/**
+ * A metro's activities under one heading. Rows stay flush with the Lodging strip and Transit card
+ * above and below — an indent under the heading would put a third left edge on a surface that only
+ * has two, and the heading already separates the groups.
+ *
+ * The heading carries whether this metro has lodging, because that is the one fact about a metro
+ * that changes what the optimizer will do with it: activities in an uncovered metro don't get
+ * scheduled (#118). It's the same `clusterByMetro` coverage the lodging wizard and #110's warning
+ * read, stated here where the affected places actually are.
+ */
 function MetroGroup({ group }: { group: ActivityGroup }) {
   const [open, setOpen] = useState(true);
   return (
@@ -128,15 +163,24 @@ function MetroGroup({ group }: { group: ActivityGroup }) {
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex items-center gap-1 text-xs text-sub hover:text-ink w-full"
+        className="flex items-center gap-2 w-full text-left group/hdr"
       >
-        <ChevronRight className={`w-3.5 h-3.5 shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
-        <span className="font-medium">{group.label}</span>
-        <span className="text-faint tabular-nums">· {group.items.length}</span>
+        <ChevronRight
+          className={`w-3.5 h-3.5 shrink-0 text-faint transition-transform ${open ? "rotate-90" : ""}`}
+          aria-hidden
+        />
+        <span className="text-xs font-semibold text-sub group-hover/hdr:text-ink">{group.label}</span>
+        <span className="text-xs text-faint tabular-nums">{group.items.length}</span>
+        {!group.hasLodging && (
+          <span className="text-[11px] text-amber-600 dark:text-amber-400">no lodging</span>
+        )}
+        {/* A hairline running to the right edge is what makes this read as a boundary rather than
+            as another row of text — the groups need separating, and a rule costs no height. */}
+        <span className="flex-1 h-px bg-line" aria-hidden />
       </button>
       {open && (
-        <div className="space-y-2 pl-4">
-          {group.items.map((a) => <ActivityRow key={a.id} loc={a} />)}
+        <div className="space-y-2">
+          {group.items.map((a) => <ActivityRow key={a.id} loc={a} metro={group.label} />)}
         </div>
       )}
     </div>
@@ -166,7 +210,7 @@ export default function Manifest() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className="space-y-6">
       <Group title={`Lodging${lodgings.length ? ` · ${lodgings.length}` : ""}`}>
         <LodgingSection trip={trip} activities={activities} />
       </Group>
@@ -178,7 +222,7 @@ export default function Manifest() {
               nothing the section heading hasn't already said. */}
           {groups.length > 1
             ? groups.map((g) => <MetroGroup key={g.key} group={g} />)
-            : activities.map((a) => <ActivityRow key={a.id} loc={a} />)}
+            : activities.map((a) => <ActivityRow key={a.id} loc={a} metro={groups[0]?.label ?? ""} />)}
         </div>
       </Group>
 

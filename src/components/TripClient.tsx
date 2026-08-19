@@ -12,6 +12,7 @@ import Manifest from "./Manifest";
 import DayNavigator from "./DayNavigator";
 import TransitEstimateCaveat from "./TransitEstimateCaveat";
 import DistantMetroWarning from "./DistantMetroWarning";
+import EnrichmentFailureNotice from "./EnrichmentFailureNotice";
 
 type ActiveSurface = "itinerary" | "places";
 
@@ -54,8 +55,6 @@ export default function TripClient({ trip: initial }: Props) {
   const showAddLocation = useTripStore((s) => s.showAddLocation);
 
   const isEnriching = useTripStore((s) => s.isEnriching);
-  const enrichProgress = useTripStore((s) => s.enrichProgress);
-  const enrich = useTripStore((s) => s.enrich);
   const pollEnrichment = useTripStore((s) => s.pollEnrichment);
 
   const setActiveSurface = useTripStore((s) => s.setActiveSurface);
@@ -72,16 +71,6 @@ export default function TripClient({ trip: initial }: Props) {
   // in practice since the column was always null.
   const showTransitCaveat = hasPlan && !trip.transitCaveatDismissed;
   const pendingCount = trip.locations.filter((l) => l.enrichmentStatus === "pending").length;
-  const failed = trip.locations.filter((l) => l.enrichmentStatus === "failed");
-  const failedCount = failed.length;
-  // Naming them is the point: "Retry (1)" alone says something is wrong without saying what, and a
-  // user can't judge whether a retry is worth it — or fix the name themselves — without knowing
-  // which place failed and why.
-  const retryTitle = failedCount
-    ? `Retry looking these up:\n${failed
-        .map((l) => `• ${l.name}${l.enrichmentError ? ` — ${l.enrichmentError}` : ""}`)
-        .join("\n")}`
-    : undefined;
   const numDays = numDaysOf(trip.startDate, trip.endDate);
 
   useEffect(() => {
@@ -118,30 +107,19 @@ export default function TripClient({ trip: initial }: Props) {
               Enriching {pendingCount}…
             </span>
           )}
-          {/* Pending rows now self-recover on server startup (ADR-0009, #124) — Retry is back to
-              scoped `failed`-only, for a human to force a re-attempt. */}
-          {failedCount > 0 && (
-            <button
-              onClick={enrich}
-              disabled={isEnriching}
-              className="btn-secondary text-sm disabled:opacity-40"
-              title={retryTitle}
-            >
-              {isEnriching
-                ? enrichProgress
-                  ? `${enrichProgress.enriched}/${enrichProgress.total} retried`
-                  : "Retrying…"
-                : `Retry (${failedCount})`}
-            </button>
-          )}
+          {/* Pending rows self-recover on server startup (ADR-0009, #124). The `failed`-only retry
+              a human triggers now lives in `EnrichmentFailureNotice`, next to the names of the
+              places it would retry — a toolbar button had nowhere to say which those were. */}
           <button onClick={() => setShowOptimize(true)} className="btn-primary text-sm">
             {hasPlan ? "Re-optimize" : "Plan itinerary"}
           </button>
         </div>
       </div>
 
-      {/* Pre-optimize (#110): visible on both surfaces, and regardless of whether a plan already
-          exists — the point is catching a geographic split before the user (re-)optimizes. */}
+      {/* Both are pre-optimize signals, on both surfaces regardless of whether a plan exists: the
+          point of each is catching something before the user (re-)optimizes. Failures come first —
+          a place with no coordinates is also a place the metro detector below can't see. */}
+      <EnrichmentFailureNotice />
       <DistantMetroWarning />
 
       {/* Surface switch · map popup toggle (itinerary) */}

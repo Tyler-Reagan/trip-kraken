@@ -83,6 +83,30 @@ export function metroLabel(metro: {
   return last || fallback;
 }
 
+/**
+ * The sub-metro locality — ward, city, or district — that `metroLabel` deliberately leaves out.
+ *
+ * Exists for the Manifest, where the metro is already stated by the group heading, so the useful
+ * remainder of an address is the one unit below it: "Nishi Ward" under Osaka, "Taito City" under
+ * Tokyo, "Sapporo" under Hokkaido. That is the grain at which a traveller decides which stops
+ * belong on the same day, which is the whole job of the staging surface.
+ *
+ * Reads from the end inwards, the same direction `metroLabel` does: drop the country, drop postal
+ * codes, drop whatever the metro label already said, and take the last thing standing. Anything
+ * that survives to be the *only* segment is a street address, not a locality, so it returns null
+ * rather than printing a house number as if it were a district.
+ */
+export function localityOf(address: string | null, metro: string): string | null {
+  if (!address) return null;
+  const segments = address
+    .split(",")
+    .slice(0, -1) // the country
+    .map((s) => s.replace(/〒?\s*\d{3}[-−]\d{4}|\b\d{5}(-\d{4})?\b/g, "").trim())
+    .filter(Boolean)
+    .filter((s) => s !== metro);
+  return segments.length > 1 ? segments[segments.length - 1] : null;
+}
+
 // Centroid-rounded identity for a metro cluster, stable across re-renders as long as the cluster
 // doesn't move — which enrichment (address/name backfill) never does. Coarse enough (~1km) to
 // survive a cluster losing/gaining one member (e.g. a place promoted to lodging), well under the

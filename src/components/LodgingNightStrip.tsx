@@ -496,17 +496,29 @@ export function NightStrip({ trip, lodgings, activities }: { trip: TripWithDetai
         <ul className="space-y-0.5">
           {lodgings.map((l, i) => {
             const covers = nights.some((d) => lodgingCoversNight(l, d));
+            // The metro this stay actually covers, in the same words the Activities groups below
+            // use — that shared label is the whole point: it is what tells you *which* group of
+            // places this stay is the base for, without reading coordinates off a map.
+            const metro = metros.find((m) => m.lodgings.some((x) => x.id === l.id));
             return (
               <li key={l.id}>
                 <button
                   onClick={() => setEditing((e) => (e === l.id ? null : l.id))}
                   onMouseEnter={() => setHovered(l.id)}
                   onMouseLeave={() => setHovered((h) => (h === l.id ? null : h))}
-                  className="w-full flex items-center gap-2 px-1.5 py-1 rounded-md text-left hover:bg-surface-2"
+                  className="w-full flex items-baseline gap-2 px-1.5 py-1 rounded-md text-left hover:bg-surface-2"
                   title="Edit dates or remove"
                 >
-                  <span className={`w-2.5 h-2.5 rounded-sm shrink-0 ${PALETTE[i % PALETTE.length]}`} />
-                  <span className="flex-1 min-w-0 text-sm text-ink truncate">{l.name}</span>
+                  <span className={`w-2.5 h-2.5 rounded-sm shrink-0 self-center ${PALETTE[i % PALETTE.length]}`} />
+                  <span className="min-w-0 text-sm text-ink truncate">{l.name}</span>
+                  {/* Hidden below `sm` for the same reason the activity row's locality is: a metro
+                      truncated to "T…" is noise where the full word was information. */}
+                  {metro && (
+                    <span className="hidden sm:inline min-w-0 text-xs text-faint truncate shrink">
+                      {metroLabel(metro)}
+                    </span>
+                  )}
+                  <span className="flex-1" />
                   <span className="shrink-0 text-xs text-faint tabular-nums">
                     {fmtNight(l.checkInDate)} → {fmtNight(l.checkOutDate)}
                   </span>
