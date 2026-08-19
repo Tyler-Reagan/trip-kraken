@@ -40,6 +40,8 @@ type LocationBase = {
   hoursJson: Record<string, { open: string; close: string | null }> | null; // keys "0"–"6" (Sun–Sat)
   phone: string | null;
   enrichmentStatus: "done" | "pending" | "failed";
+  /** Why the last enrichment attempt failed; null unless `enrichmentStatus` is "failed". */
+  enrichmentError: string | null;
 };
 
 /** A plain place to visit — the default kind; carries no temporal constraint, and is the only

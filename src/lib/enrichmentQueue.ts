@@ -50,8 +50,10 @@ async function runConsumer(): Promise<void> {
         // applyEnrichment writes only non-null fields (no overwrite with null) and marks
         // 'done'; an empty result marks the row 'failed'.
         applyEnrichment(item.locationId, await enrichLocation(loc));
-      } catch {
-        markEnrichmentFailed(item.locationId);
+      } catch (err) {
+        // The thrown reason is the only account of *why* this row failed — the Retry affordance
+        // has nothing else to show a user, so it's recorded rather than swallowed.
+        markEnrichmentFailed(item.locationId, err instanceof Error ? err.message : String(err));
       }
 
       // Enforce Google rate limit between calls
