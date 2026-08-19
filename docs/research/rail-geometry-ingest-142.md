@@ -604,3 +604,357 @@ For comparison, `db/transit-japan.db` as shipped is **9,048,064 B**.
 - **[uncertain] Ingest wall-clock and peak memory with `<way>` parsing added.** Not measured — that
   needs the change written, which is out of scope here. The inputs to the estimate (element counts,
   XML size) are in §B5 and §F.
+
+---
+
+# G. Follow-up measurement pass — storage-model sizes (2026-08-19)
+
+**Added 2026-08-19, after the sections above.** Nothing above this line was changed.
+
+This pass exists because §C7/§F left the storage-format question quantitative but one-sided: it
+measured only the naive option. This section measures the alternatives, so the `/grilling` session
+ranks them off real bytes rather than intuition. **Same rule as the rest of the document: measurement
+only, no recommendation.** Where a number forecloses an option it says so and stops.
+
+All work was again done in a scratch directory. `db/transit-japan.db` was **copied** to scratch and
+the copy was modified; the file in the repo was not opened for writing, and nothing under `scripts/`
+or `src/` was touched.
+
+### Baseline reproduced first
+
+**[demonstrated]** The §C7 assembler was re-implemented from the same description (greedy end-to-end
+chaining of unroled `way` members, cut at consecutive `stop*`-role node indices) and re-run against
+the same pinned `asia/japan-260101` filtered XML:
+
+```
+$ python3 dump.py japan-rail.osm japan.pkl
+rail route relations              : 1487
+relations with an assembled chain : 1471
+ride edges                        : 20281
+traced ride edges                 : 19385
+naive per-edge GeoJSON 6dp        : 32638021 B = 31.13 MiB
+```
+
+**20,281 ride edges / 19,385 traced / 31.13 MiB — identical to §C7 and §F.** The 1,487 rail route
+relation count matches too, and the shipped `db/transit-japan.db` independently confirms the edge
+count (`sqlite3 base.db "select count(*) from RideEdge"` → `20281`). Every figure in this section is
+measured against that reproduced corpus: **19,385 traced edges, 1,401,300 vertices**.
+
+The ride edges join the shipped table exactly, because `stopNodeId()` produces `{relationId}:{osmNodeId}`
+(`223040:2559434104`) — so each measured edge maps to a real `RideEdge` row, and every candidate
+database below reports `19385` rows carrying geometry against `20281` total.
+
+---
+
+### G10. The comparison table
+
+**[demonstrated]** Every row is a real SQLite file built in scratch from a copy of the shipped
+9,048,064 B graph, populated, `VACUUM`ed, and `stat`ed. **These are whole-database sizes** — graph
+content plus geometry — not payload sums.
+
+| # | Representation | On-disk DB | Δ vs graph-only | Payload |
+| --- | --- | --- | --- | --- |
+| 00 | *graph only, no geometry (control)* | **8,998,912 B** (8.58 MiB) | — | — |
+| 10 | shared `Geometry` table, **corridor-dedup** (lossy, ≤100 m), varint-5dp BLOB | **11,186,176 B** (10.67 MiB) | +2,187,264 | 1,833,950 |
+| 12 | shared `Geometry` table, **lossless dedup**, varint-5dp BLOB | **12,083,200 B** (11.52 MiB) | +3,084,288 | 2,621,562 |
+| 06 | `RideEdge.geometry` BLOB, varint-delta 4dp | **12,210,176 B** (11.64 MiB) | +3,211,264 | 2,907,731 |
+| 07 | `RideEdge.geometry` BLOB, varint-5dp + per-row deflate | **12,681,216 B** (12.09 MiB) | +3,682,304 | 3,322,903 |
+| 05 | `RideEdge.geometry` BLOB, varint-delta 5dp | **12,783,616 B** (12.19 MiB) | +3,784,704 | 3,411,000 |
+| 11 | `RouteChain` per relation + start/end offsets, varint-5dp | **12,955,648 B** (12.36 MiB) | +3,956,736 | 3,003,051 |
+| 03 | `RideEdge.geometry` TEXT, encoded polyline-5 | **14,364,672 B** (13.70 MiB) | +5,365,760 | 4,782,602 |
+| 09 | **separate table** + unique index, varint-5dp BLOB | **14,569,472 B** (13.89 MiB) | +5,570,560 | 3,411,000 |
+| 04 | `RideEdge.geometry` BLOB, varint-delta 6dp | **14,950,400 B** (14.26 MiB) | +5,951,488 | 5,294,215 |
+| 02 | `RideEdge.geometry` TEXT, GeoJSON 5dp | **43,708,416 B** (41.68 MiB) | +34,709,504 | 29,830,530 |
+| 01 | `RideEdge.geometry` TEXT, **GeoJSON 6dp (the §C7 baseline)** | **47,030,272 B** (44.85 MiB) | +38,031,360 | 32,638,021 |
+| 08 | **separate table** + unique index, GeoJSON 6dp TEXT | **48,771,072 B** (46.51 MiB) | +39,772,160 | 32,638,021 |
+
+**The spread is 4.4× between the smallest and largest geometry-bearing file, and 8.3× measured on the
+geometry delta alone** (+2.19 MB vs +18.2 MB… +38.0 MB). The naive baseline (row 01) is the
+second-worst option measured; only putting the same text in a separate keyed table is worse.
+
+Two secondary facts the table encodes:
+
+- **`VACUUM`ed graph-only is 8,998,912 B, not the shipped 9,048,064 B** — 49,152 B (12 pages) of
+  slack in the shipped file. All Δ figures above are against the VACUUMed control, so they are
+  geometry cost and nothing else.
+- **[demonstrated] the blobs round-trip.** Decoding varint-5dp back out of `05-blob.db` over 2,000
+  edges reproduced every vertex to within **0.726 m** — consistent with the 0.740 m 5dp bound in §G12,
+  i.e. the encoder is lossless apart from the stated rounding.
+
+---
+
+### G11. Up/down deduplication — the framing in the question is wrong, and the real number is larger
+
+**This is the finding most likely to change the grilling's shape, so it comes with its correction
+first.** The premise handed to this pass was that PTv2's one-relation-per-direction rule makes the
+same physical track "≥2 `RideEdge` rows", so matching on the **OSM stop-node id pair** would expose
+the duplication. **It largely does not.** Japanese PTv2 data gives each direction its *own*
+`stop_position` nodes — one per platform track — so the up and the down edge between the same two
+stations usually carry **different** node ids and do not match at all.
+
+**[demonstrated]** three progressively looser tests over the 19,385 traced edges:
+
+| Test | Distinct tracks | Redundant edges | Dedup'd GeoJSON-6dp | vs 31.13 MiB |
+| --- | --- | --- | --- | --- |
+| **A.** unordered OSM stop-node id pair (as asked) | 13,846 | **5,539 (28.6%)** | 24,702,181 B (**23.56 MiB**) | 75.7% |
+| **B.** byte-identical geometry, either direction (lossless) | 13,971 | 5,414 (27.9%) | 25,045,717 B (**23.89 MiB**) | 76.7% |
+| **C.** same physical corridor (endpoints ≤150 m, sampled deviation ≤100 m, length ratio ≤1.25) | **7,855** | **11,530 (59.5%)** | 17,544,873 B (**16.73 MiB**) | 53.8% |
+
+So the answer depends entirely on which question is being asked:
+
+- **Keyed on stop-node ids, the redundant fraction is 28.6% and the saving is 7.57 MiB.** That is
+  *not* the up/down pair — it is mostly several services (local, rapid, limited express) listing the
+  **same** stop nodes over the same track.
+- **Keyed on geometry, the redundant fraction is 59.5% and the saving is 14.39 MiB.** That is the
+  up/down pair plus the shared-corridor case, and it is the number that describes the physical
+  duplication the question was reaching for.
+
+**[demonstrated] more than two edges share track often, and test C is not a 2× win — it is 2.47×.**
+Group-size histograms:
+
+| Members per group | 1 | 2 | 3 | 4 | 5 | 6 | 7–13 | 14–24 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **A** (stop-node ids) | 10,083 | 2,671 | 651 | 295 | 99 | 27 | 20 | 0 |
+| **C** (corridor) | 1,584 | 4,560 | 224 | 793 | 149 | 275 | 234 | 36 |
+
+Under A, **1,092 groups (7.9%) have >2 members**, covering 3,960 edges — and over half of all groups
+are singletons. Under C, **1,711 groups (21.8%) have >2 members**, covering 8,681 edges, with the
+worst corridors carrying **24 ride edges over one piece of track**. 19,385 ÷ 7,855 = **2.47 edges per
+physical corridor on average**.
+
+**[demonstrated] test C is not an artefact of loose thresholds.** Sweeping the tolerances over a 20×
+range barely moves it:
+
+| endpoint tol | deviation tol | length ratio | groups | redundant | GeoJSON-6dp | varint-5dp |
+| --- | --- | --- | --- | --- | --- | --- |
+| 25 m | 15 m | 1.05 | 9,170 | 10,215 (52.7%) | 18.77 MiB | 1.96 MiB |
+| 50 m | 30 m | 1.10 | 8,261 | 11,124 (57.4%) | 17.42 MiB | 1.82 MiB |
+| 100 m | 60 m | 1.15 | 7,982 | 11,403 (58.8%) | 16.91 MiB | 1.77 MiB |
+| **150 m** | **100 m** | **1.25** | **7,855** | **11,530 (59.5%)** | **16.73 MiB** | **1.75 MiB** |
+| 250 m | 200 m | 1.50 | 7,703 | 11,682 (60.3%) | 16.45 MiB | 1.72 MiB |
+| 500 m | 400 m | 2.00 | 7,568 | 11,817 (61.0%) | 16.25 MiB | 1.70 MiB |
+
+Even at 25 m/15 m — tight enough that two genuinely distinct segments cannot merge — **52.7% of
+traced edges are redundant**. The finding is robust; only its last few percent are threshold-sensitive.
+
+**[demonstrated] a side observation with teeth.** Within the test-A groups (same stop-node ids), 8,314
+of 8,448 pairs (**98.4%**) are geometrically identical to within 5 m — so where the ids do match, the
+geometry really is the same track and dedup is safe. The tail is not noise: **p99 deviation 1,287 m
+and max 395,020 m**. Those are the §C7 closed-loop artefacts — two relations over the Yamanote-style
+loop where one traced the short way and the other the long way round. **Any id-keyed dedup would
+silently pick one of two wildly different shapes for those**, so the loop bug in §C7 is upstream of
+the dedup decision, not independent of it.
+
+**What that constrains:** dedup keyed on stop-node ids saves 7.57 MiB of 31.13 (24%) and is lossless;
+dedup keyed on geometry saves 14.39 MiB (46%) but is lossy at the chosen tolerance and needs a
+`reversed` flag per edge. On disk (§G10) the two land at 11,186,176 B and 12,083,200 B — **a 0.86 MB
+difference for a lossy-vs-lossless choice**, which is a much smaller gap than the payload numbers
+suggest.
+
+---
+
+### G12. Coordinate precision — cheap in binary, nearly worthless in GeoJSON text
+
+**[demonstrated]** re-encoding the whole corpus at 5 and 4 decimal places, with the positional error
+measured directly over all 1,401,300 vertices (haversine between the original and rounded position):
+
+| Precision | GeoJSON total | vs 6dp | varint-delta total | vs 6dp | max error | mean error |
+| --- | --- | --- | --- | --- | --- | --- |
+| 6 dp | 32,638,021 B (31.13 MiB) | — | 5,294,215 B (5.05 MiB) | — | — | — |
+| **5 dp** | 29,830,530 B (28.45 MiB) | **−8.6%** | **3,411,000 B (3.25 MiB)** | **−35.6%** | **0.740 m** | 0.387 m |
+| **4 dp** | 27,030,429 B (25.78 MiB) | −17.2% | 2,907,731 B (2.77 MiB) | −45.1% | **7.370 m** | 3.866 m |
+
+**The asymmetry is the point.** In GeoJSON text, dropping two decimal places saves 17% because the
+punctuation — `[`, `]`, `,`, `.`, the `{"type":"LineString","coordinates":` wrapper — dominates the
+digits. In a delta encoding it saves 45%, because the digits *are* the payload and smaller deltas
+occupy fewer varint bytes. **Precision reduction is a lever that only works once you have already
+chosen a dense encoding.**
+
+Measured error bounds, for a slippy-map consumer: **5dp costs at most 0.74 m** (worst vertex found at
+26.215465, 127.6951351, in Okinawa — the maximum is latitude-dependent via the `cos φ` term on
+longitude, so Japan's southern extremity is where it peaks). **4dp costs at most 7.37 m.** For
+reference, §E records that MapLibre applies Douglas-Peucker at `tolerance` 0.375 by default, so the
+renderer is already discarding detail at a coarser scale than either of these at most zoom levels —
+**[uncertain]** exactly which zoom levels 7.37 m becomes visible at, which I did not test on a map.
+
+---
+
+### G13. Alternative encodings
+
+**[demonstrated]** total bytes for all 19,385 traced edges (1,401,300 vertices), each encoding applied
+per edge, sizes summed as they would be stored:
+
+| Encoding | SQLite type | Total bytes | MiB | B/edge | B/vertex | vs baseline |
+| --- | --- | --- | --- | --- | --- | --- |
+| GeoJSON `LineString` 6dp *(baseline)* | TEXT | 32,638,021 | 31.13 | 1,684 | 23.29 | 100.0% |
+| GeoJSON `LineString` 5dp | TEXT | 29,830,530 | 28.45 | 1,539 | 21.29 | 91.4% |
+| GeoJSON `LineString` 4dp | TEXT | 27,030,429 | 25.78 | 1,394 | 19.29 | 82.8% |
+| bare `[[lon,lat],…]` array 6dp (no wrapper) | TEXT | 31,940,161 | 30.46 | 1,648 | 22.79 | 97.9% |
+| bare `[[lon,lat],…]` array 5dp | TEXT | 29,132,670 | 27.78 | 1,503 | 20.79 | 89.3% |
+| OGC WKB LineString (float64) | BLOB | 22,595,265 | 21.55 | 1,166 | 16.12 | 69.2% |
+| int32 fixed-point pairs, 6dp, no delta | BLOB | 11,210,400 | 10.69 | 578 | 8.00 | 34.3% |
+| float32 pairs | BLOB | 11,210,400 | 10.69 | 578 | 8.00 | 34.3% |
+| GeoJSON 6dp + raw deflate | BLOB | 10,351,367 | 9.87 | 534 | 7.39 | 31.7% |
+| **encoded polyline, precision 6** | TEXT | 6,303,166 | 6.01 | 325 | 4.50 | 19.3% |
+| **varint zigzag delta, 6dp** | BLOB | 5,294,215 | 5.05 | 273 | 3.78 | 16.2% |
+| varint delta 6dp + raw deflate | BLOB | 5,055,768 | 4.82 | 261 | 3.61 | 15.5% |
+| **encoded polyline, precision 5** | TEXT | 4,782,602 | 4.56 | 247 | 3.41 | **14.7%** |
+| polyline-5 + raw deflate | BLOB | 3,639,037 | 3.47 | 188 | 2.60 | 11.1% |
+| **varint zigzag delta, 5dp** | BLOB | **3,411,000** | **3.25** | 176 | 2.43 | **10.5%** |
+| varint delta 5dp + raw deflate | BLOB | 3,322,903 | 3.17 | 171 | 2.37 | 10.2% |
+| varint zigzag delta, 4dp | BLOB | 2,907,731 | 2.77 | 150 | 2.08 | 8.9% |
+
+Notes the table does not make obvious:
+
+- **The GeoJSON wrapper is not the problem.** Stripping `{"type":"LineString","coordinates":…}` down to
+  a bare coordinate array saves only 697,860 B (2.1%). GeoJSON text is expensive because of its
+  per-number punctuation, not its envelope — so "store a bare array instead" is not a lever.
+- **Delta encoding is what matters, not the binary-ness.** Undeltaed int32 pairs are 8.00 B/vertex;
+  deltaed varints at the same 6dp precision are 3.78 B/vertex. Consecutive rail vertices are close
+  together, which is exactly the structure a varint delta exploits.
+- **float32 is dominated and should not be considered.** Identical size to int32 fixed-point (8 B/vertex)
+  with strictly worse accuracy — at Japanese longitudes (~135°) a float32 mantissa quantises to
+  roughly 1.5×10⁻⁵ ° ≈ 1.4 m, worse than 5dp fixed point, for the same bytes.
+- **[demonstrated] per-row compression is nearly useless at these row sizes.** Deflating each
+  varint-5dp blob individually saves 2.6% (3,411,000 → 3,322,903), because a 176-byte payload gives
+  DEFLATE no room to build a dictionary. It is only on the *fat* encodings that it earns anything —
+  GeoJSON-6dp compresses 3.2× — and even then the result (9.87 MiB) is three times larger than plain
+  varint-5dp, i.e. **compressing a bad encoding does not beat choosing a good one.**
+- Encoded polyline-5 (TEXT) and varint-5dp (BLOB) are the two dense finalists and encode the same
+  precision; polyline-5 is 40% larger as a payload (4.78 MB vs 3.41 MB) but is ASCII, so it survives
+  JSON transport and `sqlite3` shell inspection without hex escaping. §G15 shows the on-disk gap
+  narrows to 12.4%.
+
+---
+
+### G14. Store the chain, not the edge — it relocates the duplication, and on disk it is *bigger*
+
+**[demonstrated]** One assembled chain per route relation, with each ride edge holding a start/end
+offset into it. Of the 1,487 rail route relations, **1,471 assemble a chain at all** and **1,390 carry
+at least one traced ride edge** — the rest have fewer than two resolvable stops (§C7) and need no
+geometry.
+
+| | Per-edge segments | All 1,471 chains | 1,390 chains in use |
+| --- | --- | --- | --- |
+| vertices | 1,401,300 | 1,361,225 | 1,269,713 |
+| GeoJSON-6dp | 32,638,021 B | 31,062,634 B | 28,974,874 B |
+| polyline-5 | 4,782,602 B | 4,524,308 B | 4,223,896 B |
+| varint-delta 6dp | 5,294,215 B | 5,051,448 B | 4,713,118 B |
+| **varint-delta 5dp** | **3,411,000 B** | 3,217,597 B | **3,003,051 B** |
+
+**The chain saves 11.9% of the geometry payload and nothing else.** The reason is structural: within
+one relation, consecutive ride-edge segments are already disjoint apart from their shared endpoint, so
+per-edge storage was never duplicating anything *inside* a relation. The 131,587-vertex difference is
+just those shared endpoints being stored twice, offset against the chain's own cost of carrying track
+beyond the first and last stop.
+
+Against that 11.9% saving, the offsets cost: **2 INTEGER columns × 20,281 rows**, max offset value
+**10,813** (so 2-byte SQLite integers), a raw payload of 81,124 B, plus a relation-id foreign key per
+edge. **[demonstrated] on disk the trade is a net loss**: row 11 in §G10 is **12,955,648 B against row
+05's 12,783,616 B** — the chain model is **172,032 B larger** than storing a varint-5dp blob per edge.
+
+**And it does not eliminate the up/down duplication — it relocates it, exactly as suspected.**
+**[demonstrated]** applying the same near-reverse test to the 1,390 whole chains:
+
+```
+chains compared: 96893 length-compatible pairs
+distinct corridors among 1390 chains: 865  (525 chains are a near-duplicate/near-reverse of another)
+corridor group sizes: 1x:437, 2x:389, 3x:13, 4x:16, 6x:5, 7x:1, 8x:2, 9x:1, 10x:1
+varint-5dp chains: 3003051 B -> 2161969 B if corridor-deduplicated (72.0%)
+```
+
+**389 groups of exactly two** is the up/down pair, intact, at the chain level. Each direction is its
+own relation, so one-chain-per-relation stores each direction's track once — which is the same thing
+per-edge storage was doing. 28% of the chain payload is still redundant.
+
+**Worse, the chain model makes the duplication *harder* to remove, not easier.** Chain-level dedup
+finds 38% redundancy; edge-level corridor dedup finds 59.5% (§G11). The gap is the partial-overlap
+case — a local and a limited express sharing a trunk but diverging at the ends — which segment-level
+matching catches and whole-route matching cannot, because the routes' total extents differ too much to
+compare. **Coarsening the storage key coarsens what dedup can see.**
+
+---
+
+### G15. What SQLite actually adds
+
+**[demonstrated]** comparing each candidate's payload against its measured on-disk Δ from §G10:
+
+| Representation | Payload | On-disk Δ | Overhead |
+| --- | --- | --- | --- |
+| GeoJSON-6dp TEXT column | 32,638,021 | 38,031,360 | **+16.5%** |
+| polyline-5 TEXT column | 4,782,602 | 5,365,760 | +12.2% |
+| varint-6dp BLOB column | 5,294,215 | 5,951,488 | +12.4% |
+| varint-5dp BLOB column | 3,411,000 | 3,784,704 | **+11.0%** |
+| varint-4dp BLOB column | 2,907,731 | 3,211,264 | +10.4% |
+| corridor-dedup varint-5dp | 1,833,950 | 2,187,264 | +19.3% |
+
+**Page overhead does not change the ranking, but it does compress the gaps.** Fat rows spill onto
+overflow pages and pay more (16.5% for GeoJSON), lean rows pay less (11.0%). The practical effect is
+that the payload-level gap between polyline-5 and varint-5dp (40%) shrinks to **12.4% on disk**
+(14,364,672 B vs 12,783,616 B), because the fixed per-row and per-page costs are the same for both.
+
+**[demonstrated] page size is a minor knob and does not reorder anything:**
+
+| `page_size` | GeoJSON-6dp | varint-5dp |
+| --- | --- | --- |
+| 1,024 | 45,853,696 B | 13,360,128 B |
+| **4,096 (default, and what the shipped file uses)** | 47,030,272 B | 12,783,616 B |
+| 8,192 | 46,161,920 B | **12,640,256 B** |
+| 65,536 | **44,302,336 B** | 13,107,200 B |
+
+The two encodings want opposite page sizes — big rows prefer big pages, small rows prefer pages that
+fit several — and the total movement is ±6% for GeoJSON and ±4.5% for varint. **The default 4,096 is
+within 1.2% of optimal for varint-5dp.**
+
+**[documented + demonstrated] SQLite has no built-in compression.** The stock library ships no page
+compressor (ZIPVFS is a separate commercial product), so nothing in the table above is being
+compressed by the database. If the artefact's shipped/transferred size matters rather than its
+on-device size, gzip changes the numbers but **not the ranking**:
+
+| Representation | On disk | gzip -9 | ratio |
+| --- | --- | --- | --- |
+| *graph only* | 8,998,912 | 2,400,574 | 26.7% |
+| corridor-dedup varint-5dp | 11,186,176 | **3,778,435** | 33.8% |
+| varint-4dp column | 12,210,176 | **3,803,946** | 31.2% |
+| lossless-dedup varint-5dp | 12,083,200 | 4,391,060 | 36.3% |
+| varint-5dp column | 12,783,616 | 4,823,979 | 37.7% |
+| polyline-5 column | 14,364,672 | 5,135,014 | 35.7% |
+| GeoJSON-6dp column | 47,030,272 | 11,674,086 | 24.8% |
+
+One inversion worth naming: **varint-5dp + per-row deflate gzips *worse* than plain varint-5dp**
+(5,548,889 vs 4,823,979) despite being marginally smaller on disk. Pre-compressing each row destroys
+the cross-row redundancy that whole-file gzip would otherwise exploit. **[demonstrated]** — rows 05
+and 07 of §G10.
+
+**[demonstrated] the answer to #142's "new column vs separate store", measured.** A separate keyed
+table costs **~1.75 MB more** than an inline column, for identical payload, because `RideEdge`'s
+composite key is two TEXT ids averaging 18.36 characters and the separate table must duplicate both
+plus carry a unique index on them:
+
+| | Inline column | Separate table + unique index | Cost of separating |
+| --- | --- | --- | --- |
+| GeoJSON-6dp | 47,030,272 B | 48,771,072 B | +1,740,800 B |
+| varint-5dp | 12,783,616 B | 14,569,472 B | +1,785,856 B |
+
+The cost is flat in the payload — it is the keys, not the geometry. Note this measures the *storage*
+side only; it says nothing about whether the 896 geometry-less ride edges are better modelled as a
+`NULL` column or an absent row, which is a modelling question, not a size one.
+
+---
+
+### What this pass could not establish
+
+- **[uncertain] Whether a lossy corridor dedup is acceptable at all.** §G11's test C merges edges whose
+  shapes differ by up to 100 m and whose endpoints differ by up to 150 m, then keeps one representative
+  — so an edge can render on track it does not physically use, and every dedup'd edge needs a
+  `reversed` flag whose correctness I did not verify against the direction the search traversed
+  (§Open-questions 2). I measured the size, not the acceptability.
+- **[uncertain] Read-path cost.** Every figure here is storage. I did not measure query latency,
+  decode cost per edge in JS, or what a varint decoder costs against `JSON.parse` on the render path —
+  and a shared-geometry table adds a join that per-edge storage does not have.
+- **[uncertain] At what zoom 4dp (7.37 m) becomes visible.** §E establishes MapLibre simplifies by
+  default at `tolerance` 0.375, but I did not render either precision on a map to compare.
+- **[uncertain] Whether the 896 untraced ride edges stay untraced.** All sizes assume 19,385 of 20,281
+  edges carry geometry. A better assembler (loop-aware, per §C7) would raise both the coverage and
+  every number in §G10 roughly proportionally.
+- Scripts for this pass were scratch code and were not committed, exactly as for §C7.
