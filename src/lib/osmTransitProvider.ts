@@ -36,7 +36,27 @@
  * decomposition itself isn't implemented yet. Until then a routed multi-line journey still
  * reports `kind: "rail"` with every ridden line's name joined into one string — an honest but
  * lossy placeholder (the per-shift transfer detail this loses is exactly what decomposition
- * restores), not a claim that the journey was actually one continuous ride.
+ * restores), not a claim that the journey was actually one continuous ride. ADR-0030 §12 keeps
+ * that deferral affordable: a Path carries several spans, so a multi-line journey draws its real
+ * track correctly while remaining one Path.
+ *
+ * **The search records the station identity it crosses (ADR-0030 §7), and that is deliberate.** A
+ * ride edge *is* a pair of stop node ids, so the key a geometry lookup needs and the station
+ * identity a traveler wants are one fact — there is no version of this change that records one
+ * without the other. `TransferStep` carries its station cluster id for the same reason, one field
+ * beyond what geometry needs. **This pays ADR-0028 §6's parked bill**, which named this exact
+ * discard as what blocks Surfaced Transit; it is stated here so a later reader does not mistake it
+ * for luck. Surfaced Transit is not built here and needs its own decision.
+ *
+ * Geometry reaches a Path as the real spans it has (§8, §9). The shape of each ride edge is stored
+ * once, in its own stored direction; `buildAdjacency` inserts every edge both ways, so a step that
+ * rides one backwards gets a reversed copy made for that one Journey. A ride edge refused at
+ * ingest contributes no span and no substitute, which is what leaves the honest gap the map draws
+ * dashed.
+ *
+ * `costMatrix` asks for no steps at all (§11). `routeJourney` backs both entry points and used to
+ * build a step list either way, which the matrix then discarded across N² calls; §7 made each step
+ * heavier, so the waste would have grown. The flag changes the work, never the cost.
  */
 
 import { haversineMeters, type Point } from "@/lib/geo";
@@ -71,8 +91,17 @@ function minutesForMeters(distanceMeters: number, speedKmh: number): number {
   return distanceMeters / 1000 / speedKmh * 60;
 }
 
-type RideStep = { kind: "ride"; lineName: string };
-type TransferStep = { kind: "transfer" };
+/** The two stop nodes this step rides between (ADR-0030 §7). Not incidental and not optional: a
+ * ride edge *is* a pair of stop node ids, so the key a geometry lookup needs and the station
+ * identity a traveler wants are the same fact. There is no version of this that records one
+ * without the other. */
+type RideStep = { kind: "ride"; lineName: string; fromStopId: string; toStopId: string };
+
+/** The station cluster changed at — one field beyond what geometry needs, because "change at
+ * Kyoto" is the fact a traveler can act on, and ADR-0028 §6 named the transfer station as the
+ * thing they cannot. `Step` is opened once rather than twice. */
+type TransferStep = { kind: "transfer"; clusterId: string };
+
 type Step = RideStep | TransferStep;
 
 interface SearchResult {
@@ -86,8 +115,20 @@ interface SearchResult {
  * graph instance since the graph itself never changes at runtime (a fresh ingest replaces the
  * whole singleton, per `transitGraphStore.ts`). */
 interface Adjacency {
-  ride: Map<string, { toStopId: string; distanceMeters: number; lineName: string }[]>;
-  transfer: Map<string, string[]>;
+  ride: Map<string, RideLink[]>;
+  transfer: Map<string, { toStopId: string; clusterId: string }[]>;
+}
+
+/** One crossing of one ride edge, in one direction. `geometry` is the shape as stored — always
+ * `fromStopId` → `toStopId` of the *edge*, never of this link — and `forward` says whether the two
+ * agree. That is ADR-0030 §8: the shape is stored once, and the direction is resolved when read.
+ * Both links share the one `geometry` object, so crossing an edge backwards costs no memory. */
+interface RideLink {
+  toStopId: string;
+  distanceMeters: number;
+  lineName: string;
+  geometry?: GeoJSON.LineString;
+  forward: boolean;
 }
 
 const adjacencyCache = new WeakMap<TransitGraph, Adjacency>();
@@ -97,26 +138,27 @@ function buildAdjacency(graph: TransitGraph): Adjacency {
   if (cached) return cached;
 
   const ride: Adjacency["ride"] = new Map();
-  const addRide = (fromId: string, toId: string, distanceMeters: number, lineName: string) => {
+  const addRide = (fromId: string, link: RideLink) => {
     const list = ride.get(fromId) ?? [];
-    list.push({ toStopId: toId, distanceMeters, lineName });
+    list.push(link);
     ride.set(fromId, list);
   };
   for (const edge of graph.rideEdges) {
     const lineName = graph.stopNodes.get(edge.fromStopId)?.lineName ?? graph.stopNodes.get(edge.toStopId)?.lineName ?? "";
-    addRide(edge.fromStopId, edge.toStopId, edge.distanceMeters, lineName);
-    addRide(edge.toStopId, edge.fromStopId, edge.distanceMeters, lineName);
+    const shared = { distanceMeters: edge.distanceMeters, lineName, geometry: edge.geometry };
+    addRide(edge.fromStopId, { ...shared, toStopId: edge.toStopId, forward: true });
+    addRide(edge.toStopId, { ...shared, toStopId: edge.fromStopId, forward: false });
   }
 
   const transfer: Adjacency["transfer"] = new Map();
-  const addTransfer = (fromId: string, toId: string) => {
+  const addTransfer = (fromId: string, toStopId: string, clusterId: string) => {
     const list = transfer.get(fromId) ?? [];
-    list.push(toId);
+    list.push({ toStopId, clusterId });
     transfer.set(fromId, list);
   };
   for (const edge of graph.transferEdges) {
-    addTransfer(edge.fromStopId, edge.toStopId);
-    addTransfer(edge.toStopId, edge.fromStopId);
+    addTransfer(edge.fromStopId, edge.toStopId, edge.clusterId);
+    addTransfer(edge.toStopId, edge.fromStopId, edge.clusterId);
   }
 
   const adjacency: Adjacency = { ride, transfer };
@@ -158,7 +200,8 @@ function shortestPath(
   graph: TransitGraph,
   adjacency: Adjacency,
   seeds: { stop: StopNode; walkMeters: number; walkMinutes: number }[],
-  toStopIds: Set<string>
+  toStopIds: Set<string>,
+  withSteps: boolean
 ): Map<string, SearchResult> {
   const timeMin = new Map<string, number>();
   const distanceMeters = new Map<string, number>();
@@ -183,7 +226,7 @@ function shortestPath(
     if (existing !== undefined && existing <= seed.walkMinutes) continue;
     timeMin.set(seed.stop.id, seed.walkMinutes);
     distanceMeters.set(seed.stop.id, seed.walkMeters);
-    steps.set(seed.stop.id, []);
+    if (withSteps) steps.set(seed.stop.id, []);
     push(seed.stop.id, seed.walkMinutes);
   }
 
@@ -197,7 +240,7 @@ function shortestPath(
 
     const currentTime = timeMin.get(current.id) ?? Infinity;
     const currentDistance = distanceMeters.get(current.id) ?? 0;
-    const currentSteps = steps.get(current.id) ?? [];
+    const currentSteps = withSteps ? (steps.get(current.id) ?? []) : [];
 
     for (const rideEdge of adjacency.ride.get(current.id) ?? []) {
       if (visited.has(rideEdge.toStopId)) continue;
@@ -207,18 +250,26 @@ function shortestPath(
       if (candidateTime < (timeMin.get(rideEdge.toStopId) ?? Infinity)) {
         timeMin.set(rideEdge.toStopId, candidateTime);
         distanceMeters.set(rideEdge.toStopId, currentDistance + rideEdge.distanceMeters);
-        steps.set(rideEdge.toStopId, [...currentSteps, { kind: "ride", lineName: rideEdge.lineName }]);
+        if (withSteps) {
+          steps.set(rideEdge.toStopId, [
+            ...currentSteps,
+            { kind: "ride", lineName: rideEdge.lineName, fromStopId: current.id, toStopId: rideEdge.toStopId },
+          ]);
+        }
         push(rideEdge.toStopId, candidateTime);
       }
     }
 
-    for (const toStopId of adjacency.transfer.get(current.id) ?? []) {
+    for (const transferEdge of adjacency.transfer.get(current.id) ?? []) {
+      const toStopId = transferEdge.toStopId;
       if (visited.has(toStopId)) continue;
       const candidateTime = currentTime + TRANSFER_MINUTES;
       if (candidateTime < (timeMin.get(toStopId) ?? Infinity)) {
         timeMin.set(toStopId, candidateTime);
         distanceMeters.set(toStopId, currentDistance);
-        steps.set(toStopId, [...currentSteps, { kind: "transfer" }]);
+        if (withSteps) {
+          steps.set(toStopId, [...currentSteps, { kind: "transfer", clusterId: transferEdge.clusterId }]);
+        }
         push(toStopId, candidateTime);
       }
     }
@@ -242,6 +293,34 @@ function joinedLineNameOf(steps: Step[]): string | undefined {
   return deduped.length > 0 ? deduped.join(" / ") : undefined;
 }
 
+/**
+ * The real shapes a routed Journey has, in travel order (ADR-0030 §8, §9) — one span per ride step
+ * whose ride edge was traced, and nothing at all for one that was not.
+ *
+ * Direction is resolved here, at read time. `buildAdjacency` inserts every ride edge both ways so
+ * the search can cross it backwards, but only one shape is stored; a step that rides the edge
+ * against its stored direction gets a reversed *copy*, made once for the one Journey being
+ * described rather than held for every edge in the graph. §7's ids are what make the comparison
+ * free — they are already recorded for the lookup.
+ *
+ * A refused ride edge contributes no span and no substitute. The gap it leaves is the point:
+ * the map draws it dashed, which is the honest report (§1).
+ */
+function spansOf(steps: Step[], adjacency: Adjacency): GeoJSON.LineString[] {
+  const spans: GeoJSON.LineString[] = [];
+  for (const step of steps) {
+    if (step.kind !== "ride") continue;
+    const link = adjacency.ride.get(step.fromStopId)?.find((l) => l.toStopId === step.toStopId);
+    if (!link?.geometry) continue;
+    spans.push(
+      link.forward
+        ? link.geometry
+        : { type: "LineString", coordinates: [...link.geometry.coordinates].reverse() }
+    );
+  }
+  return spans;
+}
+
 /** One point's snapped stop nodes plus the walk-access cost to each, or `null` when nothing is
  * within `STATION_SNAP_RADIUS_METERS` — the no-station fallback trigger. */
 function snapWithWalkCost(
@@ -262,13 +341,21 @@ function snapWithWalkCost(
 interface JourneyResult {
   travelCost: TravelCost;
   lineName?: string;
+  /** Present only for a caller that asked for steps — `costMatrix` never needs a shape. */
+  geometry?: GeoJSON.LineString[];
 }
 
 /** `null` is a decline (ADR-0024 §4) — the identity cell and the no-station-in-range case both
  * decline now rather than fabricating a straight line; the registry's terminal `haversine` entry
  * fills whatever this provider declines. A pair that both snap but is disconnected in the graph
  * still throws — see the module doc. */
-async function routeJourney(graph: TransitGraph, spatialIndex: SpatialIndex, from: Point, to: Point): Promise<JourneyResult | null> {
+async function routeJourney(
+  graph: TransitGraph,
+  spatialIndex: SpatialIndex,
+  from: Point,
+  to: Point,
+  withSteps: boolean
+): Promise<JourneyResult | null> {
   // The terminal entry produces the same zero-cost answer for an identical pair, so declining
   // here is one fewer special case rather than a behavior change at the matrix level.
   if (haversineMeters(from, to) === 0) return null;
@@ -282,7 +369,7 @@ async function routeJourney(graph: TransitGraph, spatialIndex: SpatialIndex, fro
 
   // Each seed's own walk-adjusted time/distance is already folded in by shortestPath, so the
   // result per to-stop is the true end-to-end total once its own egress walk is added.
-  const raw = shortestPath(graph, adjacency, fromSnaps, toStopIds);
+  const raw = shortestPath(graph, adjacency, fromSnaps, toStopIds, withSteps);
 
   let best: { toStopId: string; totalMinutes: number; totalDistance: number } | null = null;
   for (const toSnap of toSnaps) {
@@ -298,9 +385,14 @@ async function routeJourney(graph: TransitGraph, spatialIndex: SpatialIndex, fro
   }
 
   const result = raw.get(best.toStopId)!;
+  const travelCost = makeTravelCost(best.totalDistance, best.totalMinutes * 60, "railNetwork", "osm-japan");
+  if (!withSteps) return { travelCost };
+
+  const geometry = spansOf(result.steps, adjacency);
   return {
-    travelCost: makeTravelCost(best.totalDistance, best.totalMinutes * 60, "railNetwork", "osm-japan"),
+    travelCost,
     lineName: joinedLineNameOf(result.steps),
+    geometry: geometry.length > 0 ? geometry : undefined,
   };
 }
 
@@ -313,7 +405,9 @@ export function createOsmTransitProvider(graph: TransitGraph, spatialIndex: Spat
       for (const from of points) {
         const row: MatrixCell[] = [];
         for (const to of points) {
-          const journey = await routeJourney(graph, spatialIndex, from, to);
+          // §11: the matrix keeps the cost and throws the step list away, across N² calls, and
+          // §7 made each step heavier. It no longer pays for what it discards.
+          const journey = await routeJourney(graph, spatialIndex, from, to, false);
           row.push(journey?.travelCost ?? null);
         }
         matrix.push(row);
@@ -321,11 +415,11 @@ export function createOsmTransitProvider(graph: TransitGraph, spatialIndex: Spat
       return matrix;
     },
     async describeJourney(from: PathEndpoint, to: PathEndpoint): Promise<Path[] | null> {
-      const journey = await routeJourney(graph, spatialIndex, from, to);
+      const journey = await routeJourney(graph, spatialIndex, from, to, true);
       if (!journey) return null;
-      const { travelCost, lineName } = journey;
+      const { travelCost, lineName, geometry } = journey;
       if (lineName === undefined) return [{ from, to, travelCost }];
-      return [{ kind: "rail", from, to, travelCost, lineName }];
+      return [{ kind: "rail", from, to, travelCost, lineName, geometry }];
     },
   };
 }
