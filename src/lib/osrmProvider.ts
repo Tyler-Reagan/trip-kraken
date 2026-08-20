@@ -227,9 +227,12 @@ function groupSteps(steps: OsrmStep[]): Run[] {
   return runs;
 }
 
-function mergeGeometry(geometries: PathGeometry[]): PathGeometry | undefined {
+/** OSRM routes a run end to end, so its steps concatenate into one continuous line — one span,
+ * not several (ADR-0030 §9). The list is the Path's shape, and a run always has exactly one real
+ * span or none; the several-span case belongs to a provider whose coverage is partial. */
+function mergeGeometry(geometries: PathGeometry[]): PathGeometry[] | undefined {
   if (geometries.length === 0) return undefined;
-  return { type: "LineString", coordinates: geometries.flatMap((g) => g.coordinates) };
+  return [{ type: "LineString", coordinates: geometries.flatMap((g) => g.coordinates) }];
 }
 
 /** The coordinate at a run boundary, derived from the routed geometry rather than the original

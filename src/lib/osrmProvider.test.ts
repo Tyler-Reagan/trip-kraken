@@ -232,7 +232,8 @@ async function main() {
   assert.equal(paths![0].kind, "walking");
   assert.equal(paths![0].travelCost.distanceMeters, 1500, "walking + pushing bike distances summed");
   assert.equal(paths![0].travelCost.durationSeconds, 900);
-  assert.equal(paths![0].geometry?.coordinates.length, 4, "geometry concatenated across the collapsed steps");
+  assert.equal(paths![0].geometry?.length, 1, "an end-to-end routed run is one span (ADR-0030 §9)");
+  assert.equal(paths![0].geometry?.[0].coordinates.length, 4, "geometry concatenated across the collapsed steps");
 
   assert.equal(paths![1].kind, "other");
   assert.equal((paths![1] as { lineName?: string }).lineName, "Tokyo Bay Ferry");
