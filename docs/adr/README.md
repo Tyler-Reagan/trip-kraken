@@ -56,3 +56,4 @@ status to **Superseded by ADR-NNNN**.
 | [0027](0027-stadia-basemap-over-carto.md) | Stadia Maps replaces CARTO as the basemap provider | Accepted |
 | [0028](0028-transit-constraint-fields-and-trip-edges.md) | Transit carries `arriveAt` / `departAt`; trip edges are unique by construction | Accepted |
 | [0029](0029-map-renders-path-geometry-at-request-time.md) | The map renders one line per Path, from geometry fetched at request time and held only in memory | Accepted |
+| [0030](0030-rail-segment-geometry-ingest-and-partial-path-shapes.md) | Rail geometry is traced at ingest, stored per ride edge, and a Path carries the real spans it has | Accepted |

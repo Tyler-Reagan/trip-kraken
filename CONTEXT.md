@@ -216,8 +216,11 @@ _Avoid_: nearby search, suggestions
 **Rail graph**:
 The offline-ingested structure a regional transit provider (e.g. Japan) routes over —
 stations and the named services running between them, from OpenStreetMap, with real
-inter-station distances, no timetables, and no stored geometry (ADR-0019 §"Duration model";
-geometry capture is a separate, open question). An implementation detail of one
+inter-station distances and no timetables. It also stores the **shape** of each ride edge, traced
+from the source data (ADR-0030) — for drawing only: distance and duration still come from the
+straight line between two stations, and the coarse duration model (ADR-0019 §"Duration model") is
+unchanged by a shape existing. A ride edge whose shape could not be traced honestly has none, rather
+than an invented one. An implementation detail of one
 `PathProvider`, not domain vocabulary; a Trip never references it directly.
 _Not_ the only graph — see Road graph. Never say "the graph" unqualified.
 

@@ -6,6 +6,9 @@
 - **Superseded by:** —
 - **Amends:** ADR-0018 (its §5 "regional providers are contingent enhancements" clause
   fires here; its provider-selection precedent generalizes into a registry)
+- **Amended by:** ADR-0030 (rail `way` geometry is traced and stored after all — this ADR's
+  exclusion stands for the *duration* model it was argued for, and is reversed for *rendering*,
+  which it never considered)
 - **Constrained by:** ADR-0016 (feasibility is a hard gate — this ADR's estimated
   timing feeds it), ADR-0017 (surface degradation, don't hide it), ADR-0009 (Location
   as the one place primitive; this ADR builds its own station data, sharing nothing

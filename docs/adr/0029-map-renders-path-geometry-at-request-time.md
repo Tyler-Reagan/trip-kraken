@@ -4,6 +4,9 @@
 - **Date:** 2026-08-17
 - **Supersedes:** —
 - **Superseded by:** —
+- **Amended by:** ADR-0030 (§2's Road-profile-only narrowing is lifted once rail geometry exists —
+  the "bill that comes due later" this ADR's Consequences named; §3's solid/dashed test is restated
+  over a Path that may carry several real spans rather than one shape or none)
 - **Constrained by:** ADR-0021 (Path is derived from the Plan, never stored), ADR-0022 (a Journey is
   "not stored and not scored"), ADR-0024 (§4's registry order and §6's narration dispatch), ADR-0026
   (the first request-time `describeJourney` call outside optimize), ADR-0028 (a `straightLine` Basis
