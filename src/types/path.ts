@@ -107,8 +107,9 @@ export function isPersistable(cost: TravelCost): cost is PersistableTravelCost {
  * the Path rather than a real, persisted Location.
  *
  * `lat`/`lng` are the *requested* coordinates — the Location's own, not wherever a router snapped
- * them to. A routed Path's snapped ends are already the first and last vertices of its `geometry`,
- * so nothing needs a second field to carry them (#149 grill, 2026-08-05). */
+ * them to. A routed Path's snapped ends are already the first and last vertices of its `geometry`
+ * (its first and last span, once that became a list), so nothing needs a second field to carry
+ * them (#149 grill, 2026-08-05). */
 export interface PathEndpoint extends Point {
   locationId?: string;
 }
@@ -126,7 +127,17 @@ export interface PathBase {
   from: PathEndpoint;
   to: PathEndpoint;
   travelCost: TravelCost;
-  geometry?: PathGeometry;
+  /** The real spans this Path has, in travel order — not one line for the whole Path (ADR-0030
+   * §9). A Path may know the shape of some of its length and none of the rest: a rail Journey's
+   * ride edges are traced individually, and one refused at ingest contributes nothing rather than
+   * forcing the whole Path to draw as unrouted. A provider that always routes end to end (`osrm`)
+   * returns a one-element list, which is the same claim it made before this widened.
+   *
+   * Absent, or empty, means no shape at all. The renderer's solid/dashed test (ADR-0029 §3) reads
+   * per span rather than per Path: solid where a span exists, dashed across what is left. Spans
+   * are never bridged with invented straight lines — that would report an unrouted stretch as
+   * routed, which is exactly what ADR-0030 §1 refuses geometry to prevent. */
+  geometry?: PathGeometry[];
 }
 
 export type UnknownPath = PathBase & { kind?: undefined };
