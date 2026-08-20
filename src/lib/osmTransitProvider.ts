@@ -42,7 +42,7 @@
 import { haversineMeters, type Point } from "@/lib/geo";
 import { makeTravelCost, type Path, type PathEndpoint, type TravelCost } from "@/types/path";
 import type { PathProvider, MatrixCell } from "@/lib/pathProvider";
-import type { TransitGraph, StopNode, LineType, SpatialIndex } from "@/lib/transitGraph";
+import { STATION_SNAP_RADIUS_METERS, type TransitGraph, type StopNode, type LineType, type SpatialIndex } from "@/lib/transitGraph";
 
 /** Effective speed per line type (ADR-0019's coarse duration model) — one number per type
  * absorbing acceleration/braking/dwell, not modeled separately. Placeholders pending calibration
@@ -59,9 +59,6 @@ export const TRANSFER_MINUTES = 5;
 
 /** Walking speed for station-access legs and the no-station-in-range fallback. */
 export const WALK_SPEED_KMH = 4.5;
-
-/** How far a Location may be from a stop node and still be considered "at" that station. */
-export const STATION_SNAP_RADIUS_METERS = 800;
 
 /** The one-more-try radius for a Location with *nothing* inside `STATION_SNAP_RADIUS_METERS`
  * (ADR-0019, amended 2026-08-17). At `WALK_SPEED_KMH` this is a 27-minute access walk — generous

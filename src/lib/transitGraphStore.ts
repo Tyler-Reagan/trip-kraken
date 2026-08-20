@@ -14,6 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { encodeLineString, decodeLineString } from "./geometryCodec";
 import {
   createGraph,
   buildSpatialIndex,
@@ -53,18 +54,35 @@ function createSchema(sqlite: Database.Database): void {
     CREATE TABLE RideEdge (
       fromStopId TEXT NOT NULL,
       toStopId TEXT NOT NULL,
-      distanceMeters REAL NOT NULL
+      distanceMeters REAL NOT NULL,
+      geometry BLOB,
+      tracedLengthMeters REAL
     );
     CREATE TABLE TransferEdge (
       fromStopId TEXT NOT NULL,
       toStopId TEXT NOT NULL,
       clusterId TEXT NOT NULL
     );
+    CREATE TABLE Meta (
+      snapshotDate TEXT NOT NULL,
+      region TEXT NOT NULL,
+      ingestedAt TEXT NOT NULL
+    );
   `);
 }
 
+/** Which Extract built a graph file (ADR-0030 §6). The file is regenerated wholesale with the
+ * Extract, so this identity is already implicit in the artefact — it is recorded anyway, while the
+ * schema is open, because it makes the file self-describing for anyone debugging a wrong-looking
+ * line, and adding it later would mean a second schema change for something already known to be
+ * wanted. Nothing reads it at runtime; it is answered with plain SQL. */
+export interface GraphMeta {
+  snapshotDate: string;
+  region: string;
+}
+
 /** Writes `graph` to `filePath`, replacing any existing file — the ingestion pipeline's output step. */
-export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH): void {
+export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH, meta?: GraphMeta): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.rmSync(filePath, { force: true });
 
@@ -79,10 +97,13 @@ export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH)
       "INSERT INTO ClusterMember (clusterId, stopNodeId) VALUES (?, ?)"
     );
     const insertRide = sqlite.prepare(
-      "INSERT INTO RideEdge (fromStopId, toStopId, distanceMeters) VALUES (?, ?, ?)"
+      "INSERT INTO RideEdge (fromStopId, toStopId, distanceMeters, geometry, tracedLengthMeters) VALUES (?, ?, ?, ?, ?)"
     );
     const insertTransfer = sqlite.prepare(
       "INSERT INTO TransferEdge (fromStopId, toStopId, clusterId) VALUES (?, ?, ?)"
+    );
+    const insertMeta = sqlite.prepare(
+      "INSERT INTO Meta (snapshotDate, region, ingestedAt) VALUES (?, ?, ?)"
     );
 
     const writeAll = sqlite.transaction(() => {
@@ -94,11 +115,20 @@ export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH)
         for (const stopNodeId of cluster.stopNodeIds) insertMember.run(cluster.id, stopNodeId);
       }
       for (const edge of graph.rideEdges) {
-        insertRide.run(edge.fromStopId, edge.toStopId, edge.distanceMeters);
+        insertRide.run(
+          edge.fromStopId,
+          edge.toStopId,
+          edge.distanceMeters,
+          edge.geometry ? encodeLineString(edge.geometry) : null,
+          edge.tracedLengthMeters ?? null
+        );
       }
       for (const edge of graph.transferEdges) {
         insertTransfer.run(edge.fromStopId, edge.toStopId, edge.clusterId);
       }
+      // "unknown" rather than a thrown error: a hand-built fixture written by a test has no
+      // Extract behind it, and refusing to save one would be a worse answer than saying so.
+      insertMeta.run(meta?.snapshotDate ?? "unknown", meta?.region ?? "unknown", new Date().toISOString());
     });
     writeAll();
   } finally {
@@ -132,7 +162,21 @@ export function load(filePath: string = DEFAULT_GRAPH_PATH): { graph: TransitGra
     for (const row of memberRows) {
       graph.clusters.get(row.clusterId)?.stopNodeIds.push(row.stopNodeId);
     }
-    graph.rideEdges.push(...(sqlite.prepare("SELECT fromStopId, toStopId, distanceMeters FROM RideEdge").all() as RideEdge[]));
+    const rideRows = sqlite.prepare(
+      "SELECT fromStopId, toStopId, distanceMeters, geometry, tracedLengthMeters FROM RideEdge"
+    ).all() as (Omit<RideEdge, "geometry"> & { geometry: Buffer | null })[];
+    for (const row of rideRows) {
+      const edge: RideEdge = {
+        fromStopId: row.fromStopId,
+        toStopId: row.toStopId,
+        distanceMeters: row.distanceMeters,
+      };
+      if (row.geometry) {
+        edge.geometry = decodeLineString(row.geometry);
+        edge.tracedLengthMeters = row.tracedLengthMeters;
+      }
+      graph.rideEdges.push(edge);
+    }
     graph.transferEdges.push(
       ...(sqlite.prepare("SELECT fromStopId, toStopId, clusterId FROM TransferEdge").all() as TransferEdge[])
     );

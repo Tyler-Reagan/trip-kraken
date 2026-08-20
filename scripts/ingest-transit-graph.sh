@@ -40,4 +40,9 @@ echo "Converting filtered extract to OSM XML"
 osmium cat "$RAIL_PBF" -f osm -o "$RAIL_XML"
 
 echo "Building the graph and writing $OUTPUT_DB"
+# ADR-0030 §6: the graph file records which Extract built it. This script is the only place that
+# knows the pin, so it hands both fields to the Node half rather than having TypeScript parse a
+# shell env file. The osmium steps above are unchanged — reference completion already retains the
+# way geometry transitively (ADR-0030 Context), so no filter change was needed.
+export OSM_SNAPSHOT OSM_RAIL_REGION
 npx tsx scripts/ingest-transit-graph.ts "$RAIL_XML" "$OUTPUT_DB"

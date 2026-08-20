@@ -11,6 +11,7 @@ import path from "node:path";
 import fs from "node:fs";
 import assert from "node:assert/strict";
 import { createGraph, type TransitGraph } from "./transitGraph";
+import Database from "better-sqlite3";
 import { save, load, getTransitGraph, DEFAULT_GRAPH_PATH } from "./transitGraphStore";
 
 function buildFixture(): TransitGraph {
@@ -37,7 +38,18 @@ function buildFixture(): TransitGraph {
     lng: 139.7708,
     sequence: 1,
   });
-  graph.rideEdges.push({ fromStopId: "yamanote-tokyo", toStopId: "yamanote-kanda", distanceMeters: 1200 });
+  // Carries traced track (ADR-0030 §5): a bent shape, so a codec that dropped or reordered
+  // vertices would show up as a changed line rather than an unchanged straight one.
+  graph.rideEdges.push({
+    fromStopId: "yamanote-tokyo",
+    toStopId: "yamanote-kanda",
+    distanceMeters: 1200,
+    geometry: {
+      type: "LineString",
+      coordinates: [[139.76712, 35.68124], [139.76789, 35.6831], [139.76834, 35.68546], [139.77081, 35.69183]],
+    },
+    tracedLengthMeters: 1289.4,
+  });
 
   // Marunouchi line: a stop node at the same physical station as Tokyo (an interchange).
   graph.stopNodes.set("marunouchi-tokyo", {
@@ -134,5 +146,41 @@ try {
 }
 
 fs.rmSync(dir, { recursive: true, force: true });
+
+// ── Geometry and provenance (ADR-0030 §5, §6) ───────────────────────────────────────────
+const withGeometry = reloaded.rideEdges.find((e) => e.fromStopId === "yamanote-tokyo")!;
+const withoutGeometry = reloaded.rideEdges.find((e) => e.fromStopId === "marunouchi-tokyo")!;
+
+assert.ok(withGeometry.geometry, "a ride edge's traced shape survives the round trip");
+assert.equal(withGeometry.geometry!.coordinates.length, 4, "every vertex comes back");
+assert.equal(withGeometry.tracedLengthMeters, 1289.4, "traced track length round-trips exactly — it is a plain REAL");
+// The BLOB is lossy at the 5th decimal place by design, so this is a bound, not an equality.
+for (const [i, [lng, lat]] of withGeometry.geometry!.coordinates.entries()) {
+  const [wantLng, wantLat] = [
+    [139.76712, 35.68124], [139.76789, 35.6831], [139.76834, 35.68546], [139.77081, 35.69183],
+  ][i];
+  assert.ok(Math.abs(lng - wantLng) <= 1e-5 && Math.abs(lat - wantLat) <= 1e-5, `vertex ${i} within 5dp`);
+}
+
+// Absent geometry must stay absent. An empty LineString would read as "we traced this and it is
+// nothing", which is the opposite of what a refused segment means (ADR-0030 §1).
+assert.equal(withoutGeometry.geometry, undefined, "an untraced ride edge comes back with no geometry at all");
+assert.equal(withoutGeometry.tracedLengthMeters, undefined, "and no traced length");
+
+const metaDbDir = fs.mkdtempSync(path.join(tmpdir(), "tk-graph-meta-"));
+const metaDbPath = path.join(metaDbDir, "transit-japan.db");
+save(original, metaDbPath, { snapshotDate: "260101", region: "asia/japan" });
+const metaDb = new Database(metaDbPath, { readonly: true });
+const meta = metaDb.prepare("SELECT snapshotDate, region, ingestedAt FROM Meta").all() as {
+  snapshotDate: string;
+  region: string;
+  ingestedAt: string;
+}[];
+metaDb.close();
+assert.equal(meta.length, 1, "Meta is one row, not a log");
+assert.equal(meta[0].snapshotDate, "260101", "the graph file records which Extract built it");
+assert.equal(meta[0].region, "asia/japan");
+assert.ok(!Number.isNaN(Date.parse(meta[0].ingestedAt)), "ingestedAt is a parseable timestamp");
+fs.rmSync(metaDbDir, { recursive: true, force: true });
 
 console.log("transitGraphStore round-trip: OK");
