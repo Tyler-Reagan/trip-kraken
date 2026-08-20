@@ -13,21 +13,26 @@
  *    left unclustered (no grouping relation covers it) falls back to proximity + normalized-name
  *    matching, per the design doc's explicit fallback.
  *
- * Deliberately out of scope here: tracing a line's actual rail-geometry (`way` members) to sum
- * real track length between stops. The coarse-by-design duration model (ADR-0019) already treats
+ * Way members are now traced (`railGeometry.ts`, ADR-0030), but only for *rendering*. The
+ * exclusion this file used to record stands for *duration*: `distanceMeters` is still the
+ * straight-line haversine between the two real station coordinates, and the traced track length
+ * sits beside it consumed by nothing. The coarse-by-design duration model (ADR-0019) treats
  * per-hop distance as an input to a per-line-type effective speed, not a precision timing figure,
- * so straight-line distance between the two real station coordinates is the honest granularity —
- * consistent with `haversineMeters` already being the "real distance" primitive everywhere else
- * in this graph (`osmTransitProvider.ts`).
+ * so haversine remains the honest granularity — consistent with `haversineMeters` being the "real
+ * distance" primitive everywhere else in this graph (`osmTransitProvider.ts`). Swapping the traced
+ * length in raises every rail duration ~7.7% (ADR-0030 §4) and is its own ticket, blocked on the
+ * line-type classifier defect (#192).
  */
 
 import { haversineMeters } from "@/lib/geo";
+import { traceLineGeometry } from "@/lib/railGeometry";
 import {
   createGraph,
   type TransitGraph,
   type StopNode,
   type StationCluster,
   type LineType,
+  type RideEdge,
 } from "@/lib/transitGraph";
 
 export interface OsmNode {
@@ -35,6 +40,12 @@ export interface OsmNode {
   lat: number;
   lon: number;
   tags: Record<string, string>;
+}
+
+/** A way, reduced to what tracing needs. Tags are not retained — see `parsers/osmXml.ts`. */
+export interface OsmWay {
+  id: string;
+  nodeRefs: string[];
 }
 
 export interface OsmMember {
@@ -93,6 +104,7 @@ const FALLBACK_CLUSTER_RADIUS_METERS = 300;
 function buildLines(
   graph: TransitGraph,
   nodesById: Map<string, OsmNode>,
+  waysById: Map<string, OsmWay>,
   relations: OsmRelation[]
 ): Map<string, string[]> {
   // Maps a raw OSM node id to every stop node id created from it (one per line through that
@@ -111,9 +123,14 @@ function buildLines(
 
     let sequence = 0;
     let previous: { id: string; node: OsmNode } | null = null;
+    // The resolved stop sequence and the edges built from it, kept aligned so tracing below can
+    // hand segment `i` to the edge between stop `i` and stop `i + 1`.
+    const stopOsmIds: string[] = [];
+    const edgesOfLine: RideEdge[] = [];
     for (const member of stopMembers) {
       const osmNode = nodesById.get(member.ref);
       if (!osmNode) continue; // referenced node missing from the extract — skip, don't fabricate.
+      stopOsmIds.push(osmNode.id);
 
       const id = stopNodeId(relation.id, osmNode.id);
       if (!graph.stopNodes.has(id)) {
@@ -135,17 +152,29 @@ function buildLines(
       sequence++;
 
       if (previous) {
-        graph.rideEdges.push({
+        const edge: RideEdge = {
           fromStopId: previous.id,
           toStopId: id,
           distanceMeters: haversineMeters(
             { lat: previous.node.lat, lng: previous.node.lon },
             { lat: osmNode.lat, lng: osmNode.lon }
           ),
-        });
+        };
+        graph.rideEdges.push(edge);
+        edgesOfLine.push(edge);
       }
       previous = { id, node: osmNode };
     }
+
+    // The line's real track, cut per ride edge (ADR-0030). A refused segment leaves the edge
+    // without geometry, which is what makes the map draw that stretch dashed rather than claim a
+    // shape we do not have.
+    traceLineGeometry(relation, stopOsmIds, waysById, nodesById).forEach((segment, i) => {
+      const edge = edgesOfLine[i];
+      if (!segment || !edge) return;
+      edge.geometry = segment.geometry;
+      edge.tracedLengthMeters = segment.tracedLengthMeters;
+    });
   }
 
   return rawNodeToStopNodes;
@@ -234,11 +263,14 @@ function buildClusters(
   }
 }
 
-/** The pure transform (Seam 2): parsed OSM nodes + relations → a complete `TransitGraph`. */
-export function buildTransitGraph(nodes: OsmNode[], relations: OsmRelation[]): TransitGraph {
+/** The pure transform (Seam 2): parsed OSM nodes + ways + relations → a complete `TransitGraph`.
+ * Ways joined the signature with ADR-0030 — they carry the geometry each ride edge is traced from,
+ * and tracing belongs behind this seam, where ADR-0019's ticket #87 drew the unit-test line. */
+export function buildTransitGraph(nodes: OsmNode[], ways: OsmWay[], relations: OsmRelation[]): TransitGraph {
   const graph = createGraph();
   const nodesById = new Map(nodes.map((n) => [n.id, n]));
-  const rawNodeToStopNodes = buildLines(graph, nodesById, relations);
+  const waysById = new Map(ways.map((w) => [w.id, w]));
+  const rawNodeToStopNodes = buildLines(graph, nodesById, waysById, relations);
   buildClusters(graph, relations, rawNodeToStopNodes);
   return graph;
 }

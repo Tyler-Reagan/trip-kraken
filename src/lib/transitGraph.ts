@@ -46,6 +46,18 @@ export interface RideEdge {
   fromStopId: string;
   toStopId: string;
   distanceMeters: number;
+  /** The real track between the two stations, traced from the line's `way` members at ingest
+   * (ADR-0030 §1–§3, `railGeometry.ts`). Runs from `fromStopId` to `toStopId`; the reversed
+   * direction is resolved at read time and never stored twice (§8).
+   *
+   * Absent means we do not know the shape — the segment was built across a discontinuity the
+   * assembler saw happen, or a station could not be located on the chain within the snap radius.
+   * It is deliberately not the same thing as an empty line: the map draws an absent shape dashed
+   * and thereby says so. */
+  geometry?: GeoJSON.LineString;
+  /** Length along `geometry`, present exactly when it is. Nothing costs travel with it —
+   * `distanceMeters` stays the station-to-station haversine (ADR-0030 §4). */
+  tracedLengthMeters?: number;
 }
 
 export interface TransferEdge {
@@ -79,6 +91,14 @@ export function createGraph(): TransitGraph {
 export interface SpatialIndex {
   nearby(lat: number, lng: number, radiusMeters: number): StopNode[];
 }
+
+/** How far a Location may be from a stop node and still be considered "at" that station. Lives
+ * here rather than in `osmTransitProvider.ts` because ingest needs it too: ADR-0030 §3 cuts an
+ * off-track station at the nearest point on its line, bounded by this same radius. Reusing it is
+ * the decision, not a convenience — it is already this codebase's answer to "is this station
+ * reachable from here", and a second, separately-tuned notion of nearness would be a second thing
+ * to get wrong. */
+export const STATION_SNAP_RADIUS_METERS = 800;
 
 const CELL_DEGREES = 0.01; // ≈1.1km at Japan's latitudes — small enough for a tight walk radius
 

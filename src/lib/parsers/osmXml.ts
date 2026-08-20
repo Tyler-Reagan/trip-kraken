@@ -5,13 +5,18 @@
  * ticket #87 draws that line at "parsed OSM elements", i.e. after this step) — this file's job
  * is solely turning XML text into plain data, mirroring `parsers/kml.ts`'s XMLParser usage.
  *
- * `way` elements aren't parsed here: nothing downstream needs a line's rail geometry (see
- * `transitGraphIngest.ts`'s docstring on why ride-edge distance is real-coordinate haversine, not
- * traced track length), so way parsing would be speculative.
+ * `way` elements are parsed for their node references alone (ADR-0030). The premise that once
+ * excluded them — that nothing downstream needs a line's rail geometry — stopped being true when
+ * the map began drawing real Path shapes: `railGeometry.ts` assembles a route relation's way
+ * members into the track between two stations. The geometry was always in the filtered extract;
+ * about 91% of the 212 MB of XML read on every run used to be thrown away here.
+ *
+ * A way's tags are deliberately *not* retained. Tracing needs the node refs and nothing else, and
+ * the national extract holds 90,632 ways — a tag map each is real memory for data no caller reads.
  */
 
 import { XMLParser } from "fast-xml-parser";
-import type { OsmNode, OsmRelation, OsmMember } from "@/lib/transitGraphIngest";
+import type { OsmNode, OsmRelation, OsmMember, OsmWay } from "@/lib/transitGraphIngest";
 
 function toArray<T>(value: T | T[] | undefined): T[] {
   if (value === undefined) return [];
@@ -28,11 +33,11 @@ function tagsOf(raw: Record<string, unknown>): Record<string, string> {
   return tags;
 }
 
-export function parseOsmXml(xml: string): { nodes: OsmNode[]; relations: OsmRelation[] } {
+export function parseOsmXml(xml: string): { nodes: OsmNode[]; ways: OsmWay[]; relations: OsmRelation[] } {
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "@_",
-    isArray: (name) => ["node", "relation", "member", "tag"].includes(name),
+    isArray: (name) => ["node", "way", "relation", "nd", "member", "tag"].includes(name),
     // fast-xml-parser's entity-expansion guard defaults to 1000 total expansions — a billion-laughs
     // safeguard sized for arbitrary untrusted input. A nationwide rail extract is neither untrusted
     // nor small: station/line names routinely carry `&amp;`/`&apos;` entities, easily exceeding the
@@ -58,6 +63,11 @@ export function parseOsmXml(xml: string): { nodes: OsmNode[]; relations: OsmRela
     tags: tagsOf(n),
   }));
 
+  const ways: OsmWay[] = toArray(osm.way as Record<string, unknown>[] | undefined).map((w) => ({
+    id: String(w["@_id"]),
+    nodeRefs: toArray(w.nd as Record<string, unknown>[] | undefined).map((nd) => String(nd["@_ref"])),
+  }));
+
   const relations: OsmRelation[] = toArray(osm.relation as Record<string, unknown>[] | undefined).map((r) => ({
     id: String(r["@_id"]),
     tags: tagsOf(r),
@@ -70,5 +80,5 @@ export function parseOsmXml(xml: string): { nodes: OsmNode[]; relations: OsmRela
     ),
   }));
 
-  return { nodes, relations };
+  return { nodes, ways, relations };
 }

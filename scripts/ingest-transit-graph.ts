@@ -24,13 +24,25 @@ function main() {
   }
 
   const xml = fs.readFileSync(inputPath, "utf-8");
-  const { nodes, relations } = parseOsmXml(xml);
-  const graph = buildTransitGraph(nodes, relations);
-  save(graph, outputPath);
+  const { nodes, ways, relations } = parseOsmXml(xml);
+  const graph = buildTransitGraph(nodes, ways, relations);
+  // Which Extract built this file (ADR-0030 §6). The shell wrapper exports both from
+  // `osm-snapshot.env`, the single place either pipeline's pin lives; a direct `tsx` run against a
+  // hand-built fixture has no Extract behind it and records "unknown".
+  save(graph, outputPath, {
+    snapshotDate: process.env.OSM_SNAPSHOT ?? "unknown",
+    region: process.env.OSM_RAIL_REGION ?? "unknown",
+  });
 
+  const traced = graph.rideEdges.filter((e) => e.geometry).length;
   console.log(
     `Ingested ${graph.stopNodes.size} stop nodes, ${graph.clusters.size} clusters, ` +
       `${graph.rideEdges.length} ride edges, ${graph.transferEdges.length} transfer edges → ${outputPath}`
+  );
+  console.log(
+    `Traced geometry for ${traced}/${graph.rideEdges.length} ride edges ` +
+      `(${((traced / Math.max(1, graph.rideEdges.length)) * 100).toFixed(1)}%); ` +
+      `${graph.rideEdges.length - traced} draw dashed (ADR-0030 §1/§3).`
   );
 }
 
