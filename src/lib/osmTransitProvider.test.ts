@@ -53,8 +53,18 @@ function buildFixture(): TransitGraph {
     id: "loop-akihabara", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
     stationName: "Akihabara", lat: 35.6984, lng: 139.7731, sequence: 2,
   });
-  graph.rideEdges.push({ fromStopId: "loop-tokyo", toStopId: "loop-kanda", distanceMeters: 1200 });
-  graph.rideEdges.push({ fromStopId: "loop-kanda", toStopId: "loop-akihabara", distanceMeters: 1300 });
+  // Two traced hops (ADR-0030): each shape runs from its edge's `fromStopId` to its `toStopId`,
+  // which is the only direction stored. A search crossing them the other way must reverse.
+  graph.rideEdges.push({
+    fromStopId: "loop-tokyo", toStopId: "loop-kanda", distanceMeters: 1200,
+    geometry: { type: "LineString", coordinates: [[139.7671, 35.6812], [139.769, 35.687], [139.7708, 35.6918]] },
+    tracedLengthMeters: 1260,
+  });
+  graph.rideEdges.push({
+    fromStopId: "loop-kanda", toStopId: "loop-akihabara", distanceMeters: 1300,
+    geometry: { type: "LineString", coordinates: [[139.7708, 35.6918], [139.7731, 35.6984]] },
+    tracedLengthMeters: 1320,
+  });
 
   // Subway spur: Tokyo -> Otemachi (one hop, different line, interchanges with the loop at Tokyo).
   graph.stopNodes.set("spur-tokyo", {
@@ -65,6 +75,8 @@ function buildFixture(): TransitGraph {
     id: "spur-otemachi", lineId: "spur", lineName: "Spur Subway", lineType: "subway",
     stationName: "Otemachi", lat: 35.687, lng: 139.7645, sequence: 1,
   });
+  // Deliberately untraced — the refused case (ADR-0030 §1). A Journey crossing it must carry a
+  // gap, not a substitute.
   graph.rideEdges.push({ fromStopId: "spur-tokyo", toStopId: "spur-otemachi", distanceMeters: 900 });
 
   // Interchange cluster at Tokyo Station, joining the loop and the spur.
@@ -217,6 +229,55 @@ assert.equal(
 );
 assert.equal(matrix[0][2], null, "an isolated point declines rather than getting a fabricated walking estimate");
 assert.equal(matrix[0][0], null, "a point costed against itself also declines — the terminal entry gives the same zero for free");
+
+// ── Rail Path geometry (ADR-0030 §8, §9) ────────────────────────────────────────────────
+
+// nearAkihabara -> nearKanda rides the Kanda->Akihabara edge *backwards*. The stored shape runs
+// the other way, so the span must come back reversed — and the stored shape must not be mutated.
+const storedKandaHop = graph.rideEdges.find((e) => e.fromStopId === "loop-kanda")!.geometry!;
+const storedBefore = JSON.stringify(storedKandaHop.coordinates);
+
+assert.deepEqual(
+  singleRide[0].geometry,
+  [{ type: "LineString", coordinates: [[139.7731, 35.6984], [139.7708, 35.6918]] }],
+  "a ride crossed against the stored direction returns a reversed span"
+);
+assert.equal(JSON.stringify(storedKandaHop.coordinates), storedBefore, "and the stored shape is untouched");
+
+// The same edge ridden the other way returns the stored orientation, unreversed.
+const forwardRide = await describe(nearKanda, nearAkihabara, ["rail"]);
+assert.deepEqual(
+  forwardRide[0].geometry,
+  [{ type: "LineString", coordinates: [[139.7708, 35.6918], [139.7731, 35.6984]] }],
+  "and the same edge ridden forward is not reversed"
+);
+
+// Akihabara -> Otemachi rides two traced loop hops, transfers at Tokyo, then rides one untraced
+// spur hop. The Path carries the two real spans and simply lacks the third (§9) — no invented
+// line bridges the gap.
+const multiLineSpans = multiLine[0].geometry;
+assert.equal(multiLineSpans?.length, 2, "a Journey carries one span per traced ride edge, and none for a refused one");
+assert.deepEqual(
+  multiLineSpans![0].coordinates,
+  [[139.7731, 35.6984], [139.7708, 35.6918]],
+  "spans are in travel order, each oriented to the direction ridden"
+);
+assert.deepEqual(multiLineSpans![1].coordinates, [[139.7708, 35.6918], [139.769, 35.687], [139.7671, 35.6812]]);
+
+// A Journey with no traced edge at all carries no geometry — absent, never an empty list, so the
+// map's "is there a real shape" test reads the same as it did before rail had shapes.
+const spurOnly = await describe(P(35.6813, 139.7672), nearOtemachi, ["rail"]);
+assert.equal(spurOnly[0].geometry, undefined, "an entirely untraced Journey carries no geometry");
+
+// §11: the matrix skips step accumulation. Its costs must be identical to the described Journey's,
+// or the flag changed the answer rather than only the work.
+const geometryMatrix = await provider.costMatrix([nearAkihabara, nearOtemachi], ["rail"]);
+assert.equal(
+  geometryMatrix[0][1]!.durationSeconds,
+  multiLine[0].travelCost.durationSeconds,
+  "skipping step accumulation leaves the matrix cost unchanged"
+);
+assert.equal(geometryMatrix[0][1]!.distanceMeters, multiLine[0].travelCost.distanceMeters);
 
 console.log("✓ osmTransitProvider.test.ts passed");
 }
