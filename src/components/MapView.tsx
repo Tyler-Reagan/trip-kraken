@@ -12,6 +12,7 @@ import type { PathEndpoint } from "@/types/path";
 import { DAY_COLORS, dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { boundsOf, metroOfDay, metrosOf, type Bounds, type TripMetro } from "@/lib/tripMetros";
 import { pairKey, pairsOfDay } from "@/lib/pathPairs";
+import { haversineMeters } from "@/lib/geo";
 import { usePathGeometry } from "@/lib/usePathGeometry";
 
 // #145: CARTO's keyless basemap endpoint is outside its published license (enterprise/grant-only,
@@ -50,6 +51,11 @@ const ALPHA_METRO = 0.55;
 const ALPHA_REST = 0.28;
 
 const LODGING_COLOR = "#e5e7eb"; // gray-200
+
+// Shortest stretch between two of a Path's spans still worth drawing dashed (ADR-0030 §9). Below
+// this it's a router's snap offset, not a gap in what we know; above it, the smallest real gap is
+// an untraced inter-station ride edge, which is kilometres.
+const GAP_MIN_METERS = 200;
 
 type TooltipState = {
   x: number;
@@ -233,6 +239,15 @@ export default function MapView() {
           properties: { color, alpha: routeAlpha, dashed: 1 },
         });
       };
+      /** A dashed stretch between two spans, or between a span and the Path's own end — skipped
+       * when the two points are effectively the same place. Every routed span starts wherever its
+       * router snapped to, tens of metres off the requested coordinate, and a dash drawn across
+       * that offset would claim a gap that isn't one. A real missing stretch is an untraced ride
+       * edge — a whole inter-station hop — so the two are far apart in scale, not adjacent. */
+      const drawGap = (from: PathEndpoint, to: PathEndpoint) => {
+        if (haversineMeters(from, to) < GAP_MIN_METERS) return;
+        drawStraight(from, to);
+      };
 
       for (const pair of pairsOfDay(day)) {
         const paths = pathGeometry.get(pairKey(roadProfile, pair));
@@ -246,11 +261,27 @@ export default function MapView() {
         for (const path of paths) {
           // Presence of geometry, not `basisOfCost` — "is there a real shape to draw" is the
           // question, and it stays right for a rail Path with a real Basis and no shape yet (#142).
-          if (path.geometry) {
-            routes.features.push({ type: "Feature", geometry: path.geometry, properties: { color, alpha: routeAlpha, dashed: 0 } });
-          } else {
+          const spans = path.geometry ?? [];
+          if (spans.length === 0) {
             drawStraight(path.from, path.to);
+            continue;
           }
+
+          // Solid per span, dashed across what is left (ADR-0030 §9, restating ADR-0029 §3 one
+          // level down). A Path may know its shape in pieces — a rail Journey whose ride edges
+          // traced individually, one of them refused at ingest — so the test is per span, not per
+          // Path. The gaps are drawn dashed rather than folded into the solid line: bridging them
+          // would draw an invented straight line and report it as routed.
+          let cursor: PathEndpoint = path.from;
+          for (const span of spans) {
+            const coords = span.coordinates;
+            const first = coords[0];
+            const last = coords[coords.length - 1];
+            drawGap(cursor, { lng: first[0], lat: first[1] });
+            routes.features.push({ type: "Feature", geometry: span, properties: { color, alpha: routeAlpha, dashed: 0 } });
+            cursor = { lng: last[0], lat: last[1] };
+          }
+          drawGap(cursor, path.to);
         }
       }
     }

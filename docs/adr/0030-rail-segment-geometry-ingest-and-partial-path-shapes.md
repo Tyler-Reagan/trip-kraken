@@ -234,6 +234,85 @@ decomposition to show transfer detail in the sidebar.
 §9 is what makes deferring this affordable: because a Path carries several spans, a multi-line
 journey still draws its real track correctly while remaining one Path.
 
+> ### Amended 2026-08-20 — the implementation measures what this ADR estimated, and adds one rule §2 needed
+
+> Slices 1 and 3a shipped (#197, #196). Every figure below is measured on the pinned `260101`
+> national Extract this ADR already specified, so these replace estimates rather than revise
+> decisions. **No decision above changed.** One rule is added, because §2 turned out to be
+> underspecified in a way only real data showed.
+
+> **The refusal rate is 6.4%, not "roughly 5–8%".** §9 derived its band from the research's
+> jump-distance proxy. The real assembler refuses 1,293 of 20,281 ride edges. The ride-edge count
+> matches ADR-0019's J5 figure exactly, so this describes the artefact the app ships, not a
+> lookalike. §9's argument is unaffected and, if anything, strengthened: a long rail journey still
+> crosses enough refused edges that all-or-nothing Path geometry would discard many real answers to
+> represent one missing one.
+
+> **Gating on known discontinuity refuses far less than the proxy implied**, which is §1's own
+> reasoning confirmed. The proxy called 82.2% of segments clean; the assembler gets a shape onto
+> 93.6% of ride edges. Most 500 m–2 km jumps really are sparse straight track, exactly as §1
+> predicted when it rejected a jump-distance threshold.
+
+> **Storage came in under estimate.** `db/transit-japan.db` is **11.65 MB**, against §5's projected
+> 12.78 MB, at a mean 150 B per stored shape. The encoding decision stands as measured.
+
+> **Ingest cost is no longer unmeasured** — the Consequences called for watching this on the first
+> real run. The Node transform takes **8.3 s at 2.26 GB peak RSS**, and needs no
+> `--max-old-space-size`. Wall-clock for the whole pipeline is dominated by the 2.34 GB download,
+> not by parsing. The pinned `260101` files were still live on Geofabrik on 2026-08-20.
+
+> **The traced-to-straight ratio over the shipped edges is 1.059**, against the research's 1.077
+> over its own narrower clean subset. §4's future retune should use this figure, and should note it
+> is smaller than the number that ADR quoted.
+
+> #### Added rule: a stop resolves to its position on the pass actually ridden
+
+> §2 says a closed chain's closing hop is `chain[lastStopIndex..end]` joined to
+> `chain[0..firstStopIndex]`. That is exact, and it is right for a ring. It is silent on **how a
+> stop index is obtained at all**, and the obvious reading — the stop node's first occurrence in the
+> chain — is wrong for any route that passes one place twice.
+>
+> Two shapes of route do:
+>
+> - A **lasso** (a stem out to a junction, then a loop back to it) lists its stem way twice, so the
+>   assembled chain begins and ends at the same node and satisfies §2's closed test without being a
+>   ring. Taking the junction's first occurrence traced the entire outbound journey: 4.70 km for a
+>   0.45 km hop on 山万ユーカリが丘線.
+> - A route whose stop order the chain cannot explain at all traced the long way round: 25.3 km for
+>   a 1.0 km hop on 名古屋市営名城線.
+>
+> **The rule: a stop resolves to its first chain position at or after the previous stop's.** This is
+> exact, not a heuristic — stops arrive in travel order, so the track ridden between two of them
+> runs forward along the chain, which makes "the next occurrence" the definition rather than a
+> guess. §2's wraparound stays as the fallback for when no occurrence qualifies, which is precisely
+> the genuine ring whose seam falls between the last stop and the first.
+>
+> Two supporting decisions come with it. Chain **direction** is decided once per line by majority
+> vote before any cut, so a chain assembled against the direction of travel — about 1% of relations
+> — is turned around exactly rather than reversed per segment. And a hop that remains unexplainable
+> after both rules is **refused under §1**, never sliced and reversed. Refusing is the ADR's own
+> posture: the alternative draws an invented line and reports it as routed.
+>
+> The three lines §2 names as the ones worth special-casing are all correct on the shipped file.
+> JR山手線 peaks at 1.53×, where a naive cut traced 33.71 km for a 0.77 km hop. Nationally **one
+> ride edge of 18,978 exceeds 3.0×**, and it is 坪尻 — a switchback station where trains really do
+> reverse, so that trace is likely correct track rather than a defect.
+
+> #### Two small implementation notes
+>
+> **`scripts/ingest-transit-graph.sh` changes by one line**, which the Consequences' "which itself
+> is unchanged" did not anticipate. The claim holds for the `osmium` filter step — reference
+> completion is transitive and no filter change was needed, as this ADR established. But §6's `Meta`
+> row needs the snapshot date, and that script is the only place that knows the pin. It exports
+> `OSM_SNAPSHOT` and `OSM_RAIL_REGION` rather than have TypeScript parse a shell env file.
+>
+> **§9's renderer wording is implemented as dashes in the gaps, not a chord underneath.** §9 says
+> the renderer draws each span "over the Path's dashed straight chord". Read literally that puts a
+> dashed chord under every Path including a fully routed `osrm` one, visible wherever the real route
+> bends away from straight — which contradicts what ADR-0029 §3 makes dashed *mean*. The renderer
+> instead draws dashes only where a span is missing: before the first, between consecutive spans,
+> and after the last, with a floor that ignores a router's snap offset. Same rule, honest result.
+
 ## Alternatives considered
 
 - **Change the osmium filter step to retain `way` members.** Unnecessary — reference completion is
