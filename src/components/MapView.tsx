@@ -52,10 +52,18 @@ const ALPHA_REST = 0.28;
 
 const LODGING_COLOR = "#e5e7eb"; // gray-200
 
-// Shortest stretch between two of a Path's spans still worth drawing dashed (ADR-0030 §9). Below
-// this it's a router's snap offset, not a gap in what we know; above it, the smallest real gap is
-// an untraced inter-station ride edge, which is kilometres.
-const GAP_MIN_METERS = 200;
+// Shortest stretch between two of a Path's spans still worth drawing dashed (ADR-0030 §9). This
+// exists only to absorb a *router's snap offset* — the tens of metres between a Location's real
+// coordinates and the way OSRM snapped it to, which is not a gap in what we know. OSRM's own
+// in-Extract points snap under ~35 m (`osrmProvider.ts`), so 50 m clears that and nothing else.
+//
+// It was 200 m, chosen by comparing a snap offset against an untraced ride edge — tens of metres
+// against kilometres, so anything between looked safe. That reasoning missed the two stretches a
+// rail Path is actually made of: the access walk from a Location to its station, and the transfer
+// walk at an interchange. Both sit at 100–500 m, straddling the old floor, so a real 199.8 m
+// transfer on the 都営大江戸線 drew as *nothing at all* while a 210 m one would have dashed. A
+// walk we did not route must read as a walk we did not route, at every length.
+const GAP_MIN_METERS = 50;
 
 type TooltipState = {
   x: number;
