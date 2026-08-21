@@ -25,7 +25,7 @@
 
 import assert from "node:assert/strict";
 import { createGraph, buildSpatialIndex, type TransitGraph } from "./transitGraph";
-import { createOsmTransitProvider, snapStations } from "./osmTransitProvider";
+import { createOsmTransitProvider, snapStations, LINE_TYPE_SPEEDS_KMH, PREMIUM_BOARDING_MINUTES } from "./osmTransitProvider";
 import { journeyCost, type PathKind } from "@/types/path";
 
 // tsx compiles this file to CJS (no "type": "module" in package.json), which doesn't support
@@ -228,6 +228,35 @@ const equalDistanceSubwayJourney = await describe(nearCompareA, nearCompareB, ["
 assert.ok(
   journeyCost(shinkansenJourney)!.durationSeconds < journeyCost(equalDistanceSubwayJourney)!.durationSeconds,
   "a Shinkansen hop is faster than an equal-distance subway hop"
+);
+
+// ── Premium boarding charge (ADR-0033) ──────────────────────────────────────────────────
+//
+// Boarding a Shinkansen costs flat minutes on top of the ride, charged once. 260 km at 220 km/h is
+// ~71 min of riding; the Path must report that plus the charge, and nothing per-hop on top.
+const shinkansenRail = shinkansenJourney.find((p) => p.kind === "rail")!;
+const ridingMinutes = 260 / LINE_TYPE_SPEEDS_KMH.shinkansen * 60;
+assert.ok(
+  Math.abs(shinkansenRail.travelCost.durationSeconds / 60 - (ridingMinutes + PREMIUM_BOARDING_MINUTES.shinkansen)) < 1e-6,
+  "a rail Path carries its ride time plus one boarding charge for the service it boarded"
+);
+
+// The charge is levied once per boarding, not per station: the two-hop Loop Line ride pays nothing
+// (commuter), and a premium ride of many hops would still pay a single charge.
+const commuterRail = multiLine[1];
+assert.equal(PREMIUM_BOARDING_MINUTES.commuter, 0, "an ordinary commuter line carries no boarding charge");
+assert.ok(
+  Math.abs(commuterRail.travelCost.durationSeconds / 60 - 2500 / 1000 / LINE_TYPE_SPEEDS_KMH.commuter * 60) < 1e-6,
+  "so a commuter Path's duration is exactly its ride time"
+);
+
+// And it must reach the matrix identically, since the optimizer plans against the same search
+// (ADR-0033 §6) — a charge that changed only the described Journey would let the optimizer keep
+// building Plans around free Shinkansen hops.
+const shinkansenMatrix = await provider.costMatrix([nearTokyoForShinkansen, nearNagoya], ["rail"]);
+assert.ok(
+  Math.abs(shinkansenMatrix[0][1]!.durationSeconds - journeyCost(shinkansenJourney)!.durationSeconds) < 1e-6,
+  "the boarding charge reaches costMatrix, not just describeJourney"
 );
 
 // ── Station-snapping picks the nearest station, not just any station in range ──

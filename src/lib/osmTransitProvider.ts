@@ -84,6 +84,28 @@ export const LINE_TYPE_SPEEDS_KMH: Record<LineType, number> = {
 /** Flat per-transfer minutes (platform walk + wait, deliberately not split — ADR-0019). */
 export const TRANSFER_MINUTES = 5;
 
+/**
+ * Flat minutes charged once when a traveler **boards** a premium service (ADR-0033) — the fare, the
+ * seat reservation, the separate gate, and the wait. None of those are time, but the cost model
+ * speaks only in time, so a time proxy is the only lever available.
+ *
+ * Charged per *boarding*, never per hop, because that is when a traveler pays it. That is what makes
+ * it discriminate correctly: a 150-minute Tokyo→Osaka absorbs 30 minutes, while a four-minute
+ * Shinagawa hop becomes 34 and rightly loses to the nine-minute local.
+ *
+ * Without it, #192's classifier fix has a sharp edge: once a Shinkansen is correctly priced at
+ * 220 km/h and nothing else about it costs anything, the search routes ordinary city journeys onto
+ * it. Measured over 91 real Tokyo-area pairs: 0% before that fix, 16% after, 0% again with this.
+ *
+ * Tune this table against the J5 eval, the same way `LINE_TYPE_SPEEDS_KMH` is tuned.
+ */
+export const PREMIUM_BOARDING_MINUTES: Record<LineType, number> = {
+  subway: 0,
+  commuter: 0,
+  limitedExpress: 15,
+  shinkansen: 30,
+};
+
 /** Walking speed for station-access legs and the no-station-in-range fallback. */
 export const WALK_SPEED_KMH = 4.5;
 
@@ -235,12 +257,17 @@ function shortestPath(
   };
 
   for (const seed of seeds) {
+    // The other place a boarding happens (ADR-0033 §3): starting the Journey already on this line
+    // rather than reaching it through a transfer. Charged here, at the seed, and deliberately not
+    // inside `snapWithWalkCost` — that helper serves both ends of the Journey, and the far end is
+    // an *alighting*, which owes nothing.
+    const seedMinutes = seed.walkMinutes + PREMIUM_BOARDING_MINUTES[seed.stop.lineType];
     const existing = timeMin.get(seed.stop.id);
-    if (existing !== undefined && existing <= seed.walkMinutes) continue;
-    timeMin.set(seed.stop.id, seed.walkMinutes);
+    if (existing !== undefined && existing <= seedMinutes) continue;
+    timeMin.set(seed.stop.id, seedMinutes);
     distanceMeters.set(seed.stop.id, seed.walkMeters);
     if (withSteps) steps.set(seed.stop.id, []);
-    push(seed.stop.id, seed.walkMinutes);
+    push(seed.stop.id, seedMinutes);
   }
 
   const remainingTargets = new Set(toStopIds);
@@ -276,7 +303,12 @@ function shortestPath(
     for (const transferEdge of adjacency.transfer.get(current.id) ?? []) {
       const toStopId = transferEdge.toStopId;
       if (visited.has(toStopId)) continue;
-      const candidateTime = currentTime + TRANSFER_MINUTES;
+      // Boarding, charged here rather than on the ride edge: stop nodes are line-scoped, so a
+      // transfer edge is the *only* way to change lines, which makes it exactly the moment a
+      // traveler buys the ticket and walks to the other gate. Charging per ride edge instead would
+      // scale the fare with the number of stations, which is not how any of this works.
+      const boardingType = graph.stopNodes.get(toStopId)?.lineType ?? "commuter";
+      const candidateTime = currentTime + TRANSFER_MINUTES + PREMIUM_BOARDING_MINUTES[boardingType];
       if (candidateTime < (timeMin.get(toStopId) ?? Infinity)) {
         timeMin.set(toStopId, candidateTime);
         distanceMeters.set(toStopId, currentDistance);
@@ -357,6 +389,15 @@ function railPathOf(graph: TransitGraph, adjacency: Adjacency, run: RideStep[]):
       );
     }
   }
+
+  // The boarding charge the search levied for getting onto this service (ADR-0033), carried by the
+  // Path that bought passage — so the decomposed chain still sums to the search's own total
+  // (ADR-0032 §5). It rides here rather than on the walk or transfer Path in front of it, even
+  // though that is where a traveler physically spends the time, because #140 is about to replace
+  // every walk Path's cost with a real routed one: a walking Path carrying a Shinkansen surcharge
+  // would either be overwritten or have to be unpicked first. A walk stays a walk.
+  const boardingType = graph.stopNodes.get(run[0].fromStopId)?.lineType ?? "commuter";
+  minutes += PREMIUM_BOARDING_MINUTES[boardingType];
 
   return {
     kind: "rail",
