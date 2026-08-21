@@ -59,6 +59,12 @@ const nodes: OsmNode[] = [
   { id: "yoyogi", lat: 35.6828, lon: 139.7021, tags: { name: "Yoyogi" } },
   { id: "shinjukuOsaka", lat: 34.6937, lon: 135.5023, tags: { name: "Shinjuku" } },
   { id: "osakaNext", lat: 34.7, lon: 135.51, tags: { name: "Osaka Next" } },
+  // A second, unclustered Tokyo/Nagoya pair (same coordinates as tokyoA/nagoya, distinct ids) for
+  // the `duration`-based classification fixtures below — kept off tokyoA/nagoya deliberately so
+  // reusing this pair across several relations can't pull extra stop nodes into the R5 stop_area
+  // cluster asserted above.
+  { id: "tokyoC", lat: 35.6812, lon: 139.7671, tags: { name: "Tokyo" } },
+  { id: "nagoyaC", lat: 35.1709, lon: 136.8815, tags: { name: "Nagoya" } },
 ];
 
 function route(id: string, name: string, routeValue: string, stopIds: string[], extraTags: Record<string, string> = {}): OsmRelation {
@@ -74,6 +80,13 @@ const relations: OsmRelation[] = [
   route("R2", "Marunouchi Line", "subway", ["tokyoB", "otemachi"]),
   route("R3", "Yamanote Line", "train", ["tokyoA", "kanda"]),
   route("R4", "Toei Bus 1", "bus", ["busStop1", "busStop2"]),
+  // Same Tokyo-Nagoya distance as R1 (~268 km), but no `service` tag — real Japanese Shinkansen/
+  // limited-express relations mostly don't carry one (issue #192). Only `duration` distinguishes
+  // these three from each other and from R3's plain commuter hop above.
+  route("R11", "Nozomi (no service tag)", "train", ["tokyoC", "nagoyaC"], { duration: "1:00" }),
+  route("R12", "Odoriko (no service tag)", "train", ["tokyoC", "nagoyaC"], { duration: "3:00" }),
+  route("R13", "Slow local (no service tag)", "train", ["tokyoC", "nagoyaC"], { duration: "10:00" }),
+  route("R14", "Malformed duration", "train", ["tokyoC", "nagoyaC"], { duration: "not-a-duration" }),
   route("R6", "Shibuya JR", "train", ["shibuyaJR", "harajuku"]),
   route("R7", "Shibuya Metro", "monorail", ["shibuyaMetro", "meijijingumae"]),
   route("R8", "Shinjuku JR", "train", ["shinjukuA", "minamiShinjuku"]),
@@ -123,8 +136,31 @@ assert.ok(
 );
 assert.equal(graph.stopNodes.get("R1:tokyoA")!.lineType, "shinkansen", "route=train + service=high_speed -> shinkansen");
 assert.equal(graph.stopNodes.get("R2:tokyoB")!.lineType, "subway", "route=subway -> subway");
-assert.equal(graph.stopNodes.get("R3:tokyoA")!.lineType, "commuter", "plain route=train -> commuter");
+assert.equal(graph.stopNodes.get("R3:tokyoA")!.lineType, "commuter", "plain route=train, no duration tag -> commuter");
 assert.equal(graph.stopNodes.get("R7:shibuyaMetro")!.lineType, "commuter", "route=monorail -> commuter");
+
+// ── Classification falls back to implied average speed (`duration` ÷ distance) when `service`
+// is absent, per ADR-0019's own fix (issue #192) — same ~268 km Tokyo-Nagoya hop as R1, unlabeled ──
+assert.equal(
+  graph.stopNodes.get("R11:tokyoC")!.lineType,
+  "shinkansen",
+  "no service tag, but 268 km in 1:00 (~268 km/h, over the 150 km/h threshold) -> shinkansen"
+);
+assert.equal(
+  graph.stopNodes.get("R12:tokyoC")!.lineType,
+  "limitedExpress",
+  "no service tag, 268 km in 3:00 (~89 km/h, between the two thresholds) -> limitedExpress"
+);
+assert.equal(
+  graph.stopNodes.get("R13:tokyoC")!.lineType,
+  "commuter",
+  "no service tag, 268 km in 10:00 (~27 km/h, under both thresholds) -> commuter"
+);
+assert.equal(
+  graph.stopNodes.get("R14:tokyoC")!.lineType,
+  "commuter",
+  "an unparseable duration tag is not guessed at -> commuter, same as no tag at all"
+);
 assert.equal(graph.stopNodes.get("R1:tokyoA")!.sequence, 0, "first member sequenced 0");
 assert.equal(graph.stopNodes.get("R1:nagoya")!.sequence, 1, "second member sequenced 1");
 

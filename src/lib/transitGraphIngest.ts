@@ -20,8 +20,9 @@
  * per-hop distance as an input to a per-line-type effective speed, not a precision timing figure,
  * so haversine remains the honest granularity — consistent with `haversineMeters` being the "real
  * distance" primitive everywhere else in this graph (`osmTransitProvider.ts`). Swapping the traced
- * length in raises every rail duration ~7.7% (ADR-0030 §4) and is its own ticket, blocked on the
- * line-type classifier defect (#192).
+ * length in raises every rail duration ~7.7% (ADR-0030 §4) and is its own ticket (#193), which also
+ * retunes `LINE_TYPE_SPEEDS_KMH` against the line-type classifier fixed here (#192) rather than
+ * against a model where every Shinkansen ran at the `commuter` speed.
  */
 
 import { haversineMeters } from "@/lib/geo";
@@ -64,13 +65,58 @@ export interface OsmRelation {
 // trolleybus, ferry, ...) is excluded by simply never being in this list.
 const RAIL_ROUTE_VALUES = new Set(["train", "subway", "light_rail", "monorail"]);
 
-function lineTypeOf(relation: OsmRelation): LineType {
+// ADR-0019's own fix, thresholded as it suggested: real Japanese `route=train` relations do not
+// reliably carry the `service` sub-tag (issue #192 measured zero of 1,419 lines classified via it
+// nationally), but a named Shinkansen/limited-express relation's own `duration` tag, divided by its
+// stops' real distance, self-calibrates without depending on how any one contributor tagged it.
+const SHINKANSEN_SPEED_THRESHOLD_KMH = 150;
+const LIMITED_EXPRESS_SPEED_THRESHOLD_KMH = 80;
+
+/** OSM's plain `duration` tag on a route relation: `H:MM` or `H:MM:SS`, no seen use of ISO 8601 on
+ * real Japanese rail relations. Anything else returns null rather than guess. */
+function parseDurationSeconds(duration: string | undefined): number | null {
+  if (!duration) return null;
+  const parts = duration.split(":").map(Number);
+  if (parts.length < 2 || parts.length > 3 || parts.some((p) => !Number.isFinite(p))) return null;
+  const [h, m, s = 0] = parts;
+  return h * 3600 + m * 60 + s;
+}
+
+/** The straight-line distance a route relation's own stops span, summed consecutively. Computed
+ * independently of ride-edge construction because classification has to happen before any edge
+ * exists to read it from — this walks the same stop members the same way, so it is the same
+ * distance those edges end up carrying. */
+function lineDistanceMeters(stopMembers: OsmMember[], nodesById: Map<string, OsmNode>): number {
+  let total = 0;
+  let previous: OsmNode | null = null;
+  for (const member of stopMembers) {
+    const osmNode = nodesById.get(member.ref);
+    if (!osmNode) continue;
+    if (previous) {
+      total += haversineMeters(
+        { lat: previous.lat, lng: previous.lon },
+        { lat: osmNode.lat, lng: osmNode.lon }
+      );
+    }
+    previous = osmNode;
+  }
+  return total;
+}
+
+function lineTypeOf(relation: OsmRelation, distanceMeters: number): LineType {
   const route = relation.tags.route;
   if (route === "subway") return "subway";
   if (route === "light_rail" || route === "monorail") return "commuter";
-  // route === "train": OSM's `service` sub-tag distinguishes trunk speed classes.
+  // route === "train": the `service` sub-tag stays the first check — some contributors do tag it —
+  // falling back to the relation's own implied average speed when it doesn't.
   if (relation.tags.service === "high_speed") return "shinkansen";
   if (relation.tags.service === "long_distance") return "limitedExpress";
+  const durationSeconds = parseDurationSeconds(relation.tags.duration);
+  if (durationSeconds) {
+    const impliedSpeedKmh = distanceMeters / 1000 / (durationSeconds / 3600);
+    if (impliedSpeedKmh > SHINKANSEN_SPEED_THRESHOLD_KMH) return "shinkansen";
+    if (impliedSpeedKmh > LIMITED_EXPRESS_SPEED_THRESHOLD_KMH) return "limitedExpress";
+  }
   return "commuter";
 }
 
@@ -115,11 +161,11 @@ function buildLines(
   for (const relation of relations) {
     if (!RAIL_ROUTE_VALUES.has(relation.tags.route ?? "")) continue;
 
-    const lineType = lineTypeOf(relation);
     const lineName = lineNameOf(relation);
     const stopMembers = relation.members.filter(
       (m) => m.type === "node" && m.role.startsWith("stop")
     );
+    const lineType = lineTypeOf(relation, lineDistanceMeters(stopMembers, nodesById));
 
     let sequence = 0;
     let previous: { id: string; node: OsmNode } | null = null;
