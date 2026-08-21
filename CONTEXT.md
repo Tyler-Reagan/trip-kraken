@@ -39,12 +39,17 @@ yet known) or a date and a time (designated, and constrains that Day's window).
 _Avoid_: terminus, endpoint, base
 
 **Authored / surfaced (Transit)**:
-Two provenances for one kind (ADR-0028), on opposite sides of the solve. **Authored** Transit is
-written by a traveller and is an optimizer *input*: the Trip's two edges, and nothing else.
-**Surfaced** Transit is a station a Journey's rail Path passes through — derived from the Plan,
-projected every read, never stored, and therefore an optimizer *output*. Storing a surfaced station
-would write the optimizer's output back into its own input, so a re-solve would stop being a
-function of what the traveller provided. Surfaced Transit is not built yet.
+Two ways one kind reaches the read model (ADR-0028, ADR-0035), on opposite sides of the solve.
+**Authored** Transit is written by a traveller and is an optimizer *input*: the Trip's two edges, and
+nothing else — `Transit.authored: true`. **Surfaced** Transit (`authored: false`) is a station
+strictly between a Journey's own endpoints that its rail Path passes through (the endpoints
+themselves are already Authored, so re-surfacing them would render the same place twice) — derived
+from a Journey's `Path[]`, projected by a standalone function (`surfacedTransitOf`, ADR-0035) rather
+than stored, and therefore an optimizer *output*. Storing a surfaced station would write the
+optimizer's output back into its own input, so a re-solve would stop being a function of what the
+traveller provided. Surfaced Transit is never merged into `trip.locations` or `DerivedDay` — nothing
+that narrows on `isTransit()` needs to account for it.
+_Avoid_: provenance, origin (reserved for **Answered by**)
 
 **Constraint**:
 An intrinsic temporal fact stored as a **field on a Location** (lodging dates, transit
