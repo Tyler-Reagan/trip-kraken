@@ -97,9 +97,11 @@ for (let i = 0; i < points.length - 1; i++) {
   // A decline (ADR-0024 §4) is a legitimate outcome for a pair with no station in range — this
   // loop is looking for at least one real rail Path among the consecutive points, not asserting
   // every pair routes.
-  if (journey?.[0].kind === "rail") {
+  // A decomposed Journey (ADR-0032) leads with its access walk, so the rail Paths are looked for
+  // across the whole chain rather than at its head.
+  for (const railPath of journey?.filter((p) => p.kind === "rail") ?? []) {
     sawRealTransitPath = true;
-    assert.equal(journey[0].travelCost.basisOfCost, "railNetwork", "a real transit Path is routed, not estimated");
+    assert.equal(railPath.travelCost.basisOfCost, "railNetwork", "a real transit Path is routed, not estimated");
   }
 }
 assert.ok(

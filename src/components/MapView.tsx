@@ -269,9 +269,15 @@ export default function MapView() {
         for (const path of paths) {
           // Presence of geometry, not `basisOfCost` — "is there a real shape to draw" is the
           // question, and it stays right for a rail Path with a real Basis and no shape yet (#142).
+          //
+          // `drawGap`, not `drawStraight`: a Path with no shape *is* a gap, so it answers to the
+          // same minimum. Decomposition (ADR-0032) is what made the distinction matter — a two-metre
+          // access walk and a same-platform transfer are now Paths of their own, where before they
+          // were interior gaps this threshold already suppressed. Drawing them would claim a gap
+          // that isn't one, which is the exact thing `drawGap` exists to prevent.
           const spans = path.geometry ?? [];
           if (spans.length === 0) {
-            drawStraight(path.from, path.to);
+            drawGap(path.from, path.to);
             continue;
           }
 
