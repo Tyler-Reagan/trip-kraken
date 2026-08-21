@@ -109,9 +109,16 @@ export function isPersistable(cost: TravelCost): cost is PersistableTravelCost {
  * `lat`/`lng` are the *requested* coordinates — the Location's own, not wherever a router snapped
  * them to. A routed Path's snapped ends are already the first and last vertices of its `geometry`
  * (its first and last span, once that became a list), so nothing needs a second field to carry
- * them (#149 grill, 2026-08-05). */
+ * them (#149 grill, 2026-08-05). An endpoint a decomposition *created* has no Location behind it,
+ * so its requested coordinates are the station's own. */
 export interface PathEndpoint extends Point {
   locationId?: string;
+  /** The station this endpoint is, when it is one (ADR-0032 §3) — a stop node's own station name
+   * where a rail Path boards or alights, and the *station cluster's* name at a transfer, which is
+   * the "change at Kyoto" fact a traveler can act on (ADR-0028 §6). Lives here rather than on
+   * `WalkingPath` because a rail Path's own ends are just as nameable, and because this is already
+   * where an endpoint's identity-adjacent fields live. */
+  stationName?: string;
 }
 
 /** GeoJSON LineString — the one geometry encoding a Path speaks. Originally a union with an
@@ -167,11 +174,59 @@ export const isBicyclePath = (p: Path): p is BicyclePath => p.kind === "bicycle"
 export const isUnknownPath = (p: Path): p is UnknownPath => p.kind === undefined;
 
 /**
+ * What a whole **Journey** costs: the sum of its Paths' costs (ADR-0032). Exact rather than
+ * approximate by construction — §5 recomputes each decomposed Path from its own steps, so summing
+ * the chain reproduces the figure the provider's own search arrived at.
+ *
+ * Use this, never `paths[0].travelCost`, for any caller that wants the whole A→B cost. That
+ * shorthand was correct only while a provider returned one Path per Journey; a decomposed rail
+ * Journey now begins with its *access walk*, so reading the first element silently reports a
+ * 500-metre stroll as the cost of a cross-city train ride.
+ *
+ * `basisOfCost` and `answeredBy` come from the **most-routed** Path in the chain — real topology
+ * beats `straightLine`, ties broken by duration — rather than from a weakest-link rule.
+ *
+ * Weakest-link is the tempting reading and it is wrong here. A rail Journey's access walks and
+ * transfers are `straightLine` by construction (ADR-0032 §2/§4), so weakest-link would stamp
+ * *every* rail Journey `straightLine` and make the marker meaningless, which is the failure #139's
+ * own resolution warned against. It also misreads what those legs are: station-snapping walk edges
+ * and the flat `TRANSFER_MINUTES` are components of the rail graph's own cost model (ADR-0019),
+ * not a fallback away from it. The Journey really was costed by traversing real topology.
+ *
+ * Duration alone is not the tie-break either, and the provider's own fixture proves it: a flat
+ * 5-minute transfer out-durates two short urban hops, so "longest Path wins" reports a
+ * three-station ride as a straight-line estimate. Most-routed reproduces what each of these
+ * Journeys reported before decomposition — `railNetwork` for a rail Journey, `routingService` for
+ * a routed walk, `straightLine` for a Journey where genuinely nothing was routed.
+ */
+const BASIS_ROUTEDNESS: Record<BasisOfCost, number> = {
+  railNetwork: 1,
+  routingService: 1,
+  straightLine: 0,
+};
+
+export function journeyCost(paths: Path[]): TravelCost | undefined {
+  if (paths.length === 0) return undefined;
+  let distanceMeters = 0;
+  let durationSeconds = 0;
+  let representative = paths[0].travelCost;
+  for (const path of paths) {
+    const cost = path.travelCost;
+    distanceMeters += cost.distanceMeters;
+    durationSeconds += cost.durationSeconds;
+    const routedness = BASIS_ROUTEDNESS[cost.basisOfCost] - BASIS_ROUTEDNESS[representative.basisOfCost];
+    if (routedness > 0 || (routedness === 0 && cost.durationSeconds > representative.durationSeconds)) {
+      representative = cost;
+    }
+  }
+  return makeTravelCost(distanceMeters, durationSeconds, representative.basisOfCost, representative.answeredBy);
+}
+
+/**
  * ADR-0026's self-heal response shape (#171) — the one new pair a removed activity Placement's
- * neighbors became, and what it costs to travel between them. Not a `Journey`: it carries the raw
- * `TravelCost` from `describeJourney`'s first (and, today, only) `Path`, not a decomposed chain —
- * the same simplification `describeJourney`'s own docblock already names as current, not a new one
- * introduced here.
+ * neighbors became, and what it costs to travel between them. Not a `Journey`: it carries the
+ * summed `TravelCost` of the chain `describeJourney` returned (`journeyCost` above), flattened to
+ * the one number the healed pair displays.
  *
  * `null` (never present in the API response at all) covers every case with nothing to heal: the
  * removed Placement was first or last in its Day (the new neighbor is an Anchor, not a Placement —

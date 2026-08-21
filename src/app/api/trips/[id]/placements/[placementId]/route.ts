@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTripWithDetails, removePlacement } from "@/lib/db";
 import { describeJourney } from "@/lib/travelCostRegistry";
 import { findHealablePair, healKinds } from "@/lib/selfHeal";
-import type { HealedPair } from "@/types/path";
+import { journeyCost, type HealedPair } from "@/types/path";
 
 /**
  * Unschedule an activity (ADR-0015): delete the placement; the Location stays a candidate.
@@ -35,7 +35,10 @@ export async function DELETE(
   const paths = await describeJourney(pair.from, pair.to, healKinds(before), {
     departureTime: new Date(`${pair.date}T09:00:00`),
   });
-  const travelCost = paths?.[0]?.travelCost;
+  // The whole chain's cost, not its first Path's (ADR-0032): a decomposed rail Journey now starts
+  // with its access walk, so `paths[0]` would report the stroll to the station as the cost of the
+  // ride.
+  const travelCost = paths ? journeyCost(paths) : undefined;
 
   const healedPair: HealedPair | null = travelCost
     ? { fromLocationId: pair.from.locationId, toLocationId: pair.to.locationId, travelCost }

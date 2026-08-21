@@ -124,6 +124,61 @@ returns an untyped Path (`{ from, to, travelCost }`, `kind` absent) because "not
 to `UnknownPath` than any other walk-only Path — `UnknownPath` means no route was computed at all,
 and a haversine-at-walk-speed estimate is a computed (if honest-about-being-approximate) route.
 
+> ### Amended 2026-08-20 — the renderer did need one change, and the Consequences said it would not
+>
+> Implemented the same day. **No decision above changed**, and the measurements below replace this
+> ADR's one unverified prediction rather than revise a decision.
+>
+> **"`MapView.tsx`: no code change expected" was wrong, and checking is what caught it.** The
+> Consequences said to confirm the rendering visually rather than assume it held. Confirmed instead
+> by replicating the renderer's feature assembly over the same real Journeys in both shapes — the
+> pre-decomposition single Path and the decomposed chain — and diffing the output, which is exact
+> where an eyeball is not.
+>
+> A spanless Path called `drawStraight` **unconditionally**, bypassing the renderer's own
+> `GAP_MIN_METERS` (50 m). That threshold exists because "a dash drawn across [a router's snap]
+> offset would claim a gap that isn't one." Before decomposition, a two-metre access walk and a
+> same-platform transfer were *interior gaps* between spans, and the threshold suppressed them.
+> Decomposition promoted them to Paths of their own, so they began drawing as dashed stubs — the
+> precise thing the threshold was written to prevent, reached by a route its author had not
+> anticipated. **The fix is one line: a Path with no shape *is* a gap, so it answers to the same
+> minimum.** `drawGap` replaces `drawStraight` in that branch.
+>
+> **With that, the prediction holds as measured** on `db/transit-japan.db`, over three real
+> Journeys (one single-line, one crossing two interchanges, one inter-city):
+>
+> - **Solid geometry is byte-identical** in all three — same spans, same coordinates, same order.
+>   Decomposition redistributes spans across more Paths and changes none of them.
+> - **Dashed features match feature-for-feature**, differing only by **≤ 0.67 m** of coordinate
+>   precision, which is not an error introduced here: a station endpoint carries its own full
+>   coordinates while a span's endpoint has been through 5dp storage, whose maximum positional error
+>   ADR-0030 §5 measured at 0.740 m. The disagreement is that rounding and nothing else.
+> - **One 50.2 m egress dash newly draws**, on the inter-city Journey alone, because the station's
+>   own coordinate falls just the far side of `GAP_MIN_METERS` from where the last span ended. It is
+>   a real unrouted walk drawn honestly; a threshold boundary being straddled is not a systematic
+>   change.
+>
+> **The sum invariant (§5) holds exactly on real data**, not just in the fixture: distance agrees to
+> 0, duration to 2.3e-13 seconds, against the same pair's `costMatrix` cell.
+>
+> **`journeyCost` was needed, and is a decision this ADR did not anticipate.** §5's invariant is
+> only useful if something sums the chain, and one caller — self-heal's DELETE route (ADR-0026) —
+> read `paths[0].travelCost` as the whole Journey's cost. Correct while a provider returned one Path
+> per Journey; after decomposition it reports the access walk. `types/path.ts` gains `journeyCost`,
+> and the aggregate's `basisOfCost` is **the most-routed Path's, not the weakest**. Two rules were
+> tried and rejected against the provider's own fixture:
+>
+> - *Weakest link* stamps every rail Journey `straightLine`, since access walks and transfers are
+>   `straightLine` by construction (§2/§4) — making the marker meaningless, the failure #139's
+>   resolution explicitly warned against. It also misreads what those legs are: station-snapping
+>   walks and the flat `TRANSFER_MINUTES` are components of the rail graph's own cost model
+>   (ADR-0019), not a fallback away from it.
+> - *Longest Path by duration* was written first and **the fixture failed it**: a flat five-minute
+>   transfer out-durates two short urban hops, so a three-station ride reported as a straight-line
+>   estimate. Recorded because it looks reasonable and is not.
+>
+> Most-routed reproduces what every one of these Journeys reported before decomposition.
+
 ## Alternatives considered
 
 - **Detect through-running before splitting, so a seated cross-Operator run stays one Path as
@@ -158,6 +213,7 @@ and a haversine-at-walk-speed estimate is a computed (if honest-about-being-appr
 - **`MapView.tsx`**: no code change expected. Rendering is already per-Path with per-span dashing
   (ADR-0029 §1/§3, ADR-0030 §9); decomposition redistributes the same spans across more Path objects
   sharing one Day's styling. Confirm this visually once built rather than assume it holds.
+  *(Wrong — see the 2026-08-20 amendment: one line changed, and checking is what found it.)*
 - **`costMatrix` is unaffected.** It already calls the shared search with `withSteps: false`
   (ADR-0030 §11) and the optimizer never sees a Path (ADR-0022).
 - **Bills that come due later**, each its own ticket:

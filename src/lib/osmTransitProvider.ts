@@ -31,14 +31,14 @@
  * and so reads as a good cell. That trap is still open (ADR-0019's amendment records it); widening
  * the radius removed one Trip's trigger for it, not the trap itself.
  *
- * `describeJourney` returns a single-element `Path[]` (ADR-0022 P1): a real journey may cross
- * several lines/Operators, which should decompose into several single-kind Paths, but
- * decomposition itself isn't implemented yet. Until then a routed multi-line journey still
- * reports `kind: "rail"` with every ridden line's name joined into one string — an honest but
- * lossy placeholder (the per-shift transfer detail this loses is exactly what decomposition
- * restores), not a claim that the journey was actually one continuous ride. ADR-0030 §12 keeps
- * that deferral affordable: a Path carries several spans, so a multi-line journey draws its real
- * track correctly while remaining one Path.
+ * `describeJourney` decomposes a Journey into one Path per shift (ADR-0032, `decompose` below):
+ * an access walk, one rail Path per contiguous same-line run, a walking Path per transfer, and an
+ * egress walk. `costMatrix` is untouched by this — it never asks for steps and never sees a Path.
+ *
+ * **A caller that wants the whole A→B cost must sum the chain** (`journeyCost`, `types/path.ts`),
+ * never read `paths[0]`. That shorthand was only ever correct while this returned one Path per
+ * Journey; the first element is now the *access walk*, so reading it reports a few hundred metres
+ * of pavement as the cost of a cross-city train ride.
  *
  * **The search records the station identity it crosses (ADR-0030 §7), and that is deliberate.** A
  * ride edge *is* a pair of stop node ids, so the key a geometry lookup needs and the station
@@ -60,7 +60,14 @@
  */
 
 import { haversineMeters, type Point } from "@/lib/geo";
-import { makeTravelCost, type Path, type PathEndpoint, type TravelCost } from "@/types/path";
+import {
+  makeTravelCost,
+  type Path,
+  type PathEndpoint,
+  type RailPath,
+  type TravelCost,
+  type WalkingPath,
+} from "@/types/path";
 import type { PathProvider, MatrixCell } from "@/lib/pathProvider";
 import { STATION_SNAP_RADIUS_METERS, type TransitGraph, type StopNode, type LineType, type SpatialIndex } from "@/lib/transitGraph";
 
@@ -99,8 +106,14 @@ type RideStep = { kind: "ride"; lineName: string; fromStopId: string; toStopId: 
 
 /** The station cluster changed at — one field beyond what geometry needs, because "change at
  * Kyoto" is the fact a traveler can act on, and ADR-0028 §6 named the transfer station as the
- * thing they cannot. `Step` is opened once rather than twice. */
-type TransferStep = { kind: "transfer"; clusterId: string };
+ * thing they cannot. `Step` is opened once rather than twice.
+ *
+ * The two stop nodes are carried for the same reason `RideStep` carries its pair: decomposition
+ * (ADR-0032 §3) makes this step its own Path, and a Path needs endpoints. The search knows both at
+ * the moment it creates the step, so recording them costs nothing and saves the alternative —
+ * inferring a transfer's ends from the ride steps on either side of it, which has no answer at all
+ * for a transfer that opens or closes a Journey. */
+type TransferStep = { kind: "transfer"; clusterId: string; fromStopId: string; toStopId: string };
 
 type Step = RideStep | TransferStep;
 
@@ -268,7 +281,10 @@ function shortestPath(
         timeMin.set(toStopId, candidateTime);
         distanceMeters.set(toStopId, currentDistance);
         if (withSteps) {
-          steps.set(toStopId, [...currentSteps, { kind: "transfer", clusterId: transferEdge.clusterId }]);
+          steps.set(toStopId, [
+            ...currentSteps,
+            { kind: "transfer", clusterId: transferEdge.clusterId, fromStopId: current.id, toStopId },
+          ]);
         }
         push(toStopId, candidateTime);
       }
@@ -283,42 +299,141 @@ function shortestPath(
   return results;
 }
 
-/** Every ridden line's name, collapsed and joined into one string — the pre-decomposition
- * placeholder described in the module doc. Collapses only consecutive repeats (a line ridden
- * twice non-consecutively is a real second ride, not a naming artifact); `undefined` when no ride
- * step occurred at all (the route resolved from station-access walking alone). */
-function joinedLineNameOf(steps: Step[]): string | undefined {
-  const rideNames = steps.filter((s): s is RideStep => s.kind === "ride").map((s) => s.lineName);
-  const deduped = rideNames.filter((name, i) => name !== rideNames[i - 1]);
-  return deduped.length > 0 ? deduped.join(" / ") : undefined;
+/** A stop node as a Path endpoint (ADR-0032 §3). Coordinates are the station's own — for an
+ * endpoint decomposition *created* there is no Location behind it whose coordinates were
+ * "requested", so the station is the requested point. No `locationId`: an interchange endpoint is
+ * ephemeral, derived from the Path and never persisted (ADR-0022). */
+function endpointOfStop(graph: TransitGraph, stopId: string, stationName?: string): PathEndpoint {
+  const stop = graph.stopNodes.get(stopId)!;
+  return { lat: stop.lat, lng: stop.lng, stationName: stationName ?? stop.stationName };
+}
+
+/** A walk between two endpoints, priced the only way this provider can price one: haversine at
+ * `WALK_SPEED_KMH`, so `straightLine` (ADR-0032 §2/§4) — we did not route it and we say so, which
+ * is what draws it dashed. `null` for a walk of no length at all, which is not information
+ * (§6) — a Location entered at its station's own coordinates. */
+function walkPathOf(from: PathEndpoint, to: PathEndpoint): WalkingPath | null {
+  const meters = haversineMeters(from, to);
+  if (meters === 0) return null;
+  return {
+    kind: "walking",
+    from,
+    to,
+    travelCost: makeTravelCost(meters, minutesForMeters(meters, WALK_SPEED_KMH) * 60, "straightLine", "osm-japan"),
+  };
 }
 
 /**
- * The real shapes a routed Journey has, in travel order (ADR-0030 §8, §9) — one span per ride step
- * whose ride edge was traced, and nothing at all for one that was not.
+ * One contiguous run of same-line ride steps, as a rail Path.
  *
- * Direction is resolved here, at read time. `buildAdjacency` inserts every ride edge both ways so
- * the search can cross it backwards, but only one shape is stored; a step that rides the edge
- * against its stored direction gets a reversed *copy*, made once for the one Journey being
- * described rather than held for every edge in the graph. §7's ids are what make the comparison
- * free — they are already recorded for the lookup.
+ * Cost is recomputed from the run's own steps (ADR-0032 §5) — the same per-hop arithmetic
+ * `shortestPath` did when it chose this route, regrouped rather than re-derived, which is what
+ * makes the decomposed chain sum back to the Journey's own total exactly. The speed is keyed off
+ * the *from* stop's line type, matching the relaxation step precisely; a different reading would
+ * silently break the sum.
  *
- * A refused ride edge contributes no span and no substitute. The gap it leaves is the point:
- * the map draws it dashed, which is the honest report (§1).
+ * Geometry is this run's spans alone, in travel order (ADR-0030 §8, §9). Direction resolves at read
+ * time: `buildAdjacency` inserts every ride edge both ways so the search can cross it backwards,
+ * but only one shape is stored, so a step riding against the stored direction gets a reversed
+ * *copy* made for this one Journey. A refused ride edge contributes no span and no substitute — the
+ * gap it leaves is the point, and the map draws it dashed (§1).
  */
-function spansOf(steps: Step[], adjacency: Adjacency): GeoJSON.LineString[] {
+function railPathOf(graph: TransitGraph, adjacency: Adjacency, run: RideStep[]): RailPath {
+  let meters = 0;
+  let minutes = 0;
   const spans: GeoJSON.LineString[] = [];
-  for (const step of steps) {
-    if (step.kind !== "ride") continue;
+
+  for (const step of run) {
     const link = adjacency.ride.get(step.fromStopId)?.find((l) => l.toStopId === step.toStopId);
-    if (!link?.geometry) continue;
-    spans.push(
-      link.forward
-        ? link.geometry
-        : { type: "LineString", coordinates: [...link.geometry.coordinates].reverse() }
-    );
+    if (!link) continue;
+    meters += link.distanceMeters;
+    const lineType = graph.stopNodes.get(step.fromStopId)?.lineType ?? "commuter";
+    minutes += minutesForMeters(link.distanceMeters, LINE_TYPE_SPEEDS_KMH[lineType]);
+    if (link.geometry) {
+      spans.push(
+        link.forward
+          ? link.geometry
+          : { type: "LineString", coordinates: [...link.geometry.coordinates].reverse() }
+      );
+    }
   }
-  return spans;
+
+  return {
+    kind: "rail",
+    from: endpointOfStop(graph, run[0].fromStopId),
+    to: endpointOfStop(graph, run[run.length - 1].toStopId),
+    travelCost: makeTravelCost(meters, minutes * 60, "railNetwork", "osm-japan"),
+    lineName: run[0].lineName,
+    geometry: spans.length > 0 ? spans : undefined,
+  };
+}
+
+/** A transfer as its own walking Path (ADR-0032 §3). Its distance is `0` and not the haversine
+ * between the two platforms: the graph holds no real interchange-walk distance, only
+ * `TRANSFER_MINUTES` standing in for one, and inventing a distance here would change every rail
+ * Journey's total (§4/§5). Both endpoints take the *cluster's* name — "change at Tokyo" is the
+ * fact, not the two per-line station names either side of it. */
+function transferPathOf(graph: TransitGraph, step: TransferStep): WalkingPath {
+  const stationName = graph.clusters.get(step.clusterId)?.name;
+  return {
+    kind: "walking",
+    from: endpointOfStop(graph, step.fromStopId, stationName),
+    to: endpointOfStop(graph, step.toStopId, stationName),
+    travelCost: makeTravelCost(0, TRANSFER_MINUTES * 60, "straightLine", "osm-japan"),
+  };
+}
+
+/**
+ * A Journey's step list as the chain of Paths it actually is (ADR-0032): an access walk, one Path
+ * per contiguous same-line run of rides, a Path per transfer, and an egress walk.
+ *
+ * **Every line boundary splits, unconditionally (§1).** Stop node ids are scoped per OSM route
+ * relation, so crossing lines always crosses a transfer edge — the graph carries no signal
+ * distinguishing a real interchange from a seated through-run that OSM happens to model as two
+ * relations, which is the carve-out ADR-0022 wrote and this data cannot honour. That blind spot is
+ * recorded rather than guessed at, and it is not new: `TRANSFER_MINUTES` already charged every one
+ * of these boundaries before decomposition made them visible.
+ *
+ * A Journey with no ride at all is one walking Path (§7), not an `UnknownPath` — a haversine walk
+ * estimate is a computed route, and the absent `kind` is reserved for no route computed at all.
+ */
+function decompose(
+  graph: TransitGraph,
+  adjacency: Adjacency,
+  from: PathEndpoint,
+  to: PathEndpoint,
+  steps: Step[],
+  endStopId: string,
+  totalCost: TravelCost
+): Path[] {
+  if (steps.length === 0) return [{ kind: "walking", from, to, travelCost: totalCost }];
+
+  const paths: Path[] = [];
+  const access = walkPathOf(from, endpointOfStop(graph, steps[0].fromStopId));
+  if (access) paths.push(access);
+
+  let run: RideStep[] = [];
+  const flushRun = () => {
+    if (run.length === 0) return;
+    paths.push(railPathOf(graph, adjacency, run));
+    run = [];
+  };
+
+  for (const step of steps) {
+    if (step.kind === "transfer") {
+      flushRun();
+      paths.push(transferPathOf(graph, step));
+      continue;
+    }
+    if (run.length > 0 && run[run.length - 1].lineName !== step.lineName) flushRun();
+    run.push(step);
+  }
+  flushRun();
+
+  const egress = walkPathOf(endpointOfStop(graph, endStopId), to);
+  if (egress) paths.push(egress);
+
+  return paths;
 }
 
 /** One point's snapped stop nodes plus the walk-access cost to each, or `null` when nothing is
@@ -335,14 +450,15 @@ function snapWithWalkCost(
   });
 }
 
-/** The graph search's result before it's shaped into a `TravelCost`/`Path` — `lineName` present
- * only when the route actually rode a line (`joinedLineNameOf`'s `undefined` case: the route
- * resolved from station-access walking alone, so it's not honestly `kind: "rail"` either). */
+/** The graph search's result before it's decomposed into a `Path[]`. `steps` is empty for a caller
+ * that did not ask for them (`costMatrix`, ADR-0030 §11) — it reads `travelCost` and nothing
+ * else — and can also be legitimately empty for a Journey that never rode anything (ADR-0032 §7).
+ * `endStopId` is where the Journey alighted, which the egress walk needs and the search already
+ * had to pick. */
 interface JourneyResult {
   travelCost: TravelCost;
-  lineName?: string;
-  /** Present only for a caller that asked for steps — `costMatrix` never needs a shape. */
-  geometry?: GeoJSON.LineString[];
+  steps: Step[];
+  endStopId: string;
 }
 
 /** `null` is a decline (ADR-0024 §4) — the identity cell and the no-station-in-range case both
@@ -386,14 +502,7 @@ async function routeJourney(
 
   const result = raw.get(best.toStopId)!;
   const travelCost = makeTravelCost(best.totalDistance, best.totalMinutes * 60, "railNetwork", "osm-japan");
-  if (!withSteps) return { travelCost };
-
-  const geometry = spansOf(result.steps, adjacency);
-  return {
-    travelCost,
-    lineName: joinedLineNameOf(result.steps),
-    geometry: geometry.length > 0 ? geometry : undefined,
-  };
+  return { travelCost, steps: result.steps, endStopId: best.toStopId };
 }
 
 /** Builds a `PathProvider` bound to a given graph + spatial index — the seam that lets tests
@@ -417,9 +526,15 @@ export function createOsmTransitProvider(graph: TransitGraph, spatialIndex: Spat
     async describeJourney(from: PathEndpoint, to: PathEndpoint): Promise<Path[] | null> {
       const journey = await routeJourney(graph, spatialIndex, from, to, true);
       if (!journey) return null;
-      const { travelCost, lineName, geometry } = journey;
-      if (lineName === undefined) return [{ from, to, travelCost }];
-      return [{ kind: "rail", from, to, travelCost, lineName, geometry }];
+      return decompose(
+        graph,
+        buildAdjacency(graph),
+        from,
+        to,
+        journey.steps,
+        journey.endStopId,
+        journey.travelCost
+      );
     },
   };
 }
