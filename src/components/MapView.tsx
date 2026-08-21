@@ -330,6 +330,11 @@ export default function MapView() {
   // maplibre-gl is pinned to the 5.x line, not the latest 6.x: under this app's Next.js/Turbopack
   // dev setup, 6.x's worker bundle fails to load ("non-JavaScript MIME type of text/html"),
   // leaving the map blank. Revisit the pin once that's resolved upstream or in Turbopack.
+  //
+  // ADR-0034 §5: this line-width matches Stadia's own `railway` basemap layer exactly (3px,
+  // z13-z16, same OSM ways per ADR-0030) — confirmed by real render that hue keeps the two
+  // separable at that width. A future DAY_COLORS change should re-check
+  // docs/research/map-rendering-stack-144-refresh.md §A4/§F6 before assuming it still holds.
   const routeLayer: LayerProps = {
     id: "routes",
     type: "line",
@@ -366,6 +371,56 @@ export default function MapView() {
         "rgba(0,0,0,0.3)",
       ],
       "circle-stroke-opacity": ["get", "alpha"],
+    },
+  };
+
+  // ADR-0034 §4: Stadia's own tiles carry every railway station name (kanji and romaji) but no
+  // layer in its style renders `class=railway` POIs at all — this adds one client-side, against
+  // the basemap's own already-loaded `openmaptiles` source rather than forking its (unlicensed)
+  // style document. Both subclasses (`station` and `subway`) are included: excluding subway drops
+  // most of central Tokyo's metro network, which is what a traveler on foot actually orients by.
+  // minzoom matches where Stadia's own `railway` line layer starts drawing (§A2). The text-field
+  // and paint values mirror this exact style's own `poi_gen0_other` layer — same font, size, and
+  // halo — so these labels read as part of the basemap rather than a foreign addition. Mounted
+  // last, with no `beforeId`, so it draws above the Path/stop overlay: a `beforeId` referencing
+  // "routes" raced react-map-gl's own mount order (that layer doesn't exist yet when this one's
+  // effect can fire first) and threw "Cannot add layer... before non-existing layer".
+  const stationLabelLayer: LayerProps = {
+    id: "station-labels",
+    type: "symbol",
+    source: "openmaptiles",
+    "source-layer": "poi",
+    minzoom: 13,
+    filter: ["==", ["get", "class"], "railway"],
+    layout: {
+      "text-field": [
+        "let",
+        "latin", ["coalesce", ["get", "name:latin"], ""],
+        "nonlatin", [
+          "case",
+          ["all", ["has", "name:nonlatin"], ["is-supported-script", ["get", "name:nonlatin"]]],
+          ["get", "name:nonlatin"],
+          "",
+        ],
+        [
+          "case",
+          ["all", ["!=", ["var", "latin"], ""], ["!=", ["var", "nonlatin"], ""]],
+          ["concat", ["var", "latin"], "\n", ["var", "nonlatin"]],
+          ["concat", ["var", "latin"], ["var", "nonlatin"]],
+        ],
+      ],
+      "text-font": ["Stadia Regular"],
+      "text-anchor": "center",
+      "text-justify": "center",
+      "text-line-height": 1.55,
+      "text-size": 12,
+      "symbol-avoid-edges": true,
+    },
+    paint: {
+      "text-color": "#aaa",
+      "text-halo-color": "#333",
+      "text-halo-width": 1,
+      "text-halo-blur": 1,
     },
   };
 
@@ -422,11 +477,19 @@ export default function MapView() {
     [disarmAutoFocus]
   );
 
+  // Guarded because the "stops" layer mounts after the map itself (Source/Layer render at
+  // :543-544, below): a pointer event in that window would otherwise throw — MapLibre errors on
+  // querying a layer id absent from the *style*, unlike an ordinary empty-result query.
+  const queryStopFeature = useCallback((e: MapMouseEvent) => {
+    const map = mapRef.current;
+    if (!map?.getLayer("stops")) return undefined;
+    return map.queryRenderedFeatures(e.point, { layers: ["stops"] })[0];
+  }, []);
+
   // Shared by click (tap) and hover so touch devices — which never fire mousemove — get the
   // same info surface a mouse hover gets, just triggered by tapping the stop instead.
   const buildTooltip = useCallback((e: MapMouseEvent): TooltipState => {
-    const features = mapRef.current?.queryRenderedFeatures(e.point, { layers: ["stops"] });
-    const f = features?.[0];
+    const f = queryStopFeature(e);
     if (!f?.properties) return null;
     const isBase = f.properties.isBase === 1;
     return {
@@ -442,16 +505,15 @@ export default function MapView() {
         : { dayNumber: f.properties.dayNumber as number, order: f.properties.order as number }
       ),
     };
-  }, []);
+  }, [queryStopFeature]);
 
   const handleClick = useCallback((e: MapMouseEvent) => {
-    const features = mapRef.current?.queryRenderedFeatures(e.point, { layers: ["stops"] });
-    const f = features?.[0];
+    const f = queryStopFeature(e);
     if (f?.properties?.locationId) {
       handleMapLocationClick(f.properties.locationId as string);
     }
     setTooltip(buildTooltip(e));
-  }, [handleMapLocationClick, buildTooltip]);
+  }, [handleMapLocationClick, buildTooltip, queryStopFeature]);
 
   const handleMouseMove = useCallback((e: MapMouseEvent) => {
     setTooltip(buildTooltip(e));
@@ -543,6 +605,7 @@ export default function MapView() {
             <Source id="stops" type="geojson" data={pointsGeoJSON}>
               <Layer {...dotsLayer} />
             </Source>
+            <Layer {...stationLabelLayer} />
           </Map>
         )}
 
