@@ -422,11 +422,19 @@ export default function MapView() {
     [disarmAutoFocus]
   );
 
+  // Guarded because the "stops" layer mounts after the map itself (Source/Layer render at
+  // :543-544, below): a pointer event in that window would otherwise throw — MapLibre errors on
+  // querying a layer id absent from the *style*, unlike an ordinary empty-result query.
+  const queryStopFeature = useCallback((e: MapMouseEvent) => {
+    const map = mapRef.current;
+    if (!map?.getLayer("stops")) return undefined;
+    return map.queryRenderedFeatures(e.point, { layers: ["stops"] })[0];
+  }, []);
+
   // Shared by click (tap) and hover so touch devices — which never fire mousemove — get the
   // same info surface a mouse hover gets, just triggered by tapping the stop instead.
   const buildTooltip = useCallback((e: MapMouseEvent): TooltipState => {
-    const features = mapRef.current?.queryRenderedFeatures(e.point, { layers: ["stops"] });
-    const f = features?.[0];
+    const f = queryStopFeature(e);
     if (!f?.properties) return null;
     const isBase = f.properties.isBase === 1;
     return {
@@ -442,16 +450,15 @@ export default function MapView() {
         : { dayNumber: f.properties.dayNumber as number, order: f.properties.order as number }
       ),
     };
-  }, []);
+  }, [queryStopFeature]);
 
   const handleClick = useCallback((e: MapMouseEvent) => {
-    const features = mapRef.current?.queryRenderedFeatures(e.point, { layers: ["stops"] });
-    const f = features?.[0];
+    const f = queryStopFeature(e);
     if (f?.properties?.locationId) {
       handleMapLocationClick(f.properties.locationId as string);
     }
     setTooltip(buildTooltip(e));
-  }, [handleMapLocationClick, buildTooltip]);
+  }, [handleMapLocationClick, buildTooltip, queryStopFeature]);
 
   const handleMouseMove = useCallback((e: MapMouseEvent) => {
     setTooltip(buildTooltip(e));
