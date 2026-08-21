@@ -60,3 +60,4 @@ status to **Superseded by ADR-NNNN**.
 | [0031](0031-bus-geometry-left-unmodeled.md) | Bus Path geometry is left unmodeled; the map's one remaining disagreement with the Plan is accepted | Accepted |
 | [0032](0032-rail-journey-decomposes-per-shift.md) | A rail Journey decomposes into one Path per shift, transfers and access walks included | Accepted |
 | [0033](0033-premium-boarding-penalty.md) | Boarding a premium service costs flat minutes, charged once per boarding | Accepted |
+| [0034](0034-map-rendering-stack-stays-station-labels-added-client-side.md) | The map rendering stack stays as-is; station labels are added client-side | Accepted |
