@@ -374,13 +374,15 @@ export const useTripStore = create<TripStore>()((set, get) => ({
           const { arriveAt: _a, departAt: _d, ...rest } = l as Transit;
           return { ...rest, kind: "activity" };
         }
-        return { ...l, kind: "transit", arriveAt, departAt };
+        return { ...l, kind: "transit", authored: true, arriveAt, departAt };
       };
       const patched: Location[] = t.locations.map((l) => {
         if (l.id === locationId) {
           const arriveAt = which === "arrival" ? value : isTransit(l) ? l.arriveAt : null;
           const departAt = which === "departure" ? value : isTransit(l) ? l.departAt : null;
-          return relegateIfBareActivity({ ...l, kind: "transit", arriveAt, departAt } as Transit);
+          // Every Location this optimistic patch touches is a real, stored row the traveler is
+          // editing — always `authored: true` (ADR-0035); a surfaced entry never reaches the store.
+          return relegateIfBareActivity({ ...l, kind: "transit", authored: true, arriveAt, departAt } as Transit);
         }
         // Assigning a new edge releases whoever held it before (ADR-0028 §2's uniqueness
         // invariant) — the optimistic patch has to uphold it too, or the client briefly shows two

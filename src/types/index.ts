@@ -52,8 +52,18 @@ export type Activity = LocationBase & { kind: "activity" };
  *  the kind-elevating gesture (ADR-0028), the same way a Lodging's dates are: either present makes
  *  this kind, both absent relegates to an Activity. At most one Location per Trip carries each,
  *  enforced at write time (a partial unique index backs the invariant) — so a Location carrying
- *  `arriveAt` simply *is* the trip's arrival, with no earliest/latest rule to apply. */
-export type Transit = LocationBase & { kind: "transit"; arriveAt: IsoDateTime | null; departAt: IsoDateTime | null };
+ *  `arriveAt` simply *is* the trip's arrival, with no earliest/latest rule to apply.
+ *
+ *  `authored` (ADR-0035, CONTEXT.md's Authored/surfaced) tells the two ways this kind reaches the
+ *  read model apart: `true` for a real database row (every one `toLocation` narrows), `false` for
+ *  a station `surfacedTransitOf` projects from a Journey's Path chain — never a database row, and
+ *  never merged into `trip.locations`, so nothing narrowing on `isTransit()` needs to check it. */
+export type Transit = LocationBase & {
+  kind: "transit";
+  authored: boolean;
+  arriveAt: IsoDateTime | null;
+  departAt: IsoDateTime | null;
+};
 
 /** A place you sleep, carrying the booking dates folded in from the removed Stay table. Half-open:
  *  you sleep the nights in [checkInDate, checkOutDate). */

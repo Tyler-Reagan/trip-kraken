@@ -50,7 +50,8 @@ function toLocation(r: typeof location.$inferSelect): Location {
         throw new Error(`Lodging ${r.id} is missing its booking dates — DB inconsistency`);
       return { ...base, kind, checkInDate, checkOutDate };
     case "transit":
-      return { ...base, kind, arriveAt: arriveAt ?? null, departAt: departAt ?? null };
+      // Every row this narrows is a real database row — `authored: true` by construction (ADR-0035).
+      return { ...base, kind, authored: true, arriveAt: arriveAt ?? null, departAt: departAt ?? null };
     case "activity":
       return { ...base, kind };
     default:
