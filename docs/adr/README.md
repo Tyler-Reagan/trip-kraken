@@ -58,3 +58,4 @@ status to **Superseded by ADR-NNNN**.
 | [0029](0029-map-renders-path-geometry-at-request-time.md) | The map renders one line per Path, from geometry fetched at request time and held only in memory | Accepted |
 | [0030](0030-rail-segment-geometry-ingest-and-partial-path-shapes.md) | Rail geometry is traced at ingest, stored per ride edge, and a Path carries the real spans it has | Accepted |
 | [0031](0031-bus-geometry-left-unmodeled.md) | Bus Path geometry is left unmodeled; the map's one remaining disagreement with the Plan is accepted | Accepted |
+| [0032](0032-rail-journey-decomposes-per-shift.md) | A rail Journey decomposes into one Path per shift, transfers and access walks included | Accepted |
