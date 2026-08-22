@@ -1,7 +1,7 @@
 "use client";
 
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { Fragment, useMemo, useState, useCallback, useRef, useEffect } from "react";
 import Map, { Source, Layer, AttributionControl, MapMouseEvent } from "react-map-gl/maplibre";
 import type { MapRef, LayerProps } from "react-map-gl/maplibre";
 import type { FeatureCollection, LineString, Point } from "geojson";
@@ -11,9 +11,10 @@ import { deriveTripPlanDays, type DerivedDay, type Location } from "@/types";
 import type { PathEndpoint } from "@/types/path";
 import { DAY_COLORS, dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { boundsOf, metroOfDay, metrosOf, type Bounds, type TripMetro } from "@/lib/tripMetros";
-import { pairKey, pairsOfDay } from "@/lib/pathPairs";
+import { pairKey, pairsOfDay, dayChainEntries, pathShiftId } from "@/lib/pathPairs";
 import { haversineMeters } from "@/lib/geo";
-import { usePathGeometry } from "@/lib/usePathGeometry";
+import { usePathGeometryContext } from "@/lib/usePathGeometry";
+import PathShiftRows from "./PathShiftRows";
 
 // #145: CARTO's keyless basemap endpoint is outside its published license (enterprise/grant-only,
 // no self-serve tier). Stadia's Alidade Smooth Dark is the visual replacement — see ADR-0027 for
@@ -123,6 +124,7 @@ export default function MapView() {
   const trip = useTripStore((s) => s.trip);
   const activeDayNumber = useTripStore((s) => s.activeDayNumber);
   const highlightedLocationId = useTripStore((s) => s.highlightedLocationId);
+  const highlightedPathId = useTripStore((s) => s.highlightedPathId);
   const handleMapLocationClick = useTripStore((s) => s.handleMapLocationClick);
   const focusTarget = useTripStore((s) => s.focusTarget);
   const focusMap = useTripStore((s) => s.focusMap);
@@ -177,9 +179,11 @@ export default function MapView() {
   const activeDay = days.find((d) => d.dayNumber === activeDayNumber) ?? null;
 
   // Real Path geometry for the Day lines (ADR-0029). Held by pair and requested only where missing,
-  // so a drag costs the pairs it made newly adjacent rather than the whole Trip.
-  const roadProfile = trip?.roadProfile ?? "walking";
-  const pathGeometry = usePathGeometry(trip?.id ?? null, days, roadProfile);
+  // so a drag costs the pairs it made newly adjacent rather than the whole Trip. Read from
+  // TripClient's hoisted single fetch/cache (ADR-0036) rather than maintaining a second one here —
+  // DayCard's shift rows need the same pairs, and two independent fetchers would risk the two
+  // surfaces disagreeing about the same pair's staleness.
+  const { pathGeometry, roadProfile } = usePathGeometryContext();
 
   // Build GeoJSON for route lines and stop dots
   const { pointsGeoJSON, routesGeoJSON } = useMemo(() => {
@@ -240,11 +244,15 @@ export default function MapView() {
       // shares that one opacity, so the solid/dashed distinction reads as provenance rather than as
       // emphasis (§3).
       const routeAlpha = isActive ? 0.65 : browsedDays.has(day.dayNumber) ? 0.18 : 0;
-      const drawStraight = (from: PathEndpoint, to: PathEndpoint) => {
+      // `pathId` tags every feature belonging to one decomposed shift (ADR-0036) with the same
+      // identity `StopPanel`'s hover wiring uses (`pathPairs.ts`'s `pathShiftId`) — undefined for a
+      // whole-pair straight line drawn with no Path behind it at all (unanswered or refused), since
+      // there's no specific shift to highlight there.
+      const drawStraight = (from: PathEndpoint, to: PathEndpoint, pathId?: string) => {
         routes.features.push({
           type: "Feature",
           geometry: { type: "LineString", coordinates: [[from.lng, from.lat], [to.lng, to.lat]] },
-          properties: { color, alpha: routeAlpha, dashed: 1 },
+          properties: { color, alpha: routeAlpha, dashed: 1, pathId: pathId ?? null },
         });
       };
       /** A dashed stretch between two spans, or between a span and the Path's own end — skipped
@@ -252,13 +260,14 @@ export default function MapView() {
        * router snapped to, tens of metres off the requested coordinate, and a dash drawn across
        * that offset would claim a gap that isn't one. A real missing stretch is an untraced ride
        * edge — a whole inter-station hop — so the two are far apart in scale, not adjacent. */
-      const drawGap = (from: PathEndpoint, to: PathEndpoint) => {
+      const drawGap = (from: PathEndpoint, to: PathEndpoint, pathId?: string) => {
         if (haversineMeters(from, to) < GAP_MIN_METERS) return;
-        drawStraight(from, to);
+        drawStraight(from, to, pathId);
       };
 
       for (const pair of pairsOfDay(day)) {
-        const paths = pathGeometry.get(pairKey(roadProfile, pair));
+        const key = pairKey(roadProfile, pair);
+        const paths = pathGeometry.get(key);
 
         // Not yet answered (§7 — the canvas never waits), or refused outright by the router.
         if (!paths?.length) {
@@ -266,7 +275,8 @@ export default function MapView() {
           continue;
         }
 
-        for (const path of paths) {
+        paths.forEach((path, i) => {
+          const pathId = pathShiftId(key, i);
           // Presence of geometry, not `basisOfCost` — "is there a real shape to draw" is the
           // question, and it stays right for a rail Path with a real Basis and no shape yet (#142).
           //
@@ -277,8 +287,8 @@ export default function MapView() {
           // that isn't one, which is the exact thing `drawGap` exists to prevent.
           const spans = path.geometry ?? [];
           if (spans.length === 0) {
-            drawGap(path.from, path.to);
-            continue;
+            drawGap(path.from, path.to, pathId);
+            return;
           }
 
           // Solid per span, dashed across what is left (ADR-0030 §9, restating ADR-0029 §3 one
@@ -291,12 +301,16 @@ export default function MapView() {
             const coords = span.coordinates;
             const first = coords[0];
             const last = coords[coords.length - 1];
-            drawGap(cursor, { lng: first[0], lat: first[1] });
-            routes.features.push({ type: "Feature", geometry: span, properties: { color, alpha: routeAlpha, dashed: 0 } });
+            drawGap(cursor, { lng: first[0], lat: first[1] }, pathId);
+            routes.features.push({
+              type: "Feature",
+              geometry: span,
+              properties: { color, alpha: routeAlpha, dashed: 0, pathId },
+            });
             cursor = { lng: last[0], lat: last[1] };
           }
-          drawGap(cursor, path.to);
-        }
+          drawGap(cursor, path.to, pathId);
+        });
       }
     }
 
@@ -343,6 +357,23 @@ export default function MapView() {
       "line-opacity": ["get", "alpha"],
       "line-width": 3,
       "line-dasharray": ["case", ["==", ["get", "dashed"], 1], ["literal", [2, 1.5]], ["literal", [1, 0]]],
+    },
+    layout: { "line-cap": "round", "line-join": "round" },
+  };
+
+  /** Hovering a shift row in `StopPanel` highlights its own span here (ADR-0036) — a separate layer
+   * from `routeLayer` rather than a data-driven expression on it, so the already-tuned base
+   * width/collision behavior against Stadia's own `railway` layer (ADR-0034 §5) is never touched.
+   * Filtered to nothing (`pathId === null` never matches a real feature) when nothing is
+   * highlighted, and driven purely by this prop — no GeoJSON rebuild needed on hover. */
+  const highlightLayer: LayerProps = {
+    id: "routes-highlight",
+    type: "line",
+    filter: ["==", ["get", "pathId"], highlightedPathId ?? "__none__"],
+    paint: {
+      "line-color": ["get", "color"],
+      "line-opacity": 1,
+      "line-width": 5,
     },
     layout: { "line-cap": "round", "line-join": "round" },
   };
@@ -433,7 +464,7 @@ export default function MapView() {
   }, [panelOpen]);
 
   const boundsFor = useCallback(
-    (target: Exclude<FocusTarget, { tier: "stop" }>): Bounds | null => {
+    (target: Exclude<FocusTarget, { tier: "stop" } | { tier: "point" }>): Bounds | null => {
       if (target.tier === "trip") return boundsOf(days.flatMap(pointsOfDay));
       if (target.tier === "metro") return metros.find((m) => m.id === target.metroId)?.bounds ?? null;
       const day = days.find((d) => d.dayNumber === target.dayNumber);
@@ -453,6 +484,10 @@ export default function MapView() {
         if (loc?.lat != null && loc.lng != null) {
           map.flyTo({ center: [loc.lng, loc.lat], zoom: STOP_ZOOM, duration: CAMERA_MS });
         }
+        return true;
+      }
+      if (target.tier === "point") {
+        map.flyTo({ center: [target.lng, target.lat], zoom: STOP_ZOOM, duration: CAMERA_MS });
         return true;
       }
       const bounds = boundsFor(target);
@@ -601,6 +636,7 @@ export default function MapView() {
             <AttributionControl compact={false} />
             <Source id="routes" type="geojson" data={routesGeoJSON}>
               <Layer {...routeLayer} />
+              <Layer {...highlightLayer} />
             </Source>
             <Source id="stops" type="geojson" data={pointsGeoJSON}>
               <Layer {...dotsLayer} />
@@ -647,6 +683,35 @@ function StopPanel({
   onToggle: (v: boolean) => void;
   onFocus: (target: FocusTarget) => void;
 }) {
+  const trip = useTripStore((s) => s.trip);
+  const { pathGeometry, roadProfile } = usePathGeometryContext();
+  const setHighlightedPathId = useTripStore((s) => s.setHighlightedPathId);
+
+  // The row-per-Path shift list for one gap (ADR-0036) — the same component and cache DayCard's
+  // sidebar uses, so the two Location lists can't structurally disagree. `as="div"`: this panel has
+  // no `<ol>`/`<li>` list semantics at all, unlike the sidebar. Clicking a transfer station flies
+  // the camera to it (`onFocus`) rather than opening `InspectorPopover`, matching every other row
+  // in this panel already doing the same. Hovering a shift row highlights its span on the map —
+  // cheap and natural here, since this panel already sits directly over the canvas it's describing;
+  // `DayCard`'s sidebar has no canvas to highlight against, so it never wires this.
+  const gap = (from: Location, to: Location) => {
+    if (from.lat === null || to.lat === null || !trip) return null;
+    const key = pairKey(roadProfile, {
+      from: { lat: from.lat, lng: from.lng!, locationId: from.id },
+      to: { lat: to.lat, lng: to.lng!, locationId: to.id },
+    });
+    return (
+      <PathShiftRows
+        as="div"
+        chain={pathGeometry.get(key)}
+        tripId={trip.id}
+        pairKey={key}
+        onStationClick={(t) => onFocus({ tier: "point", lat: t.lat!, lng: t.lng! })}
+        onHoverChange={setHighlightedPathId}
+      />
+    );
+  };
+
   if (!open) {
     return (
       <button
@@ -682,15 +747,20 @@ function StopPanel({
         </button>
       </div>
       <div className="flex-1 overflow-y-auto py-1">
-        {day.startAnchor && (
-          <PanelAnchorRow loc={day.startAnchor} label={day.startAnchor.kind === "transit" ? "Arrived here" : "Woke here"} onFocus={onFocus} />
-        )}
-        {day.stops.map((stop, i) => (
-          <PanelStopRow key={stop.placement.id} loc={stop.location} dayNumber={day.dayNumber} index={i} onFocus={onFocus} />
+        {/* Driven entirely off `dayChainEntries` (ADR-0036), same as `DayCard`'s sidebar — one row
+            per entry, a shift-row gap between every consecutive pair. This panel used to never show
+            the check-in waypoint at all, which meant the two Location lists disagreed about how
+            many Locations a Day even has; fixed by sharing the same entries function. */}
+        {dayChainEntries(day).map((entry, i, entries) => (
+          <Fragment key={entry.role === "stop" ? `stop-${entry.stop!.placement.id}` : entry.role}>
+            {entry.role === "stop" ? (
+              <PanelStopRow loc={entry.location} dayNumber={day.dayNumber} index={entry.index!} onFocus={onFocus} />
+            ) : (
+              <PanelAnchorRow loc={entry.location} label={panelAnchorLabel(entry.role, entry.location)} onFocus={onFocus} />
+            )}
+            {i < entries.length - 1 && gap(entry.location, entries[i + 1].location)}
+          </Fragment>
         ))}
-        {day.endAnchor && (
-          <PanelAnchorRow loc={day.endAnchor} label={day.endAnchor.kind === "transit" ? "Departs from here" : "Overnight"} onFocus={onFocus} />
-        )}
         {day.stops.length === 0 && !day.startAnchor && !day.endAnchor && (
           <p className="px-2.5 py-3 text-xs text-faint italic">Nothing planned this day.</p>
         )}
@@ -735,6 +805,16 @@ function PanelStopRow({
       )}
     </button>
   );
+}
+
+/** The subtext for one anchor row, matching `DayCard`'s `AnchorRow` convention (ADR-0036) —
+ *  "checkin" has no prior precedent in this panel, since it never rendered a check-in waypoint row
+ *  at all until this change. */
+function panelAnchorLabel(role: "start" | "checkin" | "end", loc: Location): string {
+  if (role === "checkin") return "Check-in · drop bags";
+  const isEdge = loc.kind === "transit";
+  if (role === "start") return isEdge ? "Arrived here" : "Woke here";
+  return isEdge ? "Departs from here" : "Overnight";
 }
 
 /** An Anchor bookend — a Lodging (the surviving "gray dot = lodging" key from the old legend) or,

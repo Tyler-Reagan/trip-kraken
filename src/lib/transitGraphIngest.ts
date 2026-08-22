@@ -120,8 +120,18 @@ function lineTypeOf(relation: OsmRelation, distanceMeters: number): LineType {
   return "commuter";
 }
 
+/** English name if OSM tagged one (`name:en`, near-universal on JR/subway route relations and
+ * stop_area(_group) relations in the Japan extract) — the local-script `name` was never a
+ * deliberate choice, just the only tag this read before ADR-0036's sidebar made a line or station
+ * name something an English-speaking traveler reads directly rather than passes through to a map
+ * label. Shared by `lineNameOf`, `stationNameOf`, and `buildClusters`' stop_area(_group) naming
+ * below — one place deciding the preference order, not four independently-drifting call sites. */
+function englishNameOf(tags: Record<string, string>, fallback: string): string {
+  return tags["name:en"] ?? tags.name ?? fallback;
+}
+
 function lineNameOf(relation: OsmRelation): string {
-  return relation.tags.name ?? relation.tags.ref ?? relation.id;
+  return englishNameOf(relation.tags, relation.tags.ref ?? relation.id);
 }
 
 /** A stop node's id is scoped to its line (route relation), matching the two-tier model: the
@@ -131,7 +141,7 @@ function stopNodeId(relationId: string, osmNodeId: string): string {
 }
 
 function stationNameOf(node: OsmNode): string {
-  return node.tags.name ?? node.id;
+  return englishNameOf(node.tags, node.id);
 }
 
 function normalizeStationName(name: string): string {
@@ -263,12 +273,12 @@ function buildClusters(
         absorbedAreaIds.add(areaId);
         return stopNodeIdsOfArea(area);
       });
-    addCluster(graph, group.id, group.tags.name ?? group.id, [...new Set(stopIds)]);
+    addCluster(graph, group.id, englishNameOf(group.tags, group.id), [...new Set(stopIds)]);
   }
 
   for (const area of stopAreas) {
     if (absorbedAreaIds.has(area.id)) continue;
-    addCluster(graph, area.id, area.tags.name ?? area.id, [...new Set(stopNodeIdsOfArea(area))]);
+    addCluster(graph, area.id, englishNameOf(area.tags, area.id), [...new Set(stopNodeIdsOfArea(area))]);
   }
 
   // Fallback: any stop node not already placed in a cluster above, grouped by normalized name +

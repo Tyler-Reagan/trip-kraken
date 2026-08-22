@@ -3,8 +3,11 @@ import type { Transit } from "@/types";
 
 /** Deterministic and stable across renders, never a database id — a surfaced entry is never a
  *  database row (ADR-0035). Keyed on the endpoint's own coordinates, at `pathPairs.ts`'s `coordOf`
- *  precision, so two Journeys passing through the same physical station produce the same id. */
-function surfacedId(lat: number, lng: number): string {
+ *  precision, so two Journeys passing through the same physical station produce the same id.
+ *  Exported (ADR-0036) so a render surface holding just a `PathEndpoint` — not yet the `Transit`
+ *  this module builds — can still look one up by the same identity, e.g. matching a clicked
+ *  transfer station against `surfacedTransitOf`'s own output. */
+export function surfacedTransitIdOf(lat: number, lng: number): string {
   return `surfaced-transit:${lat.toFixed(6)},${lng.toFixed(6)}`;
 }
 
@@ -12,8 +15,9 @@ function surfacedId(lat: number, lng: number): string {
  *  ends carry the *cluster's* name ("change at Tokyo," not the two per-line names either side of
  *  it), unlike an access/egress walk, which only ever names its station-side end. Both-ends-named
  *  is the reliable signal — `kind` alone does not distinguish a transfer walk from an access or
- *  egress one. */
-function isTransferWalk(path: Path): boolean {
+ *  egress one. Exported (ADR-0036): the itinerary's shift-row list needs the same check, to decide
+ *  which rows are clickable into a surfaced station. */
+export function isTransferWalk(path: Path): boolean {
   return path.kind === "walking" && !!path.from.stationName && !!path.to.stationName;
 }
 
@@ -43,7 +47,7 @@ export function surfacedTransitOf(paths: Path[], tripId: string): Transit[] {
 
   const consider = (endpoint: PathEndpoint, preferred: boolean) => {
     if (!endpoint.stationName) return;
-    const id = surfacedId(endpoint.lat, endpoint.lng);
+    const id = surfacedTransitIdOf(endpoint.lat, endpoint.lng);
     if (preferred || !byId.has(id)) byId.set(id, endpoint);
   };
 
@@ -54,7 +58,7 @@ export function surfacedTransitOf(paths: Path[], tripId: string): Transit[] {
   });
 
   return [...byId.values()].map((endpoint) => ({
-    id: surfacedId(endpoint.lat, endpoint.lng),
+    id: surfacedTransitIdOf(endpoint.lat, endpoint.lng),
     tripId,
     kind: "transit",
     authored: false,

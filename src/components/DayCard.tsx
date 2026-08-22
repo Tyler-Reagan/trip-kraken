@@ -11,6 +11,9 @@ import { metrosOf } from "@/lib/tripMetros";
 import { formatDuration, resolveVisitDuration } from "@/lib/visitDuration";
 import { Crosshair, GripVertical, MapPin, Route, Search, Trash2, TrainFront } from "lucide-react";
 import { dayDropId } from "./DayNavigator";
+import { usePathGeometryContext } from "@/lib/usePathGeometry";
+import { dayChainEntries, pairKey } from "@/lib/pathPairs";
+import PathShiftRows from "./PathShiftRows";
 
 interface Props {
   day: DerivedDay;
@@ -148,40 +151,35 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
         </div>
       </div>
 
-      {/* Stops list, between the day's projected lodging bookends */}
+      {/* Stops list, between the day's projected lodging bookends. Driven entirely off
+          `dayChainEntries` (ADR-0036) — one row per entry, a `RouteConnector` between every
+          consecutive pair — rather than the hand-enumerated anchor/stop/connector conditionals this
+          used to be, so this list and MapView's StopPanel structurally can't disagree about which
+          Locations exist or which gaps between them are real (the bug class that hid an
+          anchor-to-anchor connector, e.g. arrival -> check-in on a day with no scheduled stops
+          yet, entirely). */}
       <ol className="space-y-1">
-        {day.startAnchor && <AnchorRow loc={day.startAnchor} role="start" date={day.date} />}
-        {/* Lodging anchors are valid "along the way" edge endpoints too (#129) — only skip the
-            connector when there's no non-lodging stop on the other side to search a corridor to. */}
-        {day.startAnchor && !day.checkInWaypoint && day.stops.length > 0 && (
-          <RouteConnector from={day.startAnchor} to={day.stops[0].location} date={day.date} />
-        )}
-        {day.checkInWaypoint && <AnchorRow loc={day.checkInWaypoint} role="checkin" date={day.date} />}
-        {day.checkInWaypoint && day.stops.length > 0 && (
-          <RouteConnector from={day.checkInWaypoint} to={day.stops[0].location} date={day.date} />
-        )}
         <SortableContext items={day.stops.map((s) => stopDragId(s.placement.id))} strategy={verticalListSortingStrategy}>
-          {day.stops.map((stop, idx) => (
-            <Fragment key={stop.placement.id}>
-              <StopRow
-                id={stopDragId(stop.placement.id)}
-                stop={stop}
-                index={idx}
-                dayNumber={day.dayNumber}
-                date={day.date}
-                dayOfWeek={dayOfWeek}
-              />
-              {/* Between two consecutive stops: search the corridor between them (#102, chunk 4). */}
-              {idx < day.stops.length - 1 && (
-                <RouteConnector from={stop.location} to={day.stops[idx + 1].location} date={day.date} />
+          {dayChainEntries(day).map((entry, i, entries) => (
+            <Fragment key={entry.role === "stop" ? `stop-${entry.stop!.placement.id}` : entry.role}>
+              {entry.role === "stop" ? (
+                <StopRow
+                  id={stopDragId(entry.stop!.placement.id)}
+                  stop={entry.stop!}
+                  index={entry.index!}
+                  dayNumber={day.dayNumber}
+                  date={day.date}
+                  dayOfWeek={dayOfWeek}
+                />
+              ) : (
+                <AnchorRow loc={entry.location as Lodging | Transit} role={entry.role} date={day.date} />
+              )}
+              {i < entries.length - 1 && (
+                <RouteConnector from={entry.location} to={entries[i + 1].location} date={day.date} />
               )}
             </Fragment>
           ))}
         </SortableContext>
-        {day.endAnchor && day.stops.length > 0 && (
-          <RouteConnector from={day.stops[day.stops.length - 1].location} to={day.endAnchor} date={day.date} />
-        )}
-        {day.endAnchor && <AnchorRow loc={day.endAnchor} role="end" date={day.date} />}
       </ol>
       <div
         ref={setEndDropRef}
@@ -241,8 +239,9 @@ function AnchorRow({ loc, role, date }: { loc: Lodging | Transit; role: "start" 
   );
 }
 
-/** The hover-revealed affordance between two consecutive stops: opens along-route discovery for the
- *  corridor between them (#102). Rendered only when both ends have coordinates — a corridor can't be
+/** The row-per-Path shift list for one Location-to-Location gap (ADR-0036), plus the "along the
+ *  way" search trigger — always visible, not hover-revealed, so it never leaves a gap when it
+ *  would otherwise be hidden. Rendered only when both ends have coordinates — a corridor can't be
  *  computed otherwise (the route endpoint would reject it), so there's nothing to offer.
  *
  *  Also where ADR-0026's self-heal (#171) surfaces: the one connector whose two ends match the
@@ -251,12 +250,21 @@ function AnchorRow({ loc, role, date }: { loc: Lodging | Transit; role: "start" 
 function RouteConnector({ from, to, date }: { from: Location; to: Location; date: string }) {
   const setRouteSearch = useTripStore((s) => s.setRouteSearch);
   const healedPair = useTripStore((s) => s.healedPair);
-  if (from.lat === null || to.lat === null) return null;
+  const trip = useTripStore((s) => s.trip);
+  const setInspectedSurfacedTransit = useTripStore((s) => s.setInspectedSurfacedTransit);
+  const { pathGeometry, roadProfile } = usePathGeometryContext();
+  if (from.lat === null || to.lat === null || !trip) return null;
 
   const healed = healedPair && healedPair.fromLocationId === from.id && healedPair.toLocationId === to.id ? healedPair : null;
 
-  return (
-    <li className="group flex justify-center items-center gap-1.5 py-0.5 select-none">
+  const key = pairKey(roadProfile, {
+    from: { lat: from.lat, lng: from.lng!, locationId: from.id },
+    to: { lat: to.lat, lng: to.lng!, locationId: to.id },
+  });
+  const chain = pathGeometry.get(key);
+
+  const alongTheWay = (
+    <span className="flex items-center gap-1.5 shrink-0">
       {healed && (
         <span
           title={
@@ -264,9 +272,9 @@ function RouteConnector({ from, to, date }: { from: Location; to: Location; date
               ? "Estimated as a straight line — no real route found for this pair"
               : `${Math.round(healed.travelCost.distanceMeters)}m, answered by ${healed.travelCost.answeredBy}`
           }
-          className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-400 border border-brand-200 dark:border-brand-800"
+          className="flex items-center gap-1 px-2 py-0.5 text-meta rounded-full bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-400 border border-brand-200 dark:border-brand-800"
         >
-          <Route className="w-3 h-3" />
+          <Route className="w-3.5 h-3.5" />
           {formatDuration(Math.round(healed.travelCost.costAsMinutes))}
           {healed.travelCost.basisOfCost === "straightLine" && " (straight-line)"}
         </span>
@@ -275,12 +283,22 @@ function RouteConnector({ from, to, date }: { from: Location; to: Location; date
         onClick={() => setRouteSearch({ from, to, date })}
         title="Find places along the way between these two stops"
         aria-label={`Find places along the way from ${from.name} to ${to.name}`}
-        className={`flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full text-brand-600 dark:text-brand-400 hover:bg-surface-2 transition-colors ${healed ? "" : "hover-reveal"}`}
+        className="flex items-center gap-1 px-2 py-0.5 text-meta text-brand-600 dark:text-brand-400 rounded-full hover:bg-surface-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
       >
-        <Route className="w-3 h-3" />
+        <Route className="w-3.5 h-3.5" />
         Along the way
       </button>
-    </li>
+    </span>
+  );
+
+  return (
+    <PathShiftRows
+      chain={chain}
+      tripId={trip.id}
+      pairKey={key}
+      trailing={alongTheWay}
+      onStationClick={setInspectedSurfacedTransit}
+    />
   );
 }
 

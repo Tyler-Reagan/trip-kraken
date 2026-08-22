@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { numDaysOf, type TripWithDetails } from "@/types";
+import { useEffect, useMemo, useRef } from "react";
+import { deriveTripPlanDays, numDaysOf, type TripWithDetails } from "@/types";
 import { useTripStore } from "@/store/tripStore";
+import { usePathGeometry, PathGeometryProvider } from "@/lib/usePathGeometry";
 import OptimizeModal from "./OptimizeModal";
 import LocationInspector from "./LocationInspector";
 import InspectorPopover from "./InspectorPopover";
@@ -42,7 +43,9 @@ export default function TripClient({ trip: initial }: Props) {
       nearbySearchLocation: null,
       routeSearch: null,
       highlightedLocationId: null,
+      highlightedPathId: null,
       inspectedLocationId: null,
+      inspectedSurfacedTransit: null,
     });
   }
 
@@ -83,10 +86,18 @@ export default function TripClient({ trip: initial }: Props) {
     { id: "places", label: "Places" },
   ];
 
+  // Hoisted from MapView (ADR-0036, #139) so DayCard's sidebar shift rows and MapView's StopPanel
+  // share one pair-keyed cache (usePathGeometry's own doc comment) instead of each fetching
+  // separately.
+  const days = useMemo(() => deriveTripPlanDays(trip), [trip]);
+  const roadProfile = trip.roadProfile;
+  const pathGeometry = usePathGeometry(trip.id, days, roadProfile);
+
+  // Bottom padding on the wrapper below reserves room for the fixed discovery tray so it never
+  // covers the unassigned pool at the end of the page.
   return (
-    // Bottom padding reserves room for the fixed discovery tray so it never covers the
-    // unassigned pool at the end of the page.
-    <div className={`space-y-6 ${discoveryMode ? "pb-56" : ""}`}>
+    <PathGeometryProvider value={{ pathGeometry, roadProfile }}>
+      <div className={`space-y-6 ${discoveryMode ? "pb-56" : ""}`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
@@ -180,6 +191,7 @@ export default function TripClient({ trip: initial }: Props) {
       {showOptimize && <OptimizeModal />}
       {showAddLocation && <AddLocationModal />}
     </div>
+    </PathGeometryProvider>
   );
 }
 
