@@ -1,7 +1,7 @@
 "use client";
 
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { Fragment, useMemo, useState, useCallback, useRef, useEffect } from "react";
 import Map, { Source, Layer, AttributionControl, MapMouseEvent } from "react-map-gl/maplibre";
 import type { MapRef, LayerProps } from "react-map-gl/maplibre";
 import type { FeatureCollection, LineString, Point } from "geojson";
@@ -13,7 +13,9 @@ import { DAY_COLORS, dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { boundsOf, metroOfDay, metrosOf, type Bounds, type TripMetro } from "@/lib/tripMetros";
 import { pairKey, pairsOfDay } from "@/lib/pathPairs";
 import { haversineMeters } from "@/lib/geo";
-import { usePathGeometry } from "@/lib/usePathGeometry";
+import { usePathGeometryContext } from "@/lib/usePathGeometry";
+import { PathShiftRows, surfacedTransitFor } from "./PathShiftRows.prototype";
+import { useShiftVariant } from "./PrototypeSwitcher.prototype";
 
 // #145: CARTO's keyless basemap endpoint is outside its published license (enterprise/grant-only,
 // no self-serve tier). Stadia's Alidade Smooth Dark is the visual replacement — see ADR-0027 for
@@ -178,8 +180,10 @@ export default function MapView() {
 
   // Real Path geometry for the Day lines (ADR-0029). Held by pair and requested only where missing,
   // so a drag costs the pairs it made newly adjacent rather than the whole Trip.
-  const roadProfile = trip?.roadProfile ?? "walking";
-  const pathGeometry = usePathGeometry(trip?.id ?? null, days, roadProfile);
+  // #139: read from TripClient's hoisted single fetch/cache rather than maintaining a second one —
+  // DayCard's shift rows need the same pairs, and two independent fetchers would risk the two
+  // surfaces disagreeing about the same pair's staleness.
+  const { pathGeometry, roadProfile } = usePathGeometryContext();
 
   // Build GeoJSON for route lines and stop dots
   const { pointsGeoJSON, routesGeoJSON } = useMemo(() => {
@@ -433,7 +437,7 @@ export default function MapView() {
   }, [panelOpen]);
 
   const boundsFor = useCallback(
-    (target: Exclude<FocusTarget, { tier: "stop" }>): Bounds | null => {
+    (target: Exclude<FocusTarget, { tier: "stop" } | { tier: "point" }>): Bounds | null => {
       if (target.tier === "trip") return boundsOf(days.flatMap(pointsOfDay));
       if (target.tier === "metro") return metros.find((m) => m.id === target.metroId)?.bounds ?? null;
       const day = days.find((d) => d.dayNumber === target.dayNumber);
@@ -453,6 +457,10 @@ export default function MapView() {
         if (loc?.lat != null && loc.lng != null) {
           map.flyTo({ center: [loc.lng, loc.lat], zoom: STOP_ZOOM, duration: CAMERA_MS });
         }
+        return true;
+      }
+      if (target.tier === "point") {
+        map.flyTo({ center: [target.lng, target.lat], zoom: STOP_ZOOM, duration: CAMERA_MS });
         return true;
       }
       const bounds = boundsFor(target);
@@ -647,6 +655,31 @@ function StopPanel({
   onToggle: (v: boolean) => void;
   onFocus: (target: FocusTarget) => void;
 }) {
+  const trip = useTripStore((s) => s.trip);
+  const { pathGeometry, roadProfile } = usePathGeometryContext();
+  const variant = useShiftVariant();
+
+  // #139 PROTOTYPE: the same shift-row gap used in `DayCard`'s sidebar, reused here so the two
+  // Location lists agree — `as="div"` since this panel has no `<ol>`/`<li>` list semantics at all,
+  // unlike the sidebar. Clicking a transfer station flies the camera to it (`onFocus`) rather than
+  // opening `InspectorPopover`, matching every other row in this panel already doing the same.
+  const gap = (from: Location | null, to: Location | null) => {
+    if (!from || !to || from.lat === null || to.lat === null || !trip) return null;
+    const key = pairKey(roadProfile, {
+      from: { lat: from.lat, lng: from.lng!, locationId: from.id },
+      to: { lat: to.lat, lng: to.lng!, locationId: to.id },
+    });
+    return (
+      <PathShiftRows
+        as="div"
+        chain={pathGeometry.get(key)}
+        tripId={trip.id}
+        variant={variant}
+        onStationClick={(t) => onFocus({ tier: "point", lat: t.lat!, lng: t.lng! })}
+      />
+    );
+  };
+
   if (!open) {
     return (
       <button
@@ -685,9 +718,25 @@ function StopPanel({
         {day.startAnchor && (
           <PanelAnchorRow loc={day.startAnchor} label={day.startAnchor.kind === "transit" ? "Arrived here" : "Woke here"} onFocus={onFocus} />
         )}
+        {day.startAnchor && day.checkInWaypoint && gap(day.startAnchor, day.checkInWaypoint)}
+        {day.startAnchor && !day.checkInWaypoint && day.stops.length > 0 && gap(day.startAnchor, day.stops[0].location)}
+        {/* #139 PROTOTYPE: this panel never showed the check-in waypoint at all before — `DayCard`'s
+            sidebar does, so the two lists disagreed about how many Locations a Day even has. Added
+            here so both surfaces share one identical chain of entries (and thus one identical set
+            of gaps between them). */}
+        {day.checkInWaypoint && (
+          <PanelAnchorRow loc={day.checkInWaypoint} label="Check-in · drop bags" onFocus={onFocus} />
+        )}
+        {day.checkInWaypoint && day.stops.length > 0 && gap(day.checkInWaypoint, day.stops[0].location)}
         {day.stops.map((stop, i) => (
-          <PanelStopRow key={stop.placement.id} loc={stop.location} dayNumber={day.dayNumber} index={i} onFocus={onFocus} />
+          <Fragment key={stop.placement.id}>
+            <PanelStopRow loc={stop.location} dayNumber={day.dayNumber} index={i} onFocus={onFocus} />
+            {i < day.stops.length - 1 && gap(stop.location, day.stops[i + 1].location)}
+          </Fragment>
         ))}
+        {day.endAnchor && day.stops.length > 0 && gap(day.stops[day.stops.length - 1].location, day.endAnchor)}
+        {(day.checkInWaypoint ?? day.startAnchor) && day.stops.length === 0 && day.endAnchor &&
+          gap(day.checkInWaypoint ?? day.startAnchor, day.endAnchor)}
         {day.endAnchor && (
           <PanelAnchorRow loc={day.endAnchor} label={day.endAnchor.kind === "transit" ? "Departs from here" : "Overnight"} onFocus={onFocus} />
         )}

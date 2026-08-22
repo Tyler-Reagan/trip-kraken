@@ -34,7 +34,11 @@ export type FocusTarget =
   | { tier: "trip" }
   | { tier: "metro"; metroId: string }
   | { tier: "day"; dayNumber: number }
-  | { tier: "stop"; locationId: string };
+  | { tier: "stop"; locationId: string }
+  /** #139 PROTOTYPE: a surfaced-transit station has real coordinates but no `Location` row to look
+   *  up by id — `surfacedTransitOf` recomputes it on every read (ADR-0035), it's never persisted.
+   *  Point-tier flies to a coordinate directly rather than resolving through `trip.locations`. */
+  | { tier: "point"; lat: number; lng: number };
 
 interface TripStore {
   // Data
@@ -53,6 +57,10 @@ interface TripStore {
   autoFocusArmed: boolean;
   highlightedLocationId: string | null;
   inspectedLocationId: string | null;
+  /** #139 prototype: a station `surfacedTransitOf` projects from a transfer Path — never a
+   *  database row, so it can't be addressed by `inspectedLocationId` alone. Mutually exclusive
+   *  with it; see `setInspectedLocationId`/`setInspectedSurfacedTransit`. */
+  inspectedSurfacedTransit: Transit | null;
   discoveryMode: DiscoveryMode | null;
   nearbySearchLocation: Location | null;
   nearbySearchDate: string | null;
@@ -86,6 +94,7 @@ interface TripStore {
   disarmAutoFocus: () => void;
   setHighlightedLocationId: (id: string | null) => void;
   setInspectedLocationId: (id: string | null) => void;
+  setInspectedSurfacedTransit: (t: Transit | null) => void;
   setDiscoveryMode: (m: DiscoveryMode) => void;
   setNearbySearchLocation: (loc: Location | null, date?: string | null) => void;
   setRouteSearch: (search: RouteSearch | null) => void;
@@ -143,6 +152,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   autoFocusArmed: true,
   highlightedLocationId: null,
   inspectedLocationId: null,
+  inspectedSurfacedTransit: null,
   discoveryMode: null,
   nearbySearchLocation: null,
   nearbySearchDate: null,
@@ -183,7 +193,8 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   consumeFocusTarget: () => set({ focusTarget: null }),
   disarmAutoFocus: () => set({ autoFocusArmed: false }),
   setHighlightedLocationId: (id) => set({ highlightedLocationId: id }),
-  setInspectedLocationId: (id) => set({ inspectedLocationId: id }),
+  setInspectedLocationId: (id) => set({ inspectedLocationId: id, inspectedSurfacedTransit: null }),
+  setInspectedSurfacedTransit: (t) => set({ inspectedSurfacedTransit: t, inspectedLocationId: null }),
   // Tab-switching only — scope for the target mode must already exist (the tray disables the
   // tab otherwise); scope itself is chosen from the day card's triggers, not the tray (#134).
   setDiscoveryMode: (m) => set({ discoveryMode: m }),

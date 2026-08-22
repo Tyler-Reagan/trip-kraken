@@ -11,6 +11,10 @@ import { metrosOf } from "@/lib/tripMetros";
 import { formatDuration, resolveVisitDuration } from "@/lib/visitDuration";
 import { Crosshair, GripVertical, MapPin, Route, Search, Trash2, TrainFront } from "lucide-react";
 import { dayDropId } from "./DayNavigator";
+import { usePathGeometryContext } from "@/lib/usePathGeometry";
+import { pairKey } from "@/lib/pathPairs";
+import { PathShiftRows } from "./PathShiftRows.prototype";
+import { useShiftVariant } from "./PrototypeSwitcher.prototype";
 
 interface Props {
   day: DerivedDay;
@@ -152,7 +156,15 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
       <ol className="space-y-1">
         {day.startAnchor && <AnchorRow loc={day.startAnchor} role="start" date={day.date} />}
         {/* Lodging anchors are valid "along the way" edge endpoints too (#129) — only skip the
-            connector when there's no non-lodging stop on the other side to search a corridor to. */}
+            connector when there's no non-lodging stop on the other side to search a corridor to.
+            #139 PROTOTYPE fix: this used to be gated on `stops.length > 0` for every anchor-adjacent
+            gap, so a day with only anchors (e.g. arrival + check-in, nothing scheduled yet) never
+            got a connector at all even though a real Path exists between them — the bug the user
+            caught on Day 1 of a real trip (Narita → hotel). Anchor-to-anchor is exactly as valid a
+            gap as anchor-to-stop; it was just never given one. */}
+        {day.startAnchor && day.checkInWaypoint && (
+          <RouteConnector from={day.startAnchor} to={day.checkInWaypoint} date={day.date} />
+        )}
         {day.startAnchor && !day.checkInWaypoint && day.stops.length > 0 && (
           <RouteConnector from={day.startAnchor} to={day.stops[0].location} date={day.date} />
         )}
@@ -180,6 +192,12 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
         </SortableContext>
         {day.endAnchor && day.stops.length > 0 && (
           <RouteConnector from={day.stops[day.stops.length - 1].location} to={day.endAnchor} date={day.date} />
+        )}
+        {/* #139 PROTOTYPE fix: the no-stops counterpart to the two blocks above — whichever anchor
+            immediately precedes where stops would go (check-in if it exists, else start) still
+            needs a connector to the end anchor when there are no stops to carry it there instead. */}
+        {(day.checkInWaypoint ?? day.startAnchor) && day.stops.length === 0 && day.endAnchor && (
+          <RouteConnector from={(day.checkInWaypoint ?? day.startAnchor)!} to={day.endAnchor} date={day.date} />
         )}
         {day.endAnchor && <AnchorRow loc={day.endAnchor} role="end" date={day.date} />}
       </ol>
@@ -251,12 +269,25 @@ function AnchorRow({ loc, role, date }: { loc: Lodging | Transit; role: "start" 
 function RouteConnector({ from, to, date }: { from: Location; to: Location; date: string }) {
   const setRouteSearch = useTripStore((s) => s.setRouteSearch);
   const healedPair = useTripStore((s) => s.healedPair);
+  const trip = useTripStore((s) => s.trip);
+  const setInspectedSurfacedTransit = useTripStore((s) => s.setInspectedSurfacedTransit);
+  const { pathGeometry, roadProfile } = usePathGeometryContext();
+  const variant = useShiftVariant();
   if (from.lat === null || to.lat === null) return null;
 
   const healed = healedPair && healedPair.fromLocationId === from.id && healedPair.toLocationId === to.id ? healedPair : null;
 
-  return (
-    <li className="group flex justify-center items-center gap-1.5 py-0.5 select-none">
+  // #139 PROTOTYPE: the row-per-Path shift sequence for this gap, read from the hoisted cache.
+  const key = pairKey(roadProfile, {
+    from: { lat: from.lat, lng: from.lng!, locationId: from.id },
+    to: { lat: to.lat, lng: to.lng!, locationId: to.id },
+  });
+  const chain = pathGeometry.get(key);
+
+  // #139 PROTOTYPE: always visible now, not hover-revealed — it anchors to the gap's one header
+  // row (via `trailing`) instead of a separate row below, so hiding it never leaves a gap.
+  const alongTheWay = (
+    <span className="flex items-center gap-1.5 shrink-0">
       {healed && (
         <span
           title={
@@ -264,9 +295,9 @@ function RouteConnector({ from, to, date }: { from: Location; to: Location; date
               ? "Estimated as a straight line — no real route found for this pair"
               : `${Math.round(healed.travelCost.distanceMeters)}m, answered by ${healed.travelCost.answeredBy}`
           }
-          className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-400 border border-brand-200 dark:border-brand-800"
+          className="flex items-center gap-1 px-2 py-0.5 text-meta rounded-full bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-400 border border-brand-200 dark:border-brand-800"
         >
-          <Route className="w-3 h-3" />
+          <Route className="w-3.5 h-3.5" />
           {formatDuration(Math.round(healed.travelCost.costAsMinutes))}
           {healed.travelCost.basisOfCost === "straightLine" && " (straight-line)"}
         </span>
@@ -275,12 +306,23 @@ function RouteConnector({ from, to, date }: { from: Location; to: Location; date
         onClick={() => setRouteSearch({ from, to, date })}
         title="Find places along the way between these two stops"
         aria-label={`Find places along the way from ${from.name} to ${to.name}`}
-        className={`flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full text-brand-600 dark:text-brand-400 hover:bg-surface-2 transition-colors ${healed ? "" : "hover-reveal"}`}
+        className="flex items-center gap-1 px-2 py-0.5 text-meta text-brand-600 dark:text-brand-400 rounded-full hover:bg-surface-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
       >
-        <Route className="w-3 h-3" />
+        <Route className="w-3.5 h-3.5" />
         Along the way
       </button>
-    </li>
+    </span>
+  );
+
+  if (!trip) return null;
+  return (
+    <PathShiftRows
+      chain={chain}
+      tripId={trip.id}
+      variant={variant}
+      trailing={alongTheWay}
+      onStationClick={setInspectedSurfacedTransit}
+    />
   );
 }
 

@@ -120,8 +120,12 @@ function lineTypeOf(relation: OsmRelation, distanceMeters: number): LineType {
   return "commuter";
 }
 
+/** English name if OSM tagged one (`name:en`, near-universal on JR/subway route relations in the
+ * Japan extract) — the local-script `name` was never a deliberate choice, just the only tag this
+ * read before #139's sidebar made a line's name something an English-speaking traveler reads
+ * directly rather than passes through to a map label. */
 function lineNameOf(relation: OsmRelation): string {
-  return relation.tags.name ?? relation.tags.ref ?? relation.id;
+  return relation.tags["name:en"] ?? relation.tags.name ?? relation.tags.ref ?? relation.id;
 }
 
 /** A stop node's id is scoped to its line (route relation), matching the two-tier model: the
@@ -130,8 +134,9 @@ function stopNodeId(relationId: string, osmNodeId: string): string {
   return `${relationId}:${osmNodeId}`;
 }
 
+/** English name if tagged (`name:en`) — same rationale as `lineNameOf` above. */
 function stationNameOf(node: OsmNode): string {
-  return node.tags.name ?? node.id;
+  return node.tags["name:en"] ?? node.tags.name ?? node.id;
 }
 
 function normalizeStationName(name: string): string {

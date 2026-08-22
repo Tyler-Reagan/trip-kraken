@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { DerivedDay } from "@/types";
 import type { Path, RoadProfile } from "@/types/path";
 import { pairKey, uniquePairsOfDays, type PathPair } from "@/lib/pathPairs";
@@ -92,4 +92,27 @@ export function usePathGeometry(
   }, [tripId, days, roadProfile]);
 
   return held.current;
+}
+
+/**
+ * #139: `usePathGeometry`'s hoist point. `TripClient` calls the hook once and provides the
+ * result here so both `DayCard`'s sidebar rows and `MapView`'s `StopPanel` read the same held
+ * pairs instead of each maintaining (and re-fetching into) their own copy. `roadProfile` travels
+ * alongside the map since a pair's key is meaningless without it.
+ */
+export interface PathGeometryContextValue {
+  pathGeometry: PathGeometryMap;
+  roadProfile: RoadProfile;
+}
+
+const PathGeometryContext = createContext<PathGeometryContextValue | null>(null);
+
+export const PathGeometryProvider = PathGeometryContext.Provider;
+
+/** Throws if rendered outside `TripClient`'s provider — every consumer is deep in that tree, so a
+ * silently-empty map would be a bug worth surfacing loudly rather than degrading quietly. */
+export function usePathGeometryContext(): PathGeometryContextValue {
+  const ctx = useContext(PathGeometryContext);
+  if (!ctx) throw new Error("usePathGeometryContext: no PathGeometryProvider above this component");
+  return ctx;
 }

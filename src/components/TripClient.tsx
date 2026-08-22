@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { numDaysOf, type TripWithDetails } from "@/types";
+import { useEffect, useMemo, useRef } from "react";
+import { deriveTripPlanDays, numDaysOf, type TripWithDetails } from "@/types";
 import { useTripStore } from "@/store/tripStore";
+import { usePathGeometry, PathGeometryProvider } from "@/lib/usePathGeometry";
 import OptimizeModal from "./OptimizeModal";
 import LocationInspector from "./LocationInspector";
 import InspectorPopover from "./InspectorPopover";
@@ -13,6 +14,7 @@ import DayNavigator from "./DayNavigator";
 import TransitEstimateCaveat from "./TransitEstimateCaveat";
 import DistantMetroWarning from "./DistantMetroWarning";
 import EnrichmentFailureNotice from "./EnrichmentFailureNotice";
+import { PrototypeSwitcher } from "./PrototypeSwitcher.prototype";
 
 type ActiveSurface = "itinerary" | "places";
 
@@ -83,9 +85,16 @@ export default function TripClient({ trip: initial }: Props) {
     { id: "places", label: "Places" },
   ];
 
+  // #139: hoisted from MapView so DayCard's sidebar rows and MapView's StopPanel share one
+  // pair-keyed cache (`usePathGeometry`'s own doc comment) instead of each fetching separately.
+  const days = useMemo(() => deriveTripPlanDays(trip), [trip]);
+  const roadProfile = trip.roadProfile;
+  const pathGeometry = usePathGeometry(trip.id, days, roadProfile);
+
   return (
-    // Bottom padding reserves room for the fixed discovery tray so it never covers the
-    // unassigned pool at the end of the page.
+    <PathGeometryProvider value={{ pathGeometry, roadProfile }}>
+    {/* Bottom padding reserves room for the fixed discovery tray so it never covers the
+        unassigned pool at the end of the page. */}
     <div className={`space-y-6 ${discoveryMode ? "pb-56" : ""}`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -179,7 +188,9 @@ export default function TripClient({ trip: initial }: Props) {
 
       {showOptimize && <OptimizeModal />}
       {showAddLocation && <AddLocationModal />}
+      {activeSurface === "itinerary" && hasPlan && <PrototypeSwitcher />}
     </div>
+    </PathGeometryProvider>
   );
 }
 

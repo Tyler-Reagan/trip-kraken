@@ -17,7 +17,14 @@ const MARGIN = 12;
 export default function InspectorPopover() {
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
+  // #139 prototype: a transfer row's station is `surfacedTransitOf`'s projection, not a database
+  // row — it can't be found in `trip.locations`, so it carries its own inspected-object slot
+  // rather than an id to look up. See `ShiftRow.tsx`.
+  const inspectedSurfacedTransit = useTripStore((s) => s.inspectedSurfacedTransit);
+  const setInspectedSurfacedTransit = useTripStore((s) => s.setInspectedSurfacedTransit);
   const trip = useTripStore((s) => s.trip);
+
+  const anchorId = inspectedLocationId ?? inspectedSurfacedTransit?.id ?? null;
 
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
@@ -25,31 +32,32 @@ export default function InspectorPopover() {
   // Measure the anchor after render (the focal-stack spring settles the row's final position a
   // beat later, but the anchor's neighborhood is right immediately — good enough to open at).
   useLayoutEffect(() => {
-    if (!inspectedLocationId) { setPos(null); return; }
-    const anchor = document.querySelector(`[data-inspect-anchor="${CSS.escape(inspectedLocationId)}"]`);
+    if (!anchorId) { setPos(null); return; }
+    const anchor = document.querySelector(`[data-inspect-anchor="${CSS.escape(anchorId)}"]`);
     if (!anchor) { setPos(null); return; }
     const rect = anchor.getBoundingClientRect();
     const left = Math.max(MARGIN, Math.min(rect.right + 10, window.innerWidth - W - MARGIN));
     const top = Math.max(MARGIN, Math.min(rect.top - 8, window.innerHeight - 320));
     setPos({ left, top });
-  }, [inspectedLocationId]);
+  }, [anchorId]);
 
   useEffect(() => {
-    if (!inspectedLocationId) return;
+    if (!anchorId) return;
     function onDown(e: PointerEvent) {
       const target = e.target as Node;
       // Clicks on the anchor row itself already toggle the inspector — don't double-close.
-      const anchor = document.querySelector(`[data-inspect-anchor="${CSS.escape(inspectedLocationId!)}"]`);
+      const anchor = document.querySelector(`[data-inspect-anchor="${CSS.escape(anchorId!)}"]`);
       if (ref.current && !ref.current.contains(target) && !(anchor && anchor.contains(target))) {
         setInspectedLocationId(null);
+        setInspectedSurfacedTransit(null);
       }
     }
     window.addEventListener("pointerdown", onDown);
     return () => window.removeEventListener("pointerdown", onDown);
-  }, [inspectedLocationId, setInspectedLocationId]);
+  }, [anchorId, setInspectedLocationId, setInspectedSurfacedTransit]);
 
-  if (!inspectedLocationId || !trip || !pos) return null;
-  const loc = trip.locations.find((l) => l.id === inspectedLocationId);
+  if (!anchorId || !trip || !pos) return null;
+  const loc = inspectedSurfacedTransit ?? trip.locations.find((l) => l.id === inspectedLocationId);
   if (!loc) return null;
 
   return (
@@ -63,7 +71,7 @@ export default function InspectorPopover() {
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-semibold text-ink leading-snug">{loc.name}</p>
         <button
-          onClick={() => setInspectedLocationId(null)}
+          onClick={() => { setInspectedLocationId(null); setInspectedSurfacedTransit(null); }}
           className="text-faint hover:text-sub shrink-0 transition-colors"
           aria-label="Close inspector"
         >
