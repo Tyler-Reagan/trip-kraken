@@ -34,7 +34,11 @@ export type FocusTarget =
   | { tier: "trip" }
   | { tier: "metro"; metroId: string }
   | { tier: "day"; dayNumber: number }
-  | { tier: "stop"; locationId: string };
+  | { tier: "stop"; locationId: string }
+  /** A surfaced-transit station (ADR-0035, ADR-0036) has real coordinates but no `Location` row to
+   *  resolve `"stop"`-tier by id — `surfacedTransitOf` recomputes it on every read, it's never
+   *  persisted. Point-tier flies to a coordinate directly. */
+  | { tier: "point"; lat: number; lng: number };
 
 interface TripStore {
   // Data
@@ -52,7 +56,15 @@ interface TripStore {
    *  map disarms it, so paging the itinerary afterwards leaves their view where they put it. */
   autoFocusArmed: boolean;
   highlightedLocationId: string | null;
+  /** The decomposed shift the pointer is over in `StopPanel`'s row list (ADR-0036), keyed by
+   *  `pathPairs.ts`'s `pathShiftId` — highlights that one shift's span on the map canvas. Sidebar
+   *  rows (`DayCard`) never set this; there's no canvas there to highlight against. */
+  highlightedPathId: string | null;
   inspectedLocationId: string | null;
+  /** A station `surfacedTransitOf` projects from a transfer Path (ADR-0035, ADR-0036) — never a
+   *  database row, so it can't be addressed by `inspectedLocationId` alone. Mutually exclusive with
+   *  it; see `setInspectedLocationId`/`setInspectedSurfacedTransit`. */
+  inspectedSurfacedTransit: Transit | null;
   discoveryMode: DiscoveryMode | null;
   nearbySearchLocation: Location | null;
   nearbySearchDate: string | null;
@@ -85,7 +97,9 @@ interface TripStore {
   consumeFocusTarget: () => void;
   disarmAutoFocus: () => void;
   setHighlightedLocationId: (id: string | null) => void;
+  setHighlightedPathId: (id: string | null) => void;
   setInspectedLocationId: (id: string | null) => void;
+  setInspectedSurfacedTransit: (t: Transit | null) => void;
   setDiscoveryMode: (m: DiscoveryMode) => void;
   setNearbySearchLocation: (loc: Location | null, date?: string | null) => void;
   setRouteSearch: (search: RouteSearch | null) => void;
@@ -142,7 +156,9 @@ export const useTripStore = create<TripStore>()((set, get) => ({
   focusTarget: null,
   autoFocusArmed: true,
   highlightedLocationId: null,
+  highlightedPathId: null,
   inspectedLocationId: null,
+  inspectedSurfacedTransit: null,
   discoveryMode: null,
   nearbySearchLocation: null,
   nearbySearchDate: null,
@@ -158,7 +174,14 @@ export const useTripStore = create<TripStore>()((set, get) => ({
 
   setTrip: (trip) => set({ trip, tripId: trip.id }),
   setActiveSurface: (v) =>
-    set({ activeSurface: v, inspectedLocationId: null, discoveryMode: null, nearbySearchLocation: null, routeSearch: null }),
+    set({
+      activeSurface: v,
+      inspectedLocationId: null,
+      inspectedSurfacedTransit: null,
+      discoveryMode: null,
+      nearbySearchLocation: null,
+      routeSearch: null,
+    }),
   // The *passive* day change (#137): paging the carousel — arrows, index strip, drag-to-edge
   // dwell. It follows the camera along only while auto-focus is armed, and never opens the map
   // popup: paging days is itinerary navigation that the map tags along with, not a map link.
@@ -167,6 +190,7 @@ export const useTripStore = create<TripStore>()((set, get) => ({
     set({
       activeDayNumber: n,
       inspectedLocationId: null,
+      inspectedSurfacedTransit: null,
       ...(get().autoFocusArmed ? { focusTarget: { tier: "day" as const, dayNumber: n } } : {}),
     }),
   setMapPopupOpen: (v) => set({ mapPopupOpen: v }),
@@ -178,12 +202,16 @@ export const useTripStore = create<TripStore>()((set, get) => ({
       focusTarget: target,
       autoFocusArmed: true,
       mapPopupOpen: true,
-      ...(target.tier === "day" ? { activeDayNumber: target.dayNumber, inspectedLocationId: null } : {}),
+      ...(target.tier === "day"
+        ? { activeDayNumber: target.dayNumber, inspectedLocationId: null, inspectedSurfacedTransit: null }
+        : {}),
     }),
   consumeFocusTarget: () => set({ focusTarget: null }),
   disarmAutoFocus: () => set({ autoFocusArmed: false }),
   setHighlightedLocationId: (id) => set({ highlightedLocationId: id }),
-  setInspectedLocationId: (id) => set({ inspectedLocationId: id }),
+  setHighlightedPathId: (id) => set({ highlightedPathId: id }),
+  setInspectedLocationId: (id) => set({ inspectedLocationId: id, inspectedSurfacedTransit: null }),
+  setInspectedSurfacedTransit: (t) => set({ inspectedSurfacedTransit: t, inspectedLocationId: null }),
   // Tab-switching only — scope for the target mode must already exist (the tray disables the
   // tab otherwise); scope itself is chosen from the day card's triggers, not the tray (#134).
   setDiscoveryMode: (m) => set({ discoveryMode: m }),
