@@ -57,6 +57,13 @@
       "when": 1790000000000,
       "tag": "0007_enrichment_error",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787463625369,
+      "tag": "0008_has_jr_pass",
+      "breakpoints": true
     }
   ]
 }

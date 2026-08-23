@@ -148,7 +148,18 @@ export interface PathBase {
 }
 
 export type UnknownPath = PathBase & { kind?: undefined };
-export type RailPath = PathBase & { kind: "rail"; lineName: string; operator?: Operator };
+/** `jrPassSupplementRequired` (issue #211): true exactly on a Nozomi/Mizuho leg — the two named
+ * Tokaido/Sanyo/Kyushu Shinkansen services a JR Pass does not cover outright, ridable only by
+ * purchasing a separate supplement ticket (#204). An objective fact about the *service*, set
+ * whenever the leg is one of these two trains regardless of whether the current traveler declared
+ * a Pass — display-only, the same "don't smuggle a preference into cost" posture as
+ * `transferCount` (ADR-0018 §2, ADR-0022): the leg is never excluded from routing over this. */
+export type RailPath = PathBase & {
+  kind: "rail";
+  lineName: string;
+  operator?: Operator;
+  jrPassSupplementRequired?: boolean;
+};
 export type BusPath = PathBase & { kind: "bus"; lineName: string; operator?: Operator };
 /** `lineName` is optional here alone: `other` is travel we deliberately don't model, and a ferry
  * or funicular way in OSM routinely carries no name at all. The concept applies but the datum is

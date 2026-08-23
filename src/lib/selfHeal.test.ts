@@ -44,6 +44,7 @@ const trip = (locations: TripWithDetails["locations"], placements: Placement[]):
   dayLabels: null,
   roadProfile: "walking",
   transitCaveatDismissed: false,
+  hasJrPass: false,
   createdAt: new Date(),
   updatedAt: new Date(),
   locations,

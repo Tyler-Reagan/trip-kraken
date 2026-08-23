@@ -68,7 +68,7 @@ import {
   type TravelCost,
   type WalkingPath,
 } from "@/types/path";
-import type { PathProvider, MatrixCell } from "@/lib/pathProvider";
+import type { PathProvider, MatrixCell, PathProviderOptions } from "@/lib/pathProvider";
 import { STATION_SNAP_RADIUS_METERS, type TransitGraph, type StopNode, type LineType, type SpatialIndex } from "@/lib/transitGraph";
 
 /** Effective speed per line type (ADR-0019's coarse duration model) — one number per type
@@ -83,6 +83,39 @@ export const LINE_TYPE_SPEEDS_KMH: Record<LineType, number> = {
 
 /** Flat per-transfer minutes (platform walk + wait, deliberately not split — ADR-0019). */
 export const TRANSFER_MINUTES = 5;
+
+/** Every canonical JR-group operator value `transitGraphIngest.ts`'s `canonicalOperatorOf`
+ * produces starts with "JR" (issue #210: "JR East", "JR West", ..., or the bare "JR" the
+ * untagged-premium backstop assigns). Checking the *canonical* value here, not the raw OSM tag,
+ * is what keeps this a one-line check — the messy alias resolution already happened at ingest. */
+function isJrGroupOperator(operator: string | undefined): boolean {
+  return operator !== undefined && operator.startsWith("JR");
+}
+
+/** A stop node's line is excluded from the graph search when the traveler holds a JR Pass, but
+ * only when its operator is a *confirmed* non-JR value (issue #211). An unknown operator (still
+ * true of a real minority of lines even after #210's backstop — plenty of ordinary, genuinely-JR
+ * commuter lines carry no `operator=*` tag at all and named no premium service the backstop could
+ * catch) is never excluded: excluding on absence of information would be exactly the
+ * confident-wrong failure mode ADR-0017/ADR-0018 §4 exist to prevent, just at the routing layer
+ * instead of the provider layer. The cost of this permissiveness is a filter that only ever
+ * *removes* trackage it is sure about — some genuinely non-JR, untagged lines will incorrectly
+ * stay reachable — which is the honest trade given what the data actually supports. */
+function isExcludedUnderJrPass(operator: string | undefined): boolean {
+  return operator !== undefined && !isJrGroupOperator(operator);
+}
+
+/** The JR Pass's two named exclusions (issue #211, #204 §1): Nozomi and Mizuho remain fully
+ * routable under a JR Pass — a Pass holder can ride them by buying a separate supplement ticket —
+ * so they are never excluded, only annotated. Matched by `lineName` prefix, not `lineType`: #204
+ * measured `lineType` misclassifying real Shinkansen trains in both directions, and these are two
+ * specific named services, not a service-class bucket. `lineNameOf`'s "Mizuho: X -> Y" direction
+ * suffix (`transitGraphIngest.ts`) is why this is a prefix match, not an exact one. */
+const JR_PASS_SUPPLEMENT_LINE_NAME_PREFIXES = ["Nozomi", "Mizuho"];
+
+function requiresJrPassSupplement(lineName: string): boolean {
+  return JR_PASS_SUPPLEMENT_LINE_NAME_PREFIXES.some((prefix) => lineName.startsWith(prefix));
+}
 
 /**
  * Flat minutes charged once when a traveler **boards** a premium service (ADR-0033) — the fare, the
@@ -236,7 +269,8 @@ function shortestPath(
   adjacency: Adjacency,
   seeds: { stop: StopNode; walkMeters: number; walkMinutes: number }[],
   toStopIds: Set<string>,
-  withSteps: boolean
+  withSteps: boolean,
+  hasJrPass: boolean
 ): Map<string, SearchResult> {
   const timeMin = new Map<string, number>();
   const distanceMeters = new Map<string, number>();
@@ -284,6 +318,10 @@ function shortestPath(
 
     for (const rideEdge of adjacency.ride.get(current.id) ?? []) {
       if (visited.has(rideEdge.toStopId)) continue;
+      // Hard-exclude a confirmed non-JR ride edge under a JR Pass (issue #211) — never a transfer
+      // edge, since every ride edge reachable from a non-JR stop node belongs to that same
+      // non-JR line and is excluded in its own turn; nothing extra reaches through a walk.
+      if (hasJrPass && isExcludedUnderJrPass(graph.stopNodes.get(current.id)?.operator)) continue;
       const lineType = graph.stopNodes.get(current.id)?.lineType ?? "commuter";
       const speed = LINE_TYPE_SPEEDS_KMH[lineType];
       const candidateTime = currentTime + minutesForMeters(rideEdge.distanceMeters, speed);
@@ -399,13 +437,23 @@ function railPathOf(graph: TransitGraph, adjacency: Adjacency, run: RideStep[]):
   const boardingType = graph.stopNodes.get(run[0].fromStopId)?.lineType ?? "commuter";
   minutes += PREMIUM_BOARDING_MINUTES[boardingType];
 
+  // Issue #210/#211: the line's operator, when known — and whether this specific service is one
+  // of the JR Pass's two named supplement exclusions. Both are objective facts about the leg,
+  // set unconditionally (not gated on the current search's own `hasJrPass`): the same physical
+  // Nozomi ride is a Nozomi ride whether or not *this* traveler happens to hold a Pass, and a
+  // display-only fact should not vary with a flag decomposition never asked for.
+  const operatorName = graph.stopNodes.get(run[0].fromStopId)?.operator;
+  const lineName = run[0].lineName;
+
   return {
     kind: "rail",
     from: endpointOfStop(graph, run[0].fromStopId),
     to: endpointOfStop(graph, run[run.length - 1].toStopId),
     travelCost: makeTravelCost(meters, minutes * 60, "railNetwork", "osm-japan"),
-    lineName: run[0].lineName,
+    lineName,
     geometry: spans.length > 0 ? spans : undefined,
+    ...(operatorName ? { operator: { name: operatorName } } : {}),
+    ...(requiresJrPassSupplement(lineName) ? { jrPassSupplementRequired: true } : {}),
   };
 }
 
@@ -504,14 +552,18 @@ interface JourneyResult {
 
 /** `null` is a decline (ADR-0024 §4) — the identity cell and the no-station-in-range case both
  * decline now rather than fabricating a straight line; the registry's terminal `haversine` entry
- * fills whatever this provider declines. A pair that both snap but is disconnected in the graph
- * still throws — see the module doc. */
+ * fills whatever this provider declines. A pair that both snap but is disconnected in the
+ * *unfiltered* graph still throws — see the module doc. Under a JR Pass (issue #211), though, a
+ * "no route" outcome stops being a bug to throw on: it can be the honest answer that no JR-covered
+ * path exists between these two stations, which is a real "no route" case (ADR-0018 §4's
+ * 2026-08-12 amendment) — a decline, not a failure, letting the next registry entry answer instead. */
 async function routeJourney(
   graph: TransitGraph,
   spatialIndex: SpatialIndex,
   from: Point,
   to: Point,
-  withSteps: boolean
+  withSteps: boolean,
+  hasJrPass: boolean
 ): Promise<JourneyResult | null> {
   // The terminal entry produces the same zero-cost answer for an identical pair, so declining
   // here is one fewer special case rather than a behavior change at the matrix level.
@@ -526,7 +578,7 @@ async function routeJourney(
 
   // Each seed's own walk-adjusted time/distance is already folded in by shortestPath, so the
   // result per to-stop is the true end-to-end total once its own egress walk is added.
-  const raw = shortestPath(graph, adjacency, fromSnaps, toStopIds, withSteps);
+  const raw = shortestPath(graph, adjacency, fromSnaps, toStopIds, withSteps, hasJrPass);
 
   let best: { toStopId: string; totalMinutes: number; totalDistance: number } | null = null;
   for (const toSnap of toSnaps) {
@@ -538,6 +590,7 @@ async function routeJourney(
   }
 
   if (!best) {
+    if (hasJrPass) return null; // a real "no JR-covered route" answer, not a graph-connectivity bug
     throw new Error("osmTransitProvider: no route found between snapped stations for this Journey");
   }
 
@@ -550,22 +603,28 @@ async function routeJourney(
  * inject a small hand-built fixture instead of the real ingested `db/transit-japan.db`. */
 export function createOsmTransitProvider(graph: TransitGraph, spatialIndex: SpatialIndex): PathProvider {
   return {
-    async costMatrix(points) {
+    async costMatrix(points, _kinds, opts?: PathProviderOptions) {
+      const hasJrPass = opts?.hasJrPass ?? false;
       const matrix: MatrixCell[][] = [];
       for (const from of points) {
         const row: MatrixCell[] = [];
         for (const to of points) {
           // §11: the matrix keeps the cost and throws the step list away, across N² calls, and
           // §7 made each step heavier. It no longer pays for what it discards.
-          const journey = await routeJourney(graph, spatialIndex, from, to, false);
+          const journey = await routeJourney(graph, spatialIndex, from, to, false, hasJrPass);
           row.push(journey?.travelCost ?? null);
         }
         matrix.push(row);
       }
       return matrix;
     },
-    async describeJourney(from: PathEndpoint, to: PathEndpoint): Promise<Path[] | null> {
-      const journey = await routeJourney(graph, spatialIndex, from, to, true);
+    async describeJourney(
+      from: PathEndpoint,
+      to: PathEndpoint,
+      _kinds,
+      opts?: PathProviderOptions
+    ): Promise<Path[] | null> {
+      const journey = await routeJourney(graph, spatialIndex, from, to, true, opts?.hasJrPass ?? false);
       if (!journey) return null;
       return decompose(
         graph,

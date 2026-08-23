@@ -365,5 +365,124 @@ assert.equal(
 );
 assert.equal(geometryMatrix[0][1]!.distanceMeters, summed.distanceMeters);
 
+// ── JR Pass graph-search filtering (issue #211) ─────────────────────────────────────────
+//
+// A separate, small fixture — Osaka-area coordinates, far from every stop above, so nothing here
+// can snap onto the main fixture by accident. Four lines, each isolating one thing the filter has
+// to get right:
+//  - "jr-line": operator "JR East" — the only route jrA -> jrB. Must stay routable under a Pass.
+//  - "private-line": operator "Meitetsu" (a real non-JR operator, #204) — the only route
+//    privateA -> privateB. Must be hard-excluded under a Pass; the pair has no other path, so
+//    excluding it must produce a decline (null), never a thrown error.
+//  - "unknown-line": no operator captured at all — the only route unknownA -> unknownB. Must stay
+//    routable under a Pass (issue #211: unknown is never treated as "not JR").
+//  - "nozomi-line": lineName "Nozomi", operator "JR Central" — the only route nozomiA -> nozomiB.
+//    Must stay routable under a Pass (never excluded) AND carry `jrPassSupplementRequired: true`
+//    on its rail Path, regardless of whether the query itself passed `hasJrPass`.
+
+function buildJrPassFixture(): TransitGraph {
+  const jrPassGraph = createGraph();
+
+  jrPassGraph.stopNodes.set("jrA", {
+    id: "jrA", lineId: "jr-line", lineName: "JR Line", lineType: "commuter", operator: "JR East",
+    stationName: "JR A", lat: 34.70, lng: 135.50, sequence: 0,
+  });
+  jrPassGraph.stopNodes.set("jrB", {
+    id: "jrB", lineId: "jr-line", lineName: "JR Line", lineType: "commuter", operator: "JR East",
+    stationName: "JR B", lat: 34.71, lng: 135.50, sequence: 1,
+  });
+  jrPassGraph.rideEdges.push({ fromStopId: "jrA", toStopId: "jrB", distanceMeters: 1000 });
+
+  jrPassGraph.stopNodes.set("privateA", {
+    id: "privateA", lineId: "private-line", lineName: "Private Line", lineType: "commuter", operator: "Meitetsu",
+    stationName: "Private A", lat: 34.80, lng: 135.50, sequence: 0,
+  });
+  jrPassGraph.stopNodes.set("privateB", {
+    id: "privateB", lineId: "private-line", lineName: "Private Line", lineType: "commuter", operator: "Meitetsu",
+    stationName: "Private B", lat: 34.81, lng: 135.50, sequence: 1,
+  });
+  jrPassGraph.rideEdges.push({ fromStopId: "privateA", toStopId: "privateB", distanceMeters: 1000 });
+
+  jrPassGraph.stopNodes.set("unknownA", {
+    id: "unknownA", lineId: "unknown-line", lineName: "Unknown Line", lineType: "commuter",
+    stationName: "Unknown A", lat: 34.90, lng: 135.50, sequence: 0,
+  });
+  jrPassGraph.stopNodes.set("unknownB", {
+    id: "unknownB", lineId: "unknown-line", lineName: "Unknown Line", lineType: "commuter",
+    stationName: "Unknown B", lat: 34.91, lng: 135.50, sequence: 1,
+  });
+  jrPassGraph.rideEdges.push({ fromStopId: "unknownA", toStopId: "unknownB", distanceMeters: 1000 });
+
+  jrPassGraph.stopNodes.set("nozomiA", {
+    id: "nozomiA", lineId: "nozomi-line", lineName: "Nozomi", lineType: "shinkansen", operator: "JR Central",
+    stationName: "Nozomi A", lat: 35.00, lng: 135.50, sequence: 0,
+  });
+  jrPassGraph.stopNodes.set("nozomiB", {
+    id: "nozomiB", lineId: "nozomi-line", lineName: "Nozomi", lineType: "shinkansen", operator: "JR Central",
+    stationName: "Nozomi B", lat: 35.01, lng: 135.50, sequence: 1,
+  });
+  jrPassGraph.rideEdges.push({ fromStopId: "nozomiA", toStopId: "nozomiB", distanceMeters: 1000 });
+
+  return jrPassGraph;
+}
+
+const jrPassGraph = buildJrPassFixture();
+const jrPassProvider = createOsmTransitProvider(jrPassGraph, buildSpatialIndex(jrPassGraph));
+
+const near = (stop: { lat: number; lng: number }) => P(stop.lat + 0.00005, stop.lng + 0.00005);
+const jrA = near(jrPassGraph.stopNodes.get("jrA")!);
+const jrB = near(jrPassGraph.stopNodes.get("jrB")!);
+const privateA = near(jrPassGraph.stopNodes.get("privateA")!);
+const privateB = near(jrPassGraph.stopNodes.get("privateB")!);
+const unknownA = near(jrPassGraph.stopNodes.get("unknownA")!);
+const unknownB = near(jrPassGraph.stopNodes.get("unknownB")!);
+const nozomiA = near(jrPassGraph.stopNodes.get("nozomiA")!);
+const nozomiB = near(jrPassGraph.stopNodes.get("nozomiB")!);
+
+// Without a Pass declared, every line routes — the filter is opt-in, never a default behavior.
+for (const [from, to, label] of [
+  [jrA, jrB, "JR line"],
+  [privateA, privateB, "private line"],
+  [unknownA, unknownB, "unknown-operator line"],
+] as const) {
+  const j = await jrPassProvider.describeJourney(from, to, ["rail"]);
+  assert.ok(j, `${label} routes normally with no hasJrPass declared`);
+}
+
+// A confirmed JR line stays routable under a Pass.
+const jrUnderPass = await jrPassProvider.describeJourney(jrA, jrB, ["rail"], { hasJrPass: true });
+assert.ok(jrUnderPass, "a confirmed JR-operator line stays routable under a JR Pass");
+
+// A confirmed non-JR line is hard-excluded under a Pass — and since it's the only route between
+// this pair, the result is a decline (null), never a thrown error (ADR-0018 §4's "no route" is an
+// honest answer, not a provider failure).
+const privateUnderPass = await jrPassProvider.describeJourney(privateA, privateB, ["rail"], { hasJrPass: true });
+assert.equal(privateUnderPass, null, "a confirmed non-JR line is excluded under a Pass, declining rather than throwing");
+const privateMatrixUnderPass = await jrPassProvider.costMatrix([privateA, privateB], ["rail"], { hasJrPass: true });
+assert.equal(privateMatrixUnderPass[0][1], null, "costMatrix declines the same excluded pair, not just describeJourney");
+
+// An unknown-operator line stays routable under a Pass — absence of data is never treated as
+// "confirmed not JR" (issue #211: excluding on absence would be exactly the confident-wrong
+// failure mode ADR-0017/ADR-0018 §4 forbid).
+const unknownUnderPass = await jrPassProvider.describeJourney(unknownA, unknownB, ["rail"], { hasJrPass: true });
+assert.ok(unknownUnderPass, "an unknown-operator line stays routable under a Pass, not excluded on absence of data");
+
+// The Nozomi/Mizuho annotation: set whenever the leg is a Nozomi/Mizuho service, independent of
+// whether this particular query even asked about a Pass — an objective fact about the service.
+for (const opts of [undefined, { hasJrPass: true }, { hasJrPass: false }] as const) {
+  const nozomiJourney = await jrPassProvider.describeJourney(nozomiA, nozomiB, ["rail"], opts);
+  assert.ok(nozomiJourney, "Nozomi always routes — the named-train exclusion is never a hard exclude");
+  const rail = nozomiJourney!.find((p) => p.kind === "rail") as { jrPassSupplementRequired?: boolean; operator?: { name: string } };
+  assert.equal(rail.jrPassSupplementRequired, true, "a Nozomi leg is flagged regardless of the query's own hasJrPass");
+  assert.equal(rail.operator?.name, "JR Central", "the leg's operator is populated from the captured StopNode field (issue #210)");
+}
+
+// A non-Nozomi/Mizuho JR line carries no supplement flag at all — not `false`, absent, matching
+// this file's established "optional means absent when it doesn't apply" convention.
+const plainJrJourney = await jrPassProvider.describeJourney(jrA, jrB, ["rail"]);
+assert.ok(plainJrJourney, "the plain JR line still routes");
+const plainJrRail = plainJrJourney!.find((p) => p.kind === "rail") as { jrPassSupplementRequired?: boolean };
+assert.equal(plainJrRail.jrPassSupplementRequired, undefined, "an ordinary JR leg carries no supplement flag at all");
+
 console.log("✓ osmTransitProvider.test.ts passed");
 }

@@ -48,6 +48,7 @@ const trip = (locations: TripWithDetails["locations"]): TripWithDetails => ({
   dayLabels: null,
   roadProfile: "walking",
   transitCaveatDismissed: false,
+  hasJrPass: false,
   createdAt: new Date(),
   updatedAt: new Date(),
   locations,

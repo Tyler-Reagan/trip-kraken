@@ -18,6 +18,9 @@ import type { MatrixCell, PathProvider } from "@/lib/pathProvider";
 export interface TravelMatrixRequest {
   kinds: PathKind[];
   departureTime?: Date;
+  /** Whether the traveler holds a Japan Rail Pass (issue #211) — passed through to every
+   * provider's `costMatrix`; only the OSM-Japan provider acts on it. */
+  hasJrPass?: boolean;
 }
 
 /** One registry row, reduced to what the pure composer needs — `travelCostRegistry.ts` supplies
@@ -73,7 +76,10 @@ export async function composeTravelMatrix(
     if (activeIndices.length === 0) continue;
 
     const activePoints = activeIndices.map((i) => points[i]);
-    const subMatrix = await entry.provider.costMatrix(activePoints, kinds, { departureTime: request.departureTime });
+    const subMatrix = await entry.provider.costMatrix(activePoints, kinds, {
+      departureTime: request.departureTime,
+      hasJrPass: request.hasJrPass,
+    });
 
     for (let li = 0; li < activeIndices.length; li++) {
       const origI = activeIndices[li];

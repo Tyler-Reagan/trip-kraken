@@ -91,6 +91,12 @@ const withDriving = updateTrip(trip.id, { roadProfile: "driving" });
 assert.equal(withDriving.roadProfile, "driving", "updateTrip round-trips roadProfile");
 assert.equal(getTripWithDetails(trip.id)!.roadProfile, "driving", "the change persists across a fresh read");
 
+// ── hasJrPass (issue #211): defaults to false, round-trips through updateTrip ──
+assert.equal(trip.hasJrPass, false, "a Trip created without one defaults to no JR Pass");
+const withJrPass = updateTrip(trip.id, { hasJrPass: true });
+assert.equal(withJrPass.hasJrPass, true, "updateTrip round-trips hasJrPass");
+assert.equal(getTripWithDetails(trip.id)!.hasJrPass, true, "the change persists across a fresh read");
+
 // ── Default kind: imported places are activities until a constraint elevates them (ADR-0015 §1) ──
 assert.ok(trip.locations.every(isActivity), "imported places default to kind=activity");
 assert.deepEqual(rolesOf(trip.locations[0]), [], "a plain activity has no role (candidate)");

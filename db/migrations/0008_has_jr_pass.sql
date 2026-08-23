@@ -1,0 +1,1 @@
+ALTER TABLE `Trip` ADD `hasJrPass` integer DEFAULT false NOT NULL;

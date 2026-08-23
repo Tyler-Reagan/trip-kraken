@@ -147,6 +147,9 @@ export interface OptimizationProblem {
   /** The Path kinds this run wants sourced (ADR-0024 §3) — a static declaration of what's being
    * asked for. Defaults to `DEFAULT_KINDS` for callers that don't need per-Trip resolution. */
   kinds?: PathKind[];
+  /** Whether the traveler holds a Japan Rail Pass (issue #211) — forwarded to `buildTravelMatrix`;
+   * only the OSM-Japan provider acts on it. */
+  hasJrPass?: boolean;
   /** The trip's edges (ADR-0028) — at most one arrival id, one departure id, resolved by the
    * caller from whichever Location(s) carry `arriveAt`/`departAt`. An id with no matching Location
    * in `locations`, or one that turns out ungeocoded, is simply not usable — `solve()` falls back
@@ -174,6 +177,7 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
     dayStartMins = 9 * 60,
     startDate,
     kinds = DEFAULT_KINDS,
+    hasJrPass,
     edges,
   } = problem;
 
@@ -212,7 +216,7 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
   // keep in sync.
   const matrixPoints = [...placeable, ...lodgings.filter(hasValidCoords), ...transitEdges.filter(hasValidCoords)];
   const departureTime = startDate ? new Date(Date.parse(startDate + "T00:00:00Z") + dayStartMins * 60000) : undefined;
-  const matrix = await buildTravelMatrix(matrixPoints, { kinds, departureTime });
+  const matrix = await buildTravelMatrix(matrixPoints, { kinds, departureTime, hasJrPass });
 
   const request = buildVroomRequest({
     placeable,
