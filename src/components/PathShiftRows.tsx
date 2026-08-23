@@ -36,10 +36,20 @@ function summaryOf(chain: Path[]): string {
   return lineNames.length > 0 ? lineNames.join(" → ") : `${chain.length} shifts`;
 }
 
+/** Whether one Path needs the "extra fare applies" marker (issue #211/#212): an objective fact
+ * about the service (set on the Path regardless of the traveler's own hasJrPass), but only worth
+ * telling a traveler who actually declared a Pass — otherwise they are just paying the ordinary
+ * Nozomi/Mizuho fare like anyone else, and the marker would read as a non-sequitur. The one place
+ * this predicate is evaluated — `chainHasSupplement` and `ShiftRow` both call it rather than each
+ * re-deriving it. */
+function needsSupplementMarker(path: Path, hasJrPass: boolean): boolean {
+  return hasJrPass && path.kind === "rail" && path.jrPassSupplementRequired === true;
+}
+
 /** Whether any rail Path in the chain needs the marker — so a collapsed header still says so
  * rather than hiding it behind a manual expand (issue #212). */
 function chainHasSupplement(chain: Path[], hasJrPass: boolean): boolean {
-  return hasJrPass && chain.some((p) => p.kind === "rail" && p.jrPassSupplementRequired === true);
+  return chain.some((p) => needsSupplementMarker(p, hasJrPass));
 }
 
 /** One shift row — the content template every variant shares. Field-driven, not kind-branched: a
@@ -48,7 +58,7 @@ function chainHasSupplement(chain: Path[], hasJrPass: boolean): boolean {
  * directly between full Location rows and should read as a subordinate member of the same family,
  * not a different, denser component. */
 function ShiftRow({
-  path, transitById, onStationClick, onHoverChange, shiftId, highlighted, hasJrPass, as: Row,
+  path, transitById, onStationClick, onHoverChange, shiftId, highlighted, supplementApplies, as: Row,
 }: {
   path: Path;
   transitById: Map<string, Transit>;
@@ -56,16 +66,13 @@ function ShiftRow({
   onHoverChange?: (id: string | null) => void;
   shiftId: string;
   highlighted: boolean;
-  hasJrPass: boolean;
+  /** Pre-resolved by `PathShiftRows` (`needsSupplementMarker`), the same way `highlighted` is —
+   * this row never re-derives it from a raw `hasJrPass`. */
+  supplementApplies: boolean;
   as: "li" | "div";
 }) {
   const Icon = iconFor(path);
   const straightLine = path.travelCost.basisOfCost === "straightLine";
-  // Issue #211/#212: an objective fact about the service (set regardless of the traveler's own
-  // hasJrPass), but only worth telling a traveler who actually declared a Pass — otherwise they
-  // are just paying the ordinary Nozomi/Mizuho fare like anyone else, and "extra fare applies"
-  // reads as a non-sequitur.
-  const supplementApplies = hasJrPass && path.kind === "rail" && path.jrPassSupplementRequired === true;
   const clickableStation = isTransferWalk(path) ? path.from : null;
   const clickableTransit = clickableStation
     ? transitById.get(surfacedTransitIdOf(clickableStation.lat, clickableStation.lng))
@@ -194,7 +201,12 @@ export default function PathShiftRows({
               : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-brand-500 dark:text-brand-400" />}
             <span className="truncate">{summaryOf(chain)} <span className="text-faint">· {chain.length} shifts</span></span>
             {!expanded && chainHasSupplement(chain, hasJrPass) && (
-              <span className="text-amber-700 dark:text-amber-400 shrink-0">extra fare applies</span>
+              <span
+                className="text-amber-700 dark:text-amber-400 shrink-0"
+                title="Nozomi/Mizuho aren't covered by a JR Pass outright — ridable with a separate supplement ticket"
+              >
+                extra fare applies
+              </span>
             )}
           </button>
         )}
@@ -212,7 +224,7 @@ export default function PathShiftRows({
             onHoverChange={onHoverChange}
             shiftId={shiftId}
             highlighted={highlightedPathId === shiftId}
-            hasJrPass={hasJrPass}
+            supplementApplies={needsSupplementMarker(path, hasJrPass)}
             as={as}
           />
         );
