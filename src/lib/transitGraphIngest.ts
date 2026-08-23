@@ -120,6 +120,78 @@ function lineTypeOf(relation: OsmRelation, distanceMeters: number): LineType {
   return "commuter";
 }
 
+const PREMIUM_LINE_TYPES = new Set<LineType>(["shinkansen", "limitedExpress"]);
+
+/** Every JR-group `operator=*` value in the pinned 260101 extract either contains "旅客鉄道" (the
+ * six JR companies' shared legal-name suffix) or starts with the "JR" prefix — measured, not
+ * assumed: verified against all 154 distinct operator strings in the extract with zero false
+ * positives, including two near-misses a looser regional-name match would have caught —
+ * 西日本鉄道 (Nishitetsu, a private Kyushu railway sharing "西日本" with JR West's 西日本旅客鉄道
+ * but wholly unrelated to it) and 東海交通事業 (a private operator sharing "東海" with JR Central's
+ * 東海旅客鉄道). See issue #204 and #210. */
+function isJrGroupTag(raw: string): boolean {
+  return raw.startsWith("JR") || raw.includes("旅客鉄道");
+}
+
+// Matched only after isJrGroupTag confirms JR-group membership — these narrow to *which* company.
+// "JR東北線" (a JR East line name mis-tagged as an operator, per #204) starts with "JR" so passes
+// isJrGroupTag, but names no company here and falls through to canonicalOperatorOf's raw-tag
+// return below, rather than guessing.
+const JR_COMPANY_ALIASES: [pattern: RegExp, canonical: string][] = [
+  [/東日本|East/, "JR East"],
+  [/西日本|West/, "JR West"],
+  [/東海|Central/, "JR Central"],
+  [/九州|Kyushu/, "JR Kyushu"],
+  [/北海道|Hokkaido/, "JR Hokkaido"],
+  [/四国|Shikoku/, "JR Shikoku"],
+];
+
+/** Collapses a raw `operator=*` tag to one canonical value per company — the six JR companies get
+ * one label each regardless of which of their several spellings OSM used (JR East alone spans
+ * six in the pinned extract). A `;`-joined multi-operator through-service (`"小田急電鉄;東海旅客鉄道"`,
+ * Odakyu/JR Central) takes the *first* listed operator, mirroring ADR-0022's "boarding operator"
+ * rule for the domain Path — applied here, at ingest, rather than left to every downstream
+ * consumer to reparse. Non-JR operators are returned as their raw first-listed tag: nothing today
+ * needs a canonicalized private-railway identity, and inventing one unused would be a guess this
+ * ticket has no data to back. */
+function canonicalOperatorOf(raw: string): string {
+  const first = raw.split(";")[0].trim();
+  if (!isJrGroupTag(first)) return first;
+  const company = JR_COMPANY_ALIASES.find(([pattern]) => pattern.test(first));
+  return company ? company[1] : first;
+}
+
+/** #204 measured 16 of the extract's 35 premium (shinkansen/limitedExpress) relations carrying no
+ * `operator=*` tag at all — leaving them undefined would let a downstream JR Pass filter (#211)
+ * silently exclude real JR Shinkansen a traveler's Pass fully covers, the exact "inverting what
+ * the traveler asked for" failure #204 named. 14 of those 16 are genuine JR Shinkansen, backstopped
+ * here by `lineName` since no operator tag exists to read. The remaining 2 (直通特急, an Osaka
+ * Umeda <-> Sanyo-Himeji through-service) are the Hanshin/Sanyo Electric Railway limited express —
+ * correctly *not* JR, and deliberately left out of this allowlist rather than swept in with the
+ * rest. */
+const UNTAGGED_JR_PREMIUM_LINE_NAMES = new Set([
+  "JR Shinkansen (Hayate Train)",
+  "JR Shinkansen (Komachi Train)",
+  "JR Shinkansen (Hayabusa Train)",
+  "JR Shinkansen (Yamabiko Train)",
+  "JR Shinkansen (Nasuno Train)",
+  "Kagayaki",
+  "Hakutaka",
+]);
+
+/** One operator value per line/relation (issue #210) — the same granularity `lineType` already
+ * uses. Where a through-service actually changes operator partway along one line stays unmodeled
+ * (ADR-0021's fog item, carried on #140). */
+function operatorOf(relation: OsmRelation, lineType: LineType, lineName: string): string | undefined {
+  const raw = relation.tags.operator;
+  if (raw) return canonicalOperatorOf(raw);
+  if (PREMIUM_LINE_TYPES.has(lineType) && UNTAGGED_JR_PREMIUM_LINE_NAMES.has(lineName)) {
+    // Company-level identity isn't recoverable without the tag; group membership is all #211 needs.
+    return "JR";
+  }
+  return undefined; // genuinely unknown — not "not JR"
+}
+
 /** English name if OSM tagged one (`name:en`, near-universal on JR/subway route relations and
  * stop_area(_group) relations in the Japan extract) — the local-script `name` was never a
  * deliberate choice, just the only tag this read before ADR-0036's sidebar made a line or station
@@ -176,6 +248,7 @@ function buildLines(
       (m) => m.type === "node" && m.role.startsWith("stop")
     );
     const lineType = lineTypeOf(relation, lineDistanceMeters(stopMembers, nodesById));
+    const operator = operatorOf(relation, lineType, lineName);
 
     let sequence = 0;
     let previous: { id: string; node: OsmNode } | null = null;
@@ -199,6 +272,10 @@ function buildLines(
           lat: osmNode.lat,
           lng: osmNode.lon,
           sequence,
+          // Omitted, not set to `undefined`, when unknown — matches how `RideEdge.geometry` is
+          // left absent below, and keeps an in-memory StopNode deepEqual-comparable against one
+          // reloaded from the store (transitGraphStore.ts's load() makes the same choice).
+          ...(operator ? { operator } : {}),
         };
         graph.stopNodes.set(id, stop);
         const existing = rawNodeToStopNodes.get(osmNode.id);
