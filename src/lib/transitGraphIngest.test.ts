@@ -18,7 +18,7 @@ import fs from "node:fs";
 import Database from "better-sqlite3";
 import { buildTransitGraph, type OsmNode, type OsmRelation, type OsmWay } from "./transitGraphIngest";
 import { parseOsmXml } from "./parsers/osmXml";
-import { save } from "./transitGraphStore";
+import { save, load } from "./transitGraphStore";
 
 // ── Fixture: a small hand-built OSM extract ─────────────────────────────────────────────
 //
@@ -431,3 +431,140 @@ for (const edge of geoGraph.rideEdges) {
 }
 
 console.log("transitGraphIngest rail geometry tests: OK");
+
+// ── Operator capture (issue #210) ───────────────────────────────────────────────────────
+//
+// Every case below is grounded in a real measurement against the pinned 260101 extract (issue
+// #204, re-verified while building this ticket), not a hypothetical: the alias spellings, the
+// two non-JR near-misses, and the untagged-premium-line list are all real OSM data, not invented
+// edge cases.
+
+const opNodes: OsmNode[] = [
+  { id: "opA0", lat: 35.0, lon: 139.0, tags: { name: "Op A0" } },
+  { id: "opA1", lat: 35.01, lon: 139.0, tags: { name: "Op A1" } },
+  { id: "opB0", lat: 35.1, lon: 139.1, tags: { name: "Op B0" } },
+  { id: "opB1", lat: 35.11, lon: 139.1, tags: { name: "Op B1" } },
+];
+
+// `name` defaults to the relation id itself so the untagged-premium-backstop tests below can use
+// real allowlisted lineNames ("Kagayaki", "Hakutaka") directly as both id and name.
+function opRoute(id: string, stopIds: string[], extraTags: Record<string, string>, name: string = id): OsmRelation {
+  return route(id, name, "train", stopIds, extraTags);
+}
+
+function operatorOfLine(graph: ReturnType<typeof buildTransitGraph>, relationId: string): string | undefined {
+  return [...graph.stopNodes.values()].find((s) => s.lineId === relationId)?.operator;
+}
+
+// Six real JR East spellings measured in the extract all canonicalize identically.
+for (const [tagId, raw] of [
+  ["JrE1", "東日本旅客鉄道"],
+  ["JrE2", "JR東日本"],
+  ["JrE3", "東日本旅客鉄道株式会社"],
+  ["JrE4", "東日本旅客鉄道 (JR East)"],
+  ["JrE5", "JR East"],
+] as const) {
+  const g = buildTransitGraph(opNodes, [], [opRoute(tagId, ["opA0", "opA1"], { operator: raw })]);
+  assert.equal(operatorOfLine(g, tagId), "JR East", `"${raw}" canonicalizes to "JR East"`);
+}
+
+// One spot check per remaining JR company.
+for (const [tagId, raw, company] of [
+  ["JrW", "西日本旅客鉄道", "JR West"],
+  ["JrC", "東海旅客鉄道", "JR Central"],
+  ["JrK", "JR Kyushu", "JR Kyushu"],
+  ["JrH", "北海道旅客鉄道", "JR Hokkaido"],
+  ["JrS", "四国旅客鉄道", "JR Shikoku"],
+] as const) {
+  const g = buildTransitGraph(opNodes, [], [opRoute(tagId, ["opA0", "opA1"], { operator: raw })]);
+  assert.equal(operatorOfLine(g, tagId), company, `"${raw}" canonicalizes to "${company}"`);
+}
+
+// A JR-tagged relation with no recognizable company sub-string (a mistagged line name, not a
+// company name — "JR東北線" measured directly in the extract) keeps its raw tag rather than guess.
+{
+  const g = buildTransitGraph(opNodes, [], [opRoute("JrMistag", ["opA0", "opA1"], { operator: "JR東北線" })]);
+  assert.equal(operatorOfLine(g, "JrMistag"), "JR東北線", "an unrecognized JR-group tag is kept raw, not guessed at");
+}
+
+// A `;`-joined multi-operator through-service takes the *first* listed operator (ADR-0022's
+// boarding-operator rule, applied at ingest) — in both directions: JR-first...
+{
+  const g = buildTransitGraph(
+    opNodes, [],
+    [opRoute("ThroughJrFirst", ["opA0", "opA1"], { operator: "東日本旅客鉄道;東京地下鉄" })]
+  );
+  assert.equal(operatorOfLine(g, "ThroughJrFirst"), "JR East", "JR-first through-service takes the boarding (first) operator");
+}
+// ...and non-JR-first, even though the line genuinely touches JR Central track further along —
+// this is the operator-boundary-within-a-line simplification #140's grilling session left open.
+{
+  const g = buildTransitGraph(
+    opNodes, [],
+    [opRoute("ThroughNonJrFirst", ["opA0", "opA1"], { operator: "小田急電鉄;東海旅客鉄道" })]
+  );
+  assert.equal(operatorOfLine(g, "ThroughNonJrFirst"), "小田急電鉄", "non-JR-first through-service is not classified JR");
+}
+
+// A plain non-JR operator tag is stored as its raw first-listed value — no canonicalization
+// attempted, since nothing downstream needs one yet.
+{
+  const g = buildTransitGraph(opNodes, [], [opRoute("Kintetsu", ["opA0", "opA1"], { operator: "近畿日本鉄道" })]);
+  assert.equal(operatorOfLine(g, "Kintetsu"), "近畿日本鉄道", "a non-JR operator tag is kept raw");
+}
+
+// Two real near-misses a looser regional-name match would wrongly classify as JR: 西日本鉄道
+// (Nishitetsu, shares "西日本" with JR West's 西日本旅客鉄道 but is a private Kyushu railway) and
+// 東海交通事業 (shares "東海" with JR Central's 東海旅客鉄道 but is a separate private operator).
+{
+  const g = buildTransitGraph(opNodes, [], [
+    opRoute("Nishitetsu", ["opA0", "opA1"], { operator: "西日本鉄道" }),
+    opRoute("TokaiKotsu", ["opB0", "opB1"], { operator: "東海交通事業" }),
+  ]);
+  assert.equal(operatorOfLine(g, "Nishitetsu"), "西日本鉄道", "Nishitetsu is not misclassified as JR West");
+  assert.equal(operatorOfLine(g, "TokaiKotsu"), "東海交通事業", "Tokai Kotsu Jigyo is not misclassified as JR Central");
+}
+
+// The untagged-premium-line backstop (#204: 16 of 35 premium relations in the extract carry no
+// operator tag at all, 14 of them genuine JR Shinkansen) — allowlisted names get "JR"...
+{
+  const g = buildTransitGraph(opNodes, [], [
+    opRoute("Kagayaki", ["opA0", "opA1"], { service: "long_distance" }), // no operator tag
+    opRoute("Hakutaka", ["opB0", "opB1"], { service: "long_distance" }),
+  ]);
+  assert.equal(operatorOfLine(g, "Kagayaki"), "JR", "an untagged, allowlisted premium lineName backstops to JR");
+  assert.equal(operatorOfLine(g, "Hakutaka"), "JR", "an untagged, allowlisted premium lineName backstops to JR");
+}
+// ...but an untagged premium line NOT on the allowlist stays genuinely unknown — the real trap
+// #204 flagged: 直通特急 (Osaka Umeda <-> Sanyo-Himeji) is premium and untagged, but is the
+// Hanshin/Sanyo Electric Railway limited express, not JR, and must not be swept in with the rest.
+{
+  const g = buildTransitGraph(opNodes, [], [
+    opRoute("直通特急", ["opA0", "opA1"], { service: "long_distance" }), // no operator tag, not allowlisted
+  ]);
+  assert.equal(operatorOfLine(g, "直通特急"), undefined, "a non-allowlisted untagged premium line stays unknown, not JR");
+}
+// The backstop only ever applies to premium lineTypes — an untagged ordinary commuter line stays
+// unknown even if some other line happened to share its name (never true in the real extract, but
+// the boundary itself is the thing under test).
+{
+  const g = buildTransitGraph(opNodes, [], [opRoute("Kagayaki-Commuter", ["opA0", "opA1"], {})]); // no service/duration -> commuter
+  assert.equal(operatorOfLine(g, "Kagayaki-Commuter"), undefined, "the untagged-premium backstop does not apply outside premium lineTypes");
+}
+
+// Round-trips through the SQLite store: a defined operator survives save/load, and a genuinely
+// unknown one comes back `undefined`, not the string `"null"` or an empty string.
+{
+  const roundTripGraph = buildTransitGraph(opNodes, [], [
+    opRoute("RtJr", ["opA0", "opA1"], { operator: "JR East" }),
+    opRoute("RtUnknown", ["opB0", "opB1"], {}),
+  ]);
+  const dbPath = path.join(tmpdir(), `transit-operator-roundtrip-${Date.now()}.db`);
+  save(roundTripGraph, dbPath);
+  const { graph: loaded } = load(dbPath);
+  fs.rmSync(dbPath, { force: true });
+  assert.equal(operatorOfLine(loaded, "RtJr"), "JR East", "a defined operator survives a save/load round-trip");
+  assert.equal(operatorOfLine(loaded, "RtUnknown"), undefined, "an unknown operator round-trips as undefined, not a string");
+}
+
+console.log("transitGraphIngest operator capture tests: OK");

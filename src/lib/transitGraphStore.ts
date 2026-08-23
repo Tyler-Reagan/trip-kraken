@@ -41,7 +41,8 @@ function createSchema(sqlite: Database.Database): void {
       stationName TEXT NOT NULL,
       lat REAL NOT NULL,
       lng REAL NOT NULL,
-      sequence INTEGER NOT NULL
+      sequence INTEGER NOT NULL,
+      operator TEXT
     );
     CREATE TABLE Cluster (
       id TEXT PRIMARY KEY,
@@ -90,7 +91,7 @@ export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH,
   try {
     createSchema(sqlite);
     const insertStop = sqlite.prepare(
-      "INSERT INTO StopNode (id, lineId, lineName, lineType, stationName, lat, lng, sequence) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO StopNode (id, lineId, lineName, lineType, stationName, lat, lng, sequence, operator) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
     const insertCluster = sqlite.prepare("INSERT INTO Cluster (id, name) VALUES (?, ?)");
     const insertMember = sqlite.prepare(
@@ -108,7 +109,7 @@ export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH,
 
     const writeAll = sqlite.transaction(() => {
       for (const stop of graph.stopNodes.values()) {
-        insertStop.run(stop.id, stop.lineId, stop.lineName, stop.lineType, stop.stationName, stop.lat, stop.lng, stop.sequence);
+        insertStop.run(stop.id, stop.lineId, stop.lineName, stop.lineType, stop.stationName, stop.lat, stop.lng, stop.sequence, stop.operator ?? null);
       }
       for (const cluster of graph.clusters.values()) {
         insertCluster.run(cluster.id, cluster.name);
@@ -148,8 +149,14 @@ export function load(filePath: string = DEFAULT_GRAPH_PATH): { graph: TransitGra
   try {
     const graph = createGraph();
 
-    for (const row of sqlite.prepare("SELECT * FROM StopNode").all() as StopNode[]) {
-      graph.stopNodes.set(row.id, row);
+    for (const row of sqlite.prepare("SELECT * FROM StopNode").all() as (Omit<StopNode, "operator"> & {
+      operator: string | null;
+    })[]) {
+      // Omit the key entirely when unknown, rather than assign `undefined` — an object with an
+      // own `operator: undefined` property is not deepStrictEqual to one without the key at all,
+      // which every StopNode built by hand (fixtures, `createGraph()` callers) never carries.
+      const { operator, ...rest } = row;
+      graph.stopNodes.set(row.id, operator ? { ...rest, operator } : rest);
     }
     const clusterRows = sqlite.prepare("SELECT * FROM Cluster").all() as { id: string; name: string }[];
     for (const row of clusterRows) {

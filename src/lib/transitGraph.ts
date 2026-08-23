@@ -34,6 +34,13 @@ export interface StopNode {
   lng: number;
   /** Position along the line's ordered stop sequence — what makes ride edges "consecutive". */
   sequence: number;
+  /** The line's operator, one canonical value per line/relation (issue #210) — the same
+   * granularity `lineType` already uses. A through-service that changes Operator partway along
+   * one line (ADR-0021) is not resolved here; every stop on the line takes the relation's own
+   * operator, and where the boundary actually falls stays unmodeled (fog item on #140).
+   * Absent means genuinely unknown — OSM carries no `operator=*` tag on this relation and it
+   * isn't one of the untagged premium services #210 backstops by name — not "not JR". */
+  operator?: string;
 }
 
 export interface StationCluster {
