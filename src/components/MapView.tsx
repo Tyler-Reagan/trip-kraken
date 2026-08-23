@@ -708,6 +708,7 @@ function StopPanel({
         pairKey={key}
         onStationClick={(t) => onFocus({ tier: "point", lat: t.lat!, lng: t.lng! })}
         onHoverChange={setHighlightedPathId}
+        hasJrPass={trip.hasJrPass}
       />
     );
   };

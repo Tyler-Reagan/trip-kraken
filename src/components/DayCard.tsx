@@ -298,6 +298,7 @@ function RouteConnector({ from, to, date }: { from: Location; to: Location; date
       pairKey={key}
       trailing={alongTheWay}
       onStationClick={setInspectedSurfacedTransit}
+      hasJrPass={trip.hasJrPass}
     />
   );
 }

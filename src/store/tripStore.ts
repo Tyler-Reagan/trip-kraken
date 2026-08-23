@@ -133,6 +133,7 @@ interface TripStore {
   setDayLabel: (date: string, label: string | null) => Promise<void>;
   setTransitCaveatDismissed: (v: boolean) => Promise<void>;
   setRoadProfile: (v: RoadProfile) => Promise<void>;
+  setHasJrPass: (v: boolean) => Promise<void>;
   importBooking: (text: string) => Promise<string | null>;
   enrich: () => Promise<void>;
 
@@ -518,6 +519,20 @@ export const useTripStore = create<TripStore>()((set, get) => ({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ roadProfile: v }),
+    });
+  },
+
+  // Same optimistic pattern as setRoadProfile — must persist (the OSM-Japan provider reads it
+  // off the Trip at matrix time, issue #211).
+  setHasJrPass: async (v) => {
+    const tripId = get().tripId;
+    const t = get().trip;
+    if (!tripId || !t) return;
+    set({ trip: { ...t, hasJrPass: v } });
+    await fetch(`/api/trips/${tripId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hasJrPass: v }),
     });
   },
 

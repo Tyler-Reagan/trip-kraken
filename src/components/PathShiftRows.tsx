@@ -36,13 +36,19 @@ function summaryOf(chain: Path[]): string {
   return lineNames.length > 0 ? lineNames.join(" → ") : `${chain.length} shifts`;
 }
 
+/** Whether any rail Path in the chain needs the marker — so a collapsed header still says so
+ * rather than hiding it behind a manual expand (issue #212). */
+function chainHasSupplement(chain: Path[], hasJrPass: boolean): boolean {
+  return hasJrPass && chain.some((p) => p.kind === "rail" && p.jrPassSupplementRequired === true);
+}
+
 /** One shift row — the content template every variant shares. Field-driven, not kind-branched: a
  * row shows whatever the Path actually has (line name, station name, Basis marker, duration).
  * Typography matches `AnchorRow`'s subtext (`text-meta`, `w-3.5 h-3.5` icon) — this list sits
  * directly between full Location rows and should read as a subordinate member of the same family,
  * not a different, denser component. */
 function ShiftRow({
-  path, transitById, onStationClick, onHoverChange, shiftId, highlighted, as: Row,
+  path, transitById, onStationClick, onHoverChange, shiftId, highlighted, hasJrPass, as: Row,
 }: {
   path: Path;
   transitById: Map<string, Transit>;
@@ -50,10 +56,16 @@ function ShiftRow({
   onHoverChange?: (id: string | null) => void;
   shiftId: string;
   highlighted: boolean;
+  hasJrPass: boolean;
   as: "li" | "div";
 }) {
   const Icon = iconFor(path);
   const straightLine = path.travelCost.basisOfCost === "straightLine";
+  // Issue #211/#212: an objective fact about the service (set regardless of the traveler's own
+  // hasJrPass), but only worth telling a traveler who actually declared a Pass — otherwise they
+  // are just paying the ordinary Nozomi/Mizuho fare like anyone else, and "extra fare applies"
+  // reads as a non-sequitur.
+  const supplementApplies = hasJrPass && path.kind === "rail" && path.jrPassSupplementRequired === true;
   const clickableStation = isTransferWalk(path) ? path.from : null;
   const clickableTransit = clickableStation
     ? transitById.get(surfacedTransitIdOf(clickableStation.lat, clickableStation.lng))
@@ -83,6 +95,14 @@ function ShiftRow({
       <span className="flex-1" />
       <span className="text-numeral text-faint shrink-0">{formatDuration(Math.round(path.travelCost.costAsMinutes))}</span>
       {straightLine && <span className="text-faint shrink-0">(straight-line)</span>}
+      {supplementApplies && (
+        <span
+          className="text-amber-700 dark:text-amber-400 shrink-0"
+          title="Nozomi/Mizuho aren't covered by a JR Pass outright — ridable with a separate supplement ticket"
+        >
+          extra fare applies
+        </span>
+      )}
     </Row>
   );
 }
@@ -107,6 +127,10 @@ interface PathShiftRowsProps {
    * `DayCard`'s sidebar has no canvas to highlight against, so it leaves this undefined. */
   onHoverChange?: (id: string | null) => void;
   highlightedPathId?: string | null;
+  /** Whether the traveler declared a JR Pass (issue #211/#212) — gates the "extra fare applies"
+   * marker on a Nozomi/Mizuho shift row. The underlying fact is always on the Path; this is what
+   * decides whether showing it makes sense to *this* trip. */
+  hasJrPass: boolean;
   /** `DayCard`'s list is a real `<ol>`; `MapView`'s `StopPanel` is plain `<div>`/`<button>` rows
    * with no list semantics at all — an `<li>` there would be invalid markup. Default `"li"`. */
   as?: "li" | "div";
@@ -120,7 +144,7 @@ interface PathShiftRowsProps {
  * resolved-empty, or a real chain.
  */
 export default function PathShiftRows({
-  chain, tripId, pairKey, trailing, onStationClick, onHoverChange, highlightedPathId, as = "li",
+  chain, tripId, pairKey, trailing, onStationClick, onHoverChange, highlightedPathId, hasJrPass, as = "li",
 }: PathShiftRowsProps) {
   const [expanded, setExpanded] = useState(false);
   const Row = as;
@@ -169,6 +193,9 @@ export default function PathShiftRows({
               ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-brand-500 dark:text-brand-400" />
               : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-brand-500 dark:text-brand-400" />}
             <span className="truncate">{summaryOf(chain)} <span className="text-faint">· {chain.length} shifts</span></span>
+            {!expanded && chainHasSupplement(chain, hasJrPass) && (
+              <span className="text-amber-700 dark:text-amber-400 shrink-0">extra fare applies</span>
+            )}
           </button>
         )}
         <span className="flex-1 min-w-2" />
@@ -185,6 +212,7 @@ export default function PathShiftRows({
             onHoverChange={onHoverChange}
             shiftId={shiftId}
             highlighted={highlightedPathId === shiftId}
+            hasJrPass={hasJrPass}
             as={as}
           />
         );
