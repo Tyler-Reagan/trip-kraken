@@ -40,6 +40,10 @@ export const trip = sqliteTable("Trip", {
   // Whether the user has dismissed ADR-0019's estimated-transit-timing caveat (#130) — persisted
   // so it stays dismissed across reloads instead of reappearing on every page mount.
   transitCaveatDismissed: integer("transitCaveatDismissed", { mode: "boolean" }).notNull().default(false),
+  // Whether the traveler holds a Japan Rail Pass (issue #211) — gates the OSM-Japan provider's
+  // graph search to hard-exclude confirmed non-JR-group operators. `notNull` + a default, same
+  // reasoning as `transitCaveatDismissed` above: there is no meaningful unset state.
+  hasJrPass: integer("hasJrPass", { mode: "boolean" }).notNull().default(false),
   createdAt: text("createdAt").notNull().default(sql`(datetime('now'))`),
   updatedAt: text("updatedAt").notNull().default(sql`(datetime('now'))`),
 }, (t) => [

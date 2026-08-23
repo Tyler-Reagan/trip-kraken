@@ -33,6 +33,7 @@ function parseTrip(r: typeof trip.$inferSelect) {
     dayLabels: r.dayLabels ?? null,
     roadProfile: r.roadProfile,
     transitCaveatDismissed: r.transitCaveatDismissed,
+    hasJrPass: r.hasJrPass,
     createdAt: new Date(r.createdAt),
     updatedAt: new Date(r.updatedAt),
   };
@@ -253,6 +254,7 @@ export function updateTrip(
     dayLabels?: Record<string, string> | null;
     roadProfile?: RoadProfile;
     transitCaveatDismissed?: boolean;
+    hasJrPass?: boolean;
   }
 ): TripWithDetails {
   getDrizzle().transaction((tx) => {
@@ -264,6 +266,7 @@ export function updateTrip(
         ...(fields.dayLabels !== undefined ? { dayLabels: fields.dayLabels } : {}),
         ...(fields.roadProfile !== undefined ? { roadProfile: fields.roadProfile } : {}),
         ...(fields.transitCaveatDismissed !== undefined ? { transitCaveatDismissed: fields.transitCaveatDismissed } : {}),
+        ...(fields.hasJrPass !== undefined ? { hasJrPass: fields.hasJrPass } : {}),
         updatedAt: sql`(datetime('now'))`,
       })
       .where(eq(trip.id, id))

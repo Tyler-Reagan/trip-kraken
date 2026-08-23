@@ -110,6 +110,7 @@ export type TripWithDetails = {
   dayLabels: Record<IsoDate, string> | null; // a day's optional label; days are not an entity
   roadProfile: RoadProfile; // which OSRM profile answers this Trip's road cells (ADR-0024, amended 2026-08-11)
   transitCaveatDismissed: boolean; // whether the estimated-transit-timing caveat (#130) has been dismissed
+  hasJrPass: boolean; // gates the OSM-Japan provider's graph search to JR-group-only (issue #211)
   createdAt: Date;
   updatedAt: Date;
   locations: Location[];

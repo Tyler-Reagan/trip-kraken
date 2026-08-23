@@ -93,6 +93,7 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
     dayBudgetMinutes,
     startDate: trip.startDate,
     kinds,
+    hasJrPass: trip.hasJrPass,
     edges: { arrivalId: arrival?.id, departureId: departure?.id },
   });
 

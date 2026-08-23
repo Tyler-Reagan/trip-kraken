@@ -25,6 +25,10 @@ export interface PathProviderOptions {
    * transit provider needs a date, not just a time-of-day. One matrix is fetched per optimize run
    * at one representative datetime; providers that don't model time-of-day (haversine) ignore it. */
   departureTime?: Date;
+  /** Whether the traveler holds a Japan Rail Pass (issue #211) — a graph-search constraint the
+   * OSM-Japan provider alone acts on; every other provider ignores it, the same as
+   * `departureTime` above. */
+  hasJrPass?: boolean;
 }
 
 /** A provider's answer for one matrix cell, or `null` — an explicit decline (ADR-0024 §4). `null`
