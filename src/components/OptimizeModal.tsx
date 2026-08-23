@@ -14,6 +14,7 @@ export default function OptimizeModal() {
   const trip = useTripStore((s) => s.trip);
   const setShowOptimize = useTripStore((s) => s.setShowOptimize);
   const setRoadProfile = useTripStore((s) => s.setRoadProfile);
+  const setHasJrPass = useTripStore((s) => s.setHasJrPass);
   const optimize = useTripStore((s) => s.optimize);
   const [dayBudgetHours, setDayBudgetHours] = useState<number>(8);
   const [loading, setLoading] = useState(false);
@@ -94,6 +95,24 @@ export default function OptimizeModal() {
             </div>
             <p className="text-xs text-faint">
               How road legs are routed. Trains and buses are unaffected — this only decides walking vs. driving between stops.
+              Changeable any time; takes effect on the next optimize.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-2 text-sm font-medium text-ink cursor-pointer w-fit">
+              <input
+                type="checkbox"
+                checked={trip.hasJrPass}
+                onChange={(e) => setHasJrPass(e.target.checked)}
+                disabled={loading}
+                className="rounded border-line-strong text-brand-600 focus:ring-brand-500 shrink-0"
+              />
+              I have a Japan Rail Pass
+            </label>
+            <p className="text-xs text-faint">
+              Routes around lines your Pass doesn&apos;t cover. Nozomi and Mizuho Shinkansen still route — they&apos;re
+              ridable on a Pass with a separate supplement ticket — but are flagged wherever they appear.
               Changeable any time; takes effect on the next optimize.
             </p>
           </div>

@@ -17,7 +17,7 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const body = await req.json();
-  const { name, startDate, endDate, dayLabels, roadProfile, transitCaveatDismissed } = body;
+  const { name, startDate, endDate, dayLabels, roadProfile, transitCaveatDismissed, hasJrPass } = body;
 
   const trip = updateTrip(id, {
     ...(name !== undefined ? { name } : {}),
@@ -26,6 +26,7 @@ export async function PATCH(
     ...(dayLabels !== undefined ? { dayLabels } : {}),
     ...(roadProfile !== undefined ? { roadProfile } : {}),
     ...(transitCaveatDismissed !== undefined ? { transitCaveatDismissed } : {}),
+    ...(hasJrPass !== undefined ? { hasJrPass } : {}),
   });
   return NextResponse.json(trip);
 }
