@@ -49,6 +49,7 @@ const trip = (locations: TripWithDetails["locations"], placements: Placement[]):
   updatedAt: new Date(),
   locations,
   placements,
+  legModePins: [],
 });
 
 // Three activities in the middle of a Day: a1(0) a2(1) a3(2) — removing a2 heals a1↔a3.

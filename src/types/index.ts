@@ -92,6 +92,18 @@ export type Placement = {
   order: number;
 };
 
+/** A rider's manual `roadProfile` override for one Location pair (issue #209/#217) — consulted at
+ *  matrix-build time (#218) so a pinned pair uses this mode instead of the Trip default. Keyed by
+ *  Location pair, stored unordered: `locationAId`/`locationBId` are canonicalized (sorted) at the
+ *  write path, so `locationAId`/`locationBId` don't correspond to a particular travel direction. */
+export type LegModePin = {
+  id: string;
+  tripId: string;
+  locationAId: string;
+  locationBId: string;
+  mode: RoadProfile;
+};
+
 /**
  * A role a Location plays in a trip — a *derived adjective*, never stored (ADR-0015 §4). `lodging`
  * is intrinsic to `kind`; `arrival`/`departure` are likewise reflected straight off a Transit
@@ -115,6 +127,7 @@ export type TripWithDetails = {
   updatedAt: Date;
   locations: Location[];
   placements: Placement[];
+  legModePins: LegModePin[];
 };
 
 // ─── Derivation helpers (one shared projection rule) ──────────────────────────

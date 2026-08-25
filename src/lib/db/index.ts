@@ -1,8 +1,8 @@
 import { randomUUID } from "crypto";
 import { eq, and, asc, desc, ne, gt, gte, max, sql, count, inArray, isNotNull, getTableColumns } from "drizzle-orm";
 import { getDrizzle, type Drizzle } from "./client";
-import { trip, location, placement } from "./schema";
-import type { TripWithDetails, Location, Placement, IsoDate } from "@/types";
+import { trip, location, placement, legModePin } from "./schema";
+import type { TripWithDetails, Location, Placement, LegModePin, IsoDate } from "@/types";
 import type { LocationEnrichment } from "@/lib/places";
 import type { ParsedBooking } from "@/lib/bookingImport";
 import type { RoadProfile } from "@/types/path";
@@ -97,7 +97,19 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
     .orderBy(asc(placement.date), asc(placement.order))
     .all();
 
-  return { ...parseTrip(tripRow), locations, placements };
+  const legModePins: LegModePin[] = db
+    .select()
+    .from(legModePin)
+    .where(eq(legModePin.tripId, id))
+    .all();
+
+  return { ...parseTrip(tripRow), locations, placements, legModePins };
+}
+
+/** Canonical (unordered) key for a Location pair's pin — sorted so `(a, b)` and `(b, a)` land on
+ *  the same row regardless of which direction the caller names them in. */
+function canonicalPinPair(locationIdA: string, locationIdB: string): [string, string] {
+  return locationIdA < locationIdB ? [locationIdA, locationIdB] : [locationIdB, locationIdA];
 }
 
 function requireTrip(tripId: string): TripWithDetails {
@@ -313,6 +325,54 @@ export function setDayLabel(tripId: string, date: IsoDate, label: string | null)
   if (label && label.trim()) labels[date] = label;
   else delete labels[date];
   db.update(trip).set({ dayLabels: labels, updatedAt: sql`(datetime('now'))` }).where(eq(trip.id, tripId)).run();
+  return requireTrip(tripId);
+}
+
+/**
+ * Set or clear a Location pair's mode pin (issue #217). `mode: null` clears it. Upserts on the
+ * canonicalized pair rather than insert-then-conflict — a pin is a single traveler decision per
+ * pair, not a history of them.
+ */
+export function setLegModePin(
+  tripId: string,
+  fromLocationId: string,
+  toLocationId: string,
+  mode: RoadProfile | null
+): TripWithDetails {
+  const db = getDrizzle();
+  const [locationAId, locationBId] = canonicalPinPair(fromLocationId, toLocationId);
+
+  if (mode === null) {
+    db.delete(legModePin)
+      .where(
+        and(
+          eq(legModePin.tripId, tripId),
+          eq(legModePin.locationAId, locationAId),
+          eq(legModePin.locationBId, locationBId)
+        )
+      )
+      .run();
+    return requireTrip(tripId);
+  }
+
+  const existing = db
+    .select({ id: legModePin.id })
+    .from(legModePin)
+    .where(
+      and(
+        eq(legModePin.tripId, tripId),
+        eq(legModePin.locationAId, locationAId),
+        eq(legModePin.locationBId, locationBId)
+      )
+    )
+    .get();
+
+  if (existing) {
+    db.update(legModePin).set({ mode }).where(eq(legModePin.id, existing.id)).run();
+  } else {
+    db.insert(legModePin).values({ id: newId(), tripId, locationAId, locationBId, mode }).run();
+  }
+
   return requireTrip(tripId);
 }
 

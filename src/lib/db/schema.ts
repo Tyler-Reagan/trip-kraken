@@ -123,3 +123,30 @@ export const placement = sqliteTable("Placement", {
   date: text("date").notNull(),
   order: integer("order").notNull(),
 });
+
+// A rider's manual override of `roadProfile` for one Location pair (issue #209/#217): the road-mode
+// fallback ("rail"/"bus" always stay eligible) a pinned pair uses instead of the Trip default,
+// consulted at matrix-build time (#218). Keyed by Location pair rather than by Path/shift id —
+// Paths are never persisted (`src/types/path.ts`) and Placements are wholesale-replaced by every
+// re-optimize (ADR-0015), so neither is a safe key; Locations are the one stable thing in this
+// chain. Stored unordered: `locationAId`/`locationBId` are canonicalized (lexicographically sorted)
+// at the write path, not by insertion order — the mode preference for a leg between two Locations
+// doesn't depend on which direction the itinerary happens to traverse it after a re-optimize
+// reshuffles day order. (`pairKey` in `src/lib/pathPairs.ts` is directional, but that's a coordinate
+// cache key for a routing *answer*, which can legitimately differ by direction — a different
+// concern from which *modes are eligible*, which doesn't.)
+export const legModePin = sqliteTable("LegModePin", {
+  id: text("id").primaryKey(),
+  tripId: text("tripId")
+    .notNull()
+    .references(() => trip.id, { onDelete: "cascade" }),
+  locationAId: text("locationAId")
+    .notNull()
+    .references(() => location.id, { onDelete: "cascade" }),
+  locationBId: text("locationBId")
+    .notNull()
+    .references(() => location.id, { onDelete: "cascade" }),
+  mode: text("mode", { enum: ["walking", "driving"] }).notNull(),
+}, (t) => [
+  uniqueIndex("leg_mode_pin_unique").on(t.tripId, t.locationAId, t.locationBId),
+]);

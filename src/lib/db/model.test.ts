@@ -29,6 +29,7 @@ import {
   movePlacement,
   removePlacement,
   setDayLabel,
+  setLegModePin,
   importBookingLodging,
   getTripWithDetails,
   updateTrip,
@@ -228,6 +229,16 @@ const labelled = setDayLabel(trip.id, "2026-06-25", "Museum day");
 assert.deepEqual(labelled.dayLabels, { "2026-06-25": "Museum day" }, "label stored under its date");
 const cleared = setDayLabel(trip.id, "2026-06-25", "");
 assert.deepEqual(cleared.dayLabels, {}, "empty label clears the entry");
+
+// ── Leg mode pins (#217): a manual roadProfile override for one Location pair, keyed unordered ──
+const pinnedPQ = setLegModePin(trip.id, P, Q, "driving");
+assert.equal(pinnedPQ.legModePins.length, 1, "one pin stored");
+assert.equal(pinnedPQ.legModePins[0].mode, "driving");
+const reversedLookup = setLegModePin(trip.id, Q, P, "walking");
+assert.equal(reversedLookup.legModePins.length, 1, "naming the pair in the opposite order updates the same pin, not a second one");
+assert.equal(reversedLookup.legModePins[0].mode, "walking", "upsert overwrites the existing pin's mode");
+const clearedPin = setLegModePin(trip.id, P, Q, null);
+assert.equal(clearedPin.legModePins.length, 0, "mode: null clears the pin");
 
 // ── Booking import (ADR-0010, #57): property → lodging Location with dates ──
 const parsed = parseBookingConfirmation(
