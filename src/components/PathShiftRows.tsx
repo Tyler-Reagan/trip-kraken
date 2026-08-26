@@ -116,7 +116,7 @@ function LegModePinControl({
  * directly between full Location rows and should read as a subordinate member of the same family,
  * not a different, denser component. */
 function ShiftRow({
-  path, transitById, onStationClick, onHoverChange, shiftId, highlighted, supplementApplies, as: Row,
+  path, transitById, onStationClick, onHoverChange, shiftId, highlighted, supplementApplies, endContent, as: Row,
 }: {
   path: Path;
   transitById: Map<string, Transit>;
@@ -127,6 +127,10 @@ function ShiftRow({
   /** Pre-resolved by `PathShiftRows` (`needsSupplementMarker`), the same way `highlighted` is —
    * this row never re-derives it from a raw `hasJrPass`. */
   supplementApplies: boolean;
+  /** The gap's pin control and/or `trailing`, folded onto this row instead of a separate header
+   * (#219 follow-up) — only ever passed to the last row of a non-collapsible chain; see
+   * `PathShiftRows` below for why. */
+  endContent?: React.ReactNode;
   as: "li" | "div";
 }) {
   const Icon = iconFor(path);
@@ -138,7 +142,7 @@ function ShiftRow({
 
   return (
     <Row
-      className={`relative flex items-center gap-2 py-1 pl-5 text-meta text-sub select-none ${highlighted ? "bg-surface-2" : ""}`}
+      className={`relative flex items-center gap-2 py-1 pl-5 pr-2.5 text-meta text-sub select-none ${highlighted ? "bg-surface-2" : ""}`}
       onMouseEnter={onHoverChange ? () => onHoverChange(shiftId) : undefined}
       onMouseLeave={onHoverChange ? () => onHoverChange(null) : undefined}
     >
@@ -168,6 +172,7 @@ function ShiftRow({
           extra fare applies
         </span>
       )}
+      {endContent}
     </Row>
   );
 }
@@ -214,11 +219,13 @@ interface PathShiftRowsProps {
 }
 
 /**
- * Renders one Location-to-Location gap: a persistent header row (a collapse toggle once the chain
- * is long enough to be worth collapsing, plus whatever `trailing` content the caller wants aligned
- * to it) and, below it, the shift rows themselves when applicable. `chain`'s three states are
- * exactly the three states a real drag/reorder produces: not yet requested, requested and
- * resolved-empty, or a real chain.
+ * Renders one Location-to-Location gap. A chain long enough to be worth collapsing gets a
+ * persistent header row (the collapse toggle, the pin control, and `trailing`); a short chain (1-2
+ * shifts — the common plain walk/drive leg) has no header at all, since there's nothing to
+ * collapse — the pin control and `trailing` fold onto its last shift row instead (#219 follow-up),
+ * so a plain leg reads as the one row it visually is rather than an empty control row stacked over
+ * its content. `chain`'s three states are exactly the three states a real drag/reorder produces:
+ * not yet requested, requested and resolved-empty, or a real chain.
  */
 export default function PathShiftRows({
   chain, tripId, pairKey, trailing, onStationClick, onHoverChange, highlightedPathId, hasJrPass,
@@ -235,12 +242,12 @@ export default function PathShiftRows({
   if (chain === null) {
     // Resolved-no-route: no shift content, same as "non-transit Paths render nothing new" —
     // but `trailing` (the along-the-way button) still needs a row to sit on.
-    return trailing ? <Row className="flex items-center justify-end py-1">{trailing}</Row> : null;
+    return trailing ? <Row className="flex items-center justify-end py-1 pr-2.5">{trailing}</Row> : null;
   }
 
   if (chain === undefined) {
     return (
-      <Row className="flex items-center gap-2 py-1 pl-5">
+      <Row className="flex items-center gap-2 py-1 pl-5 pr-2.5">
         <span className="h-3.5 w-3.5 rounded-full bg-surface-2 animate-pulse shrink-0" />
         <span className="h-2.5 w-28 rounded bg-surface-2 animate-pulse" />
         <span className="flex-1" />
@@ -249,19 +256,31 @@ export default function PathShiftRows({
     );
   }
 
-  if (chain.length === 0) return trailing ? <Row className="flex items-center justify-end py-1">{trailing}</Row> : null;
+  if (chain.length === 0) return trailing ? <Row className="flex items-center justify-end py-1 pr-2.5">{trailing}</Row> : null;
 
-  // A long chain collapses behind a persistent header row with a re-openable toggle. Short chains
-  // (nothing worth collapsing) skip the toggle and just show their row(s) under a plain header, so
-  // the along-the-way button still has one consistent row to align against. Expanding never
-  // indents the revealed rows — it reveals more flat rows at the same list level, not a hierarchy.
+  // A long chain collapses behind a persistent header row with a re-openable toggle, since it
+  // genuinely needs one — the chevron and the "N shifts" summary are real content the collapsed
+  // state depends on. A short chain (1-2 shifts, the common plain walk/drive leg) has nothing to
+  // collapse, so it skips the header entirely rather than stacking a second, otherwise-empty row
+  // above its own content just to hold the pin control and `trailing` (#219 follow-up) — those
+  // fold onto the chain's last row instead via `ShiftRow`'s `endContent`. Expanding a long chain
+  // never indents the revealed rows — it reveals more flat rows at the same list level, not a
+  // hierarchy.
   const collapsible = chain.length > 2;
   const showRows = !collapsible || expanded;
+  const pin = pinControl && legRoadFallbackApplies(chain) ? <LegModePinControl {...pinControl} /> : null;
+  const mergedEnd =
+    !collapsible && (pin || trailing) ? (
+      <span className="flex items-center gap-1.5 shrink-0">
+        {pin}
+        {trailing}
+      </span>
+    ) : null;
 
   return (
     <>
-      <Row className="flex items-center gap-1 py-1">
-        {collapsible && (
+      {collapsible && (
+        <Row className="flex items-center gap-1 py-1 pr-2.5">
           <button
             onClick={() => setExpanded((v) => !v)}
             aria-expanded={expanded}
@@ -280,11 +299,11 @@ export default function PathShiftRows({
               </span>
             )}
           </button>
-        )}
-        <span className="flex-1 min-w-2" />
-        {pinControl && legRoadFallbackApplies(chain) && <LegModePinControl {...pinControl} />}
-        {trailing}
-      </Row>
+          <span className="flex-1 min-w-2" />
+          {pin}
+          {trailing}
+        </Row>
+      )}
       {showRows && chain.map((path, i) => {
         const shiftId = pathShiftId(pairKey, i);
         return (
@@ -297,6 +316,7 @@ export default function PathShiftRows({
             shiftId={shiftId}
             highlighted={highlightedPathId === shiftId}
             supplementApplies={needsSupplementMarker(path, hasJrPass)}
+            endContent={mergedEnd && i === chain.length - 1 ? mergedEnd : null}
             as={as}
           />
         );
