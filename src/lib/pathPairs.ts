@@ -11,7 +11,7 @@
  * What comes back is one or more Paths, since a provider splits a pair at every shift (ADR-0022).
  */
 
-import type { DerivedDay, LegModePin, Location, ScheduledStop } from "@/types";
+import type { DerivedDay, JourneyRoadKind, Location, ScheduledStop } from "@/types";
 import type { PathEndpoint, PathKind, RoadProfile } from "@/types/path";
 
 export interface PathPair {
@@ -19,37 +19,44 @@ export interface PathPair {
   to: PathEndpoint;
 }
 
-/** The pin (if any) covering an unordered Location pair (issue #217/#219) — the read-side mirror
- *  of `canonicalPinPair` in `db/index.ts`: a pin's `locationAId`/`locationBId` are canonicalized
- *  (sorted) at the write path, so a caller naming the pair in either direction finds the same pin. */
-export function legModePinFor(pins: LegModePin[], locationIdA: string, locationIdB: string): LegModePin | undefined {
-  return pins.find(
-    (p) =>
-      (p.locationAId === locationIdA && p.locationBId === locationIdB) ||
-      (p.locationAId === locationIdB && p.locationBId === locationIdA)
+/** The chosen road kind (if any) covering an unordered Journey's Location pair (issue #217/#219,
+ *  renamed from `legModePinFor` #223 — see `schema.ts`'s `journeyRoadKind` for why "pin"/"leg" are
+ *  wrong here) — the read-side mirror of `canonicalJourneyPair` in `db/index.ts`: a row's
+ *  `locationAId`/`locationBId` are canonicalized (sorted) at the write path, so a caller naming the
+ *  pair in either direction finds the same row. */
+export function journeyRoadKindFor(
+  kinds: JourneyRoadKind[],
+  locationIdA: string,
+  locationIdB: string
+): JourneyRoadKind | undefined {
+  return kinds.find(
+    (k) =>
+      (k.locationAId === locationIdA && k.locationBId === locationIdB) ||
+      (k.locationAId === locationIdB && k.locationBId === locationIdA)
   );
 }
 
 /**
- * A pin's effect on a base `kinds` list (#223, correcting #217/#218's original shape). Not a
- * substitution *within* the list — `osm-japan`'s `"rail"` capability never actually declines a
- * cell within its geographic reach; it always answers, worst case with its own walking estimate
- * over the transit graph (`basisOfCost: "railNetwork"`, `kind: "walking"` — indistinguishable by
- * `Path.kind` from a real road answer). Keeping `"rail"`/`"bus"` alongside a pinned mode therefore
- * left the pin silently outranked in both the already-shipped optimizer path
- * (`solver.ts`'s `applyLegModePins`) and this ticket's display path — confirmed live against a
- * pinned pair in an actual trip, where `["rail","walking"]` and `["rail","driving"]` returned the
+ * A Journey's chosen road kind's effect on a base `kinds` list (#223, correcting #217/#218's
+ * original shape). Not a substitution *within* the list — `osm-japan`'s `"rail"` capability never
+ * actually declines a cell within its geographic reach; it always answers, worst case with its own
+ * walking estimate over the transit graph (`basisOfCost: "railNetwork"`, `kind: "walking"` —
+ * indistinguishable by `Path.kind` from a real road answer). Keeping `"rail"`/`"bus"` alongside a
+ * chosen kind therefore left the choice silently outranked in both the already-shipped optimizer
+ * path (`solver.ts`'s `applyJourneyRoadKinds`) and this ticket's display path — confirmed live
+ * against a real Journey, where `["rail","walking"]` and `["rail","driving"]` returned the
  * identical `osm-japan` answer.
  *
- * A pin is a rider's explicit override, not a soft preference transit can still win against: this
- * drops every other kind and asks for the pinned mode alone, so `osm-japan`/Google never get a
- * chance to answer instead. `kinds` (the caller's un-pinned base list) is only used verbatim.
+ * A rider's choice for this Journey is not a soft preference transit can still win against: this
+ * drops every other kind and asks for the chosen one alone, so `osm-japan`/Google never get a
+ * chance to answer instead. `kinds` (the caller's base list, before any Journey-specific choice) is
+ * only used verbatim when there's no choice to apply.
  *
- * Takes just `{ mode }` rather than a full `LegModePin` — `solver.ts`'s own pin shape carries no
- * `id`/`tripId`, and mode is all this ever reads.
+ * Takes just `{ kind }` rather than a full `JourneyRoadKind` — `solver.ts`'s own shape carries no
+ * `id`/`tripId`, and the kind is all this ever reads.
  */
-export function withLegModePin(kinds: PathKind[], pin: { mode: RoadProfile } | undefined): PathKind[] {
-  return pin ? [pin.mode] : kinds;
+export function withJourneyRoadKind(kinds: PathKind[], chosen: { kind: RoadProfile } | undefined): PathKind[] {
+  return chosen ? [chosen.kind] : kinds;
 }
 
 /** What role an entry plays in a Day's chain (ADR-0036) — not a routing fact, just enough for a
@@ -135,20 +142,20 @@ const coordOf = (p: PathEndpoint) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`;
 /**
  * The cache key for one pair's answer (ADR-0029 §5, extended #223). Keyed on coordinates rather
  * than `locationId` so that re-geocoding a Location invalidates its entries by construction, on
- * the Road profile because it selects which OSRM graph answered, and on this pair's mode pin (if
- * any) for the same reason — a pin changes which kind is eligible for this cell just as much as
- * `roadProfile` does, so a held answer from before the pin was set (or after it was cleared) must
- * not silently keep answering for it. `locationId` on either end is what makes a pin lookup
- * possible at all; a pair without one (an interchange endpoint a decomposition created) simply
- * can't carry a pin, same as today.
+ * the Road profile because it selects which OSRM graph answered, and on this Journey's chosen kind
+ * (if any) for the same reason — a choice changes which kind is eligible for this cell just as
+ * much as `roadProfile` does, so a held answer from before the choice was made (or after it was
+ * cleared) must not silently keep answering for it. `locationId` on either end is what makes a
+ * choice lookup possible at all; a pair without one (an interchange endpoint a decomposition
+ * created) simply can't carry one, same as today.
  */
-export function pairKey(profile: RoadProfile, pair: PathPair, pins: LegModePin[]): string {
-  const pin =
+export function pairKey(profile: RoadProfile, pair: PathPair, journeyRoadKinds: JourneyRoadKind[]): string {
+  const chosen =
     pair.from.locationId && pair.to.locationId
-      ? legModePinFor(pins, pair.from.locationId, pair.to.locationId)
+      ? journeyRoadKindFor(journeyRoadKinds, pair.from.locationId, pair.to.locationId)
       : undefined;
-  const pinSuffix = pin ? `:${pin.mode}` : "";
-  return `${profile}:${coordOf(pair.from)}>${coordOf(pair.to)}${pinSuffix}`;
+  const chosenSuffix = chosen ? `:${chosen.kind}` : "";
+  return `${profile}:${coordOf(pair.from)}>${coordOf(pair.to)}${chosenSuffix}`;
 }
 
 /** Identity for one decomposed shift within a gap's chain (ADR-0036) — a pair's `pairKey` plus its
@@ -161,11 +168,15 @@ export function pathShiftId(key: string, index: number): string {
 
 /** Every distinct pair across the Trip's Days, in first-seen order. Days share pairs routinely — a
  * lodging Anchor bookends consecutive Days — and each distinct pair is worth exactly one lookup. */
-export function uniquePairsOfDays(days: DerivedDay[], profile: RoadProfile, pins: LegModePin[]): PathPair[] {
+export function uniquePairsOfDays(
+  days: DerivedDay[],
+  profile: RoadProfile,
+  journeyRoadKinds: JourneyRoadKind[]
+): PathPair[] {
   const seen = new Map<string, PathPair>();
   for (const day of days) {
     for (const pair of pairsOfDay(day)) {
-      const key = pairKey(profile, pair, pins);
+      const key = pairKey(profile, pair, journeyRoadKinds);
       if (!seen.has(key)) seen.set(key, pair);
     }
   }

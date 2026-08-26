@@ -95,7 +95,7 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
     kinds,
     hasJrPass: trip.hasJrPass,
     edges: { arrivalId: arrival?.id, departureId: departure?.id },
-    legModePins: trip.legModePins,
+    journeyRoadKinds: trip.journeyRoadKinds,
   });
 
   // Map day numbers onto calendar dates and flatten to the stored Placement shape.

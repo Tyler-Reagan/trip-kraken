@@ -92,16 +92,17 @@ export type Placement = {
   order: number;
 };
 
-/** A rider's manual `roadProfile` override for one Location pair (issue #209/#217) — consulted at
- *  matrix-build time (#218) so a pinned pair uses this mode instead of the Trip default. Keyed by
+/** A rider's chosen road kind for one Journey (issue #209/#217, renamed from "LegModePin" #223 —
+ *  see `schema.ts`'s `journeyRoadKind` for why) — consulted at matrix-build time (#218) so a
+ *  Journey with a choice uses this kind instead of the Trip's `roadProfile` default. Keyed by
  *  Location pair, stored unordered: `locationAId`/`locationBId` are canonicalized (sorted) at the
- *  write path, so `locationAId`/`locationBId` don't correspond to a particular travel direction. */
-export type LegModePin = {
+ *  write path, so they don't correspond to a particular travel direction. */
+export type JourneyRoadKind = {
   id: string;
   tripId: string;
   locationAId: string;
   locationBId: string;
-  mode: RoadProfile;
+  kind: RoadProfile;
 };
 
 /**
@@ -127,7 +128,7 @@ export type TripWithDetails = {
   updatedAt: Date;
   locations: Location[];
   placements: Placement[];
-  legModePins: LegModePin[];
+  journeyRoadKinds: JourneyRoadKind[];
 };
 
 // ─── Derivation helpers (one shared projection rule) ──────────────────────────

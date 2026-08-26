@@ -91,7 +91,7 @@ export default function TripClient({ trip: initial }: Props) {
   // separately.
   const days = useMemo(() => deriveTripPlanDays(trip), [trip]);
   const roadProfile = trip.roadProfile;
-  const pathGeometry = usePathGeometry(trip.id, days, roadProfile, trip.legModePins);
+  const pathGeometry = usePathGeometry(trip.id, days, roadProfile, trip.journeyRoadKinds);
 
   // Bottom padding on the wrapper below reserves room for the fixed discovery tray so it never
   // covers the unassigned pool at the end of the page.

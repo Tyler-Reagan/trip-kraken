@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTripWithDetails } from "@/lib/db";
 import { describeJourney } from "@/lib/travelCostRegistry";
-import { legModePinFor, withLegModePin } from "@/lib/pathPairs";
+import { journeyRoadKindFor, withJourneyRoadKind } from "@/lib/pathPairs";
 import type { Path, PathEndpoint } from "@/types/path";
 
 /**
@@ -33,13 +33,15 @@ import type { Path, PathEndpoint } from "@/types/path";
  * That is a smaller and better-understood disagreement than the one this change removes, and bus
  * geometry is its own ticket under #181.
  *
- * The client's cache key (`pairKey`) keys on the Road profile and, since #223, this pair's mode
- * pin if it has one — `"rail"` is constant in every request and so discriminates nothing, while
- * either of those genuinely changes the answer for a pair `osm-japan` declines.
+ * The client's cache key (`pairKey`) keys on the Road profile and, since #223, this Journey's
+ * chosen kind if it has one — `"rail"` is constant in every request and so discriminates nothing,
+ * while either of those genuinely changes the answer for a pair `osm-japan` declines.
  *
- * **A pinned pair (#209/#217/#223) substitutes its mode for `trip.roadProfile`** before asking —
- * `withLegModePin` (`pathPairs.ts`) swaps only the road element of this route's own base list, so
- * the "no bus" narrowing above is untouched by a pin.
+ * **A Journey with a chosen kind (#209/#217/#223) asks for that kind alone** — `withJourneyRoadKind`
+ * (`pathPairs.ts`) drops `"rail"` from this route's own base list entirely when a choice exists (not
+ * a swap-in-place: `osm-japan` never actually declines a cell in its reach, so keeping `"rail"`
+ * alongside a chosen kind would leave the choice permanently outranked). The "no bus" narrowing
+ * above is untouched either way, since it was never in the base list to begin with.
  *
  * POST rather than GET because the pair list does not fit comfortably in a URL; it reads state and
  * changes none.
@@ -122,16 +124,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // between them at all). One such pair must not fail the batch: `null` means "no geometry", the
     // map draws that pair straight and dashed, and the honest reading is unchanged.
     try {
-      // #223: a pair carrying a mode pin gets that mode instead of the Trip's `roadProfile` — the
-      // same substitution the optimizer and self-heal apply, kept to the base list this route
-      // already uses (no "bus", per the cost-avoidance reasoning above). Without this, a pinned
-      // leg's displayed geometry (and duration — the same Path objects feed both) silently
-      // disagreed with what was actually pinned.
-      const pin =
+      // #223: a Journey with a chosen kind gets that kind instead of the Trip's `roadProfile` —
+      // the same substitution the optimizer and self-heal apply, kept to the base list this route
+      // already uses (no "bus", per the cost-avoidance reasoning above). Without this, a chosen
+      // Journey's displayed geometry (and duration — the same Path objects feed both) silently
+      // disagreed with what was actually chosen.
+      const chosen =
         pair.from.locationId && pair.to.locationId
-          ? legModePinFor(trip.legModePins, pair.from.locationId, pair.to.locationId)
+          ? journeyRoadKindFor(trip.journeyRoadKinds, pair.from.locationId, pair.to.locationId)
           : undefined;
-      const kinds = withLegModePin(["rail", trip.roadProfile], pin);
+      const kinds = withJourneyRoadKind(["rail", trip.roadProfile], chosen);
       return await describeJourney(pair.from, pair.to, kinds);
     } catch {
       return null;

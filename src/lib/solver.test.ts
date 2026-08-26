@@ -179,9 +179,9 @@ await withEnv(
   }
 );
 
-// ── A leg mode pin (#217/#218) substitutes the road kind for its one cell, leaving the Trip
-// default in force everywhere else — observed as two distinct OSRM profile calls, and the
-// pinned cell's cost coming from the driving (car) response rather than the default walking one.
+// ── A Journey's chosen road kind (#217/#218) substitutes the road kind for its one cell, leaving
+// the Trip default in force everywhere else — observed as two distinct OSRM profile calls, and the
+// chosen cell's cost coming from the driving (car) response rather than the default walking one.
 await withEnv(
   { VROOM_URL: "http://localhost:8080", OSRM_FOOT_URL: "http://localhost:5002", OSRM_CAR_URL: "http://localhost:5010" },
   async () => {
@@ -234,18 +234,18 @@ await withEnv(
       ],
       numDays: 1,
       kinds: ["walking"],
-      legModePins: [{ locationAId: "a1", locationBId: "a2", mode: "driving" }],
+      journeyRoadKinds: [{ locationAId: "a1", locationBId: "a2", kind: "driving" }],
     });
 
     assert.equal(calls.foot, 1, "one full-matrix call at the Trip default (foot)");
-    assert.equal(calls.car, 1, "one override call at the pinned mode (car), scoped to just this pair");
+    assert.equal(calls.car, 1, "one override call at the chosen kind (car), scoped to just this pair");
     assert.equal(calls.vroom, 1);
     assert.ok(capturedDurations, "VROOM request captured");
-    assert.deepEqual(capturedDurations, [[0, 30], [30, 0]], "the pinned cell used the car-profile duration, not the foot default");
+    assert.deepEqual(capturedDurations, [[0, 30], [30, 0]], "the chosen cell used the car-profile duration, not the foot default");
   }
 );
 
-// ── A pin naming the same mode the Trip already defaults to is a no-op — no extra OSRM call ──
+// ── A choice naming the same kind the Trip already defaults to is a no-op — no extra OSRM call ──
 await withEnv(
   { VROOM_URL: "http://localhost:8080", OSRM_FOOT_URL: "http://localhost:5002", OSRM_CAR_URL: "http://localhost:5010" },
   async () => {
@@ -269,13 +269,13 @@ await withEnv(
       ],
       numDays: 1,
       kinds: ["walking"],
-      legModePins: [{ locationAId: "a1", locationBId: "a2", mode: "walking" }],
+      journeyRoadKinds: [{ locationAId: "a1", locationBId: "a2", kind: "walking" }],
     });
-    assert.equal(calls.osrm, 1, "a pin matching the Trip default triggers no override call");
+    assert.equal(calls.osrm, 1, "a choice matching the Trip default triggers no override call");
   }
 );
 
-// ── A pin naming a Location not in this run is silently a no-op (#219's stale-pin territory) ──
+// ── A choice naming a Location not in this run is silently a no-op (#219's stale-choice territory) ──
 await withEnv(
   { VROOM_URL: "http://localhost:8080", OSRM_FOOT_URL: "http://localhost:5002", OSRM_CAR_URL: "http://localhost:5010" },
   async () => {
@@ -299,9 +299,9 @@ await withEnv(
       ],
       numDays: 1,
       kinds: ["walking"],
-      legModePins: [{ locationAId: "a1", locationBId: "gone", mode: "driving" }],
+      journeyRoadKinds: [{ locationAId: "a1", locationBId: "gone", kind: "driving" }],
     });
-    assert.equal(calls.osrm, 1, "the missing-Location pin is skipped, not attempted");
+    assert.equal(calls.osrm, 1, "the missing-Location choice is skipped, not attempted");
     assert.equal(itinerary.days.flatMap((d) => d.locationIds).length, 2, "the solve itself is unaffected");
   }
 );

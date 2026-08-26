@@ -1,8 +1,8 @@
 import { randomUUID } from "crypto";
 import { eq, and, asc, desc, ne, gt, gte, max, sql, count, inArray, isNotNull, getTableColumns } from "drizzle-orm";
 import { getDrizzle, type Drizzle } from "./client";
-import { trip, location, placement, legModePin } from "./schema";
-import type { TripWithDetails, Location, Placement, LegModePin, IsoDate } from "@/types";
+import { trip, location, placement, journeyRoadKind } from "./schema";
+import type { TripWithDetails, Location, Placement, JourneyRoadKind, IsoDate } from "@/types";
 import type { LocationEnrichment } from "@/lib/places";
 import type { ParsedBooking } from "@/lib/bookingImport";
 import type { RoadProfile } from "@/types/path";
@@ -97,18 +97,18 @@ export function getTripWithDetails(id: string): TripWithDetails | null {
     .orderBy(asc(placement.date), asc(placement.order))
     .all();
 
-  const legModePins: LegModePin[] = db
+  const journeyRoadKinds: JourneyRoadKind[] = db
     .select()
-    .from(legModePin)
-    .where(eq(legModePin.tripId, id))
+    .from(journeyRoadKind)
+    .where(eq(journeyRoadKind.tripId, id))
     .all();
 
-  return { ...parseTrip(tripRow), locations, placements, legModePins };
+  return { ...parseTrip(tripRow), locations, placements, journeyRoadKinds };
 }
 
-/** Canonical (unordered) key for a Location pair's pin — sorted so `(a, b)` and `(b, a)` land on
- *  the same row regardless of which direction the caller names them in. */
-function canonicalPinPair(locationIdA: string, locationIdB: string): [string, string] {
+/** Canonical (unordered) key for a Journey's Location pair — sorted so `(a, b)` and `(b, a)` land
+ *  on the same row regardless of which direction the caller names them in. */
+function canonicalJourneyPair(locationIdA: string, locationIdB: string): [string, string] {
   return locationIdA < locationIdB ? [locationIdA, locationIdB] : [locationIdB, locationIdA];
 }
 
@@ -329,26 +329,26 @@ export function setDayLabel(tripId: string, date: IsoDate, label: string | null)
 }
 
 /**
- * Set or clear a Location pair's mode pin (issue #217). `mode: null` clears it. Upserts on the
- * canonicalized pair rather than insert-then-conflict — a pin is a single traveler decision per
- * pair, not a history of them.
+ * Set or clear a Journey's chosen road kind (issue #217). `kind: null` clears it. Upserts on the
+ * canonicalized pair rather than insert-then-conflict — a Journey has one current choice, not a
+ * history of them.
  */
-export function setLegModePin(
+export function setJourneyRoadKind(
   tripId: string,
   fromLocationId: string,
   toLocationId: string,
-  mode: RoadProfile | null
+  kind: RoadProfile | null
 ): TripWithDetails {
   const db = getDrizzle();
-  const [locationAId, locationBId] = canonicalPinPair(fromLocationId, toLocationId);
+  const [locationAId, locationBId] = canonicalJourneyPair(fromLocationId, toLocationId);
 
-  if (mode === null) {
-    db.delete(legModePin)
+  if (kind === null) {
+    db.delete(journeyRoadKind)
       .where(
         and(
-          eq(legModePin.tripId, tripId),
-          eq(legModePin.locationAId, locationAId),
-          eq(legModePin.locationBId, locationBId)
+          eq(journeyRoadKind.tripId, tripId),
+          eq(journeyRoadKind.locationAId, locationAId),
+          eq(journeyRoadKind.locationBId, locationBId)
         )
       )
       .run();
@@ -356,21 +356,21 @@ export function setLegModePin(
   }
 
   const existing = db
-    .select({ id: legModePin.id })
-    .from(legModePin)
+    .select({ id: journeyRoadKind.id })
+    .from(journeyRoadKind)
     .where(
       and(
-        eq(legModePin.tripId, tripId),
-        eq(legModePin.locationAId, locationAId),
-        eq(legModePin.locationBId, locationBId)
+        eq(journeyRoadKind.tripId, tripId),
+        eq(journeyRoadKind.locationAId, locationAId),
+        eq(journeyRoadKind.locationBId, locationBId)
       )
     )
     .get();
 
   if (existing) {
-    db.update(legModePin).set({ mode }).where(eq(legModePin.id, existing.id)).run();
+    db.update(journeyRoadKind).set({ kind }).where(eq(journeyRoadKind.id, existing.id)).run();
   } else {
-    db.insert(legModePin).values({ id: newId(), tripId, locationAId, locationBId, mode }).run();
+    db.insert(journeyRoadKind).values({ id: newId(), tripId, locationAId, locationBId, kind }).run();
   }
 
   return requireTrip(tripId);
