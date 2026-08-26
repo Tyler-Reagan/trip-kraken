@@ -64,6 +64,13 @@
       "when": 1791000000000,
       "tag": "0008_has_jr_pass",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787699812832,
+      "tag": "0009_leg_mode_pins",
+      "breakpoints": true
     }
   ]
 }

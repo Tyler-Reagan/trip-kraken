@@ -134,6 +134,7 @@ interface TripStore {
   setTransitCaveatDismissed: (v: boolean) => Promise<void>;
   setRoadProfile: (v: RoadProfile) => Promise<void>;
   setHasJrPass: (v: boolean) => Promise<void>;
+  setLegModePin: (fromLocationId: string, toLocationId: string, mode: RoadProfile | null) => Promise<void>;
   importBooking: (text: string) => Promise<string | null>;
   enrich: () => Promise<void>;
 
@@ -524,6 +525,32 @@ export const useTripStore = create<TripStore>()((set, get) => {
     // Same optimistic pattern as setRoadProfile — must persist (the OSM-Japan provider reads it
     // off the Trip at matrix time, issue #211).
     setHasJrPass: setTripField("hasJrPass"),
+
+    // Not a `setTripField` — a pin lives in `legModePins`, a list keyed by Location pair rather
+    // than a scalar Trip column, so the optimistic update replaces/removes one entry instead of
+    // overwriting a single field. Canonicalizes the pair the same way the server does (sorted
+    // ids) so the optimistic list matches what a reload would return.
+    setLegModePin: async (fromLocationId, toLocationId, mode) => {
+      const tripId = get().tripId;
+      const t = get().trip;
+      if (!tripId || !t) return;
+
+      const [locationAId, locationBId] =
+        fromLocationId < toLocationId ? [fromLocationId, toLocationId] : [toLocationId, fromLocationId];
+      const withoutPin = t.legModePins.filter(
+        (p) => !(p.locationAId === locationAId && p.locationBId === locationBId)
+      );
+      const legModePins = mode
+        ? [...withoutPin, { id: `${locationAId}:${locationBId}`, tripId, locationAId, locationBId, mode }]
+        : withoutPin;
+      set({ trip: { ...t, legModePins } });
+
+      await fetch(`/api/trips/${tripId}/leg-pins`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromLocationId, toLocationId, mode }),
+      });
+    },
 
     importBooking: async (text) => {
       const tripId = get().tripId;

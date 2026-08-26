@@ -53,6 +53,7 @@ const trip = (locations: TripWithDetails["locations"]): TripWithDetails => ({
   updatedAt: new Date(),
   locations,
   placements: [],
+  legModePins: [],
 });
 
 // Tokyo-ish cluster vs. an Osaka-ish cluster — ~400km apart, well past the 75km metro radius.
