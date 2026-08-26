@@ -179,6 +179,133 @@ await withEnv(
   }
 );
 
+// ── A leg mode pin (#217/#218) substitutes the road kind for its one cell, leaving the Trip
+// default in force everywhere else — observed as two distinct OSRM profile calls, and the
+// pinned cell's cost coming from the driving (car) response rather than the default walking one.
+await withEnv(
+  { VROOM_URL: "http://localhost:8080", OSRM_FOOT_URL: "http://localhost:5002", OSRM_CAR_URL: "http://localhost:5010" },
+  async () => {
+    const calls = { vroom: 0, osrm: 0, foot: 0, car: 0 };
+    let capturedDurations: number[][] | null = null;
+    global.fetch = (async (url: string, init?: RequestInit) => {
+      if (url === process.env.VROOM_URL) {
+        calls.vroom++;
+        const body = JSON.parse(init!.body as string) as VroomRequest;
+        capturedDurations = body.matrices.trip.durations;
+        return { ok: true, status: 200, json: async () => fakeVroomSolve(body) } as Response;
+      }
+      if (url.includes("/table/v1/foot/")) {
+        calls.osrm++;
+        calls.foot++;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            code: "Ok",
+            durations: [[0, 100], [100, 0]],
+            distances: [[0, 1000], [1000, 0]],
+            sources: [{ location: [139.0, 35.0], distance: 0.5 }, { location: [139.01, 35.01], distance: 0.5 }],
+            destinations: [{ location: [139.0, 35.0], distance: 0.5 }, { location: [139.01, 35.01], distance: 0.5 }],
+          }),
+        } as Response;
+      }
+      if (url.includes("/table/v1/car/")) {
+        calls.osrm++;
+        calls.car++;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            code: "Ok",
+            durations: [[0, 30], [30, 0]],
+            distances: [[0, 500], [500, 0]],
+            sources: [{ location: [139.0, 35.0], distance: 0.5 }, { location: [139.01, 35.01], distance: 0.5 }],
+            destinations: [{ location: [139.0, 35.0], distance: 0.5 }, { location: [139.01, 35.01], distance: 0.5 }],
+          }),
+        } as Response;
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+
+    await solve({
+      locations: [
+        { id: "a1", lat: 35.0, lng: 139.0, kind: "activity" },
+        { id: "a2", lat: 35.01, lng: 139.01, kind: "activity" },
+      ],
+      numDays: 1,
+      kinds: ["walking"],
+      legModePins: [{ locationAId: "a1", locationBId: "a2", mode: "driving" }],
+    });
+
+    assert.equal(calls.foot, 1, "one full-matrix call at the Trip default (foot)");
+    assert.equal(calls.car, 1, "one override call at the pinned mode (car), scoped to just this pair");
+    assert.equal(calls.vroom, 1);
+    assert.ok(capturedDurations, "VROOM request captured");
+    assert.deepEqual(capturedDurations, [[0, 30], [30, 0]], "the pinned cell used the car-profile duration, not the foot default");
+  }
+);
+
+// ── A pin naming the same mode the Trip already defaults to is a no-op — no extra OSRM call ──
+await withEnv(
+  { VROOM_URL: "http://localhost:8080", OSRM_FOOT_URL: "http://localhost:5002", OSRM_CAR_URL: "http://localhost:5010" },
+  async () => {
+    const calls = { vroom: 0, osrm: 0 };
+    mockFetch(
+      {
+        osrmTable: () => ({
+          code: "Ok",
+          durations: [[0, 100], [100, 0]],
+          distances: [[0, 1000], [1000, 0]],
+          sources: [{ location: [139.0, 35.0], distance: 0.5 }, { location: [139.01, 35.01], distance: 0.5 }],
+          destinations: [{ location: [139.0, 35.0], distance: 0.5 }, { location: [139.01, 35.01], distance: 0.5 }],
+        }),
+      },
+      calls
+    );
+    await solve({
+      locations: [
+        { id: "a1", lat: 35.0, lng: 139.0, kind: "activity" },
+        { id: "a2", lat: 35.01, lng: 139.01, kind: "activity" },
+      ],
+      numDays: 1,
+      kinds: ["walking"],
+      legModePins: [{ locationAId: "a1", locationBId: "a2", mode: "walking" }],
+    });
+    assert.equal(calls.osrm, 1, "a pin matching the Trip default triggers no override call");
+  }
+);
+
+// ── A pin naming a Location not in this run is silently a no-op (#219's stale-pin territory) ──
+await withEnv(
+  { VROOM_URL: "http://localhost:8080", OSRM_FOOT_URL: "http://localhost:5002", OSRM_CAR_URL: "http://localhost:5010" },
+  async () => {
+    const calls = { vroom: 0, osrm: 0 };
+    mockFetch(
+      {
+        osrmTable: () => ({
+          code: "Ok",
+          durations: [[0, 100], [100, 0]],
+          distances: [[0, 1000], [1000, 0]],
+          sources: [{ location: [139.0, 35.0], distance: 0.5 }, { location: [139.01, 35.01], distance: 0.5 }],
+          destinations: [{ location: [139.0, 35.0], distance: 0.5 }, { location: [139.01, 35.01], distance: 0.5 }],
+        }),
+      },
+      calls
+    );
+    const itinerary = await solve({
+      locations: [
+        { id: "a1", lat: 35.0, lng: 139.0, kind: "activity" },
+        { id: "a2", lat: 35.01, lng: 139.01, kind: "activity" },
+      ],
+      numDays: 1,
+      kinds: ["walking"],
+      legModePins: [{ locationAId: "a1", locationBId: "gone", mode: "driving" }],
+    });
+    assert.equal(calls.osrm, 1, "the missing-Location pin is skipped, not attempted");
+    assert.equal(itinerary.days.flatMap((d) => d.locationIds).length, 2, "the solve itself is unaffected");
+  }
+);
+
 // ── optimizeTrip orchestrator (over a temp DB) ────────────────────────────────
 
 const dir = fs.mkdtempSync(path.join(tmpdir(), "tk-opt-"));
