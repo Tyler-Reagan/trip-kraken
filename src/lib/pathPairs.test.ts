@@ -4,9 +4,9 @@
  */
 
 import assert from "node:assert/strict";
-import { pairsOfDay, pairKey, uniquePairsOfDays, dayChainEntries, dayChainPairs } from "./pathPairs";
+import { pairsOfDay, pairKey, uniquePairsOfDays, dayChainEntries, dayChainPairs, legModePinFor } from "./pathPairs";
 import type { PathPair } from "./pathPairs";
-import type { Activity, DerivedDay, Lodging, Location, Placement, ScheduledStop } from "@/types";
+import type { Activity, DerivedDay, LegModePin, Lodging, Location, Placement, ScheduledStop } from "@/types";
 
 const activity = (id: string, lat: number | null, lng: number | null): Activity => ({
   id,
@@ -268,6 +268,16 @@ assert.deepEqual(uniquePairsOfDays([], "walking"), [], "a Trip with no Days need
     ["hotel>nowhere"],
     "and still produces a pair — the row/connector's own lat===null guard is what suppresses rendering, not the pairing rule"
   );
+}
+
+// ── legModePinFor: the read-side mirror of db/index.ts's canonicalPinPair (#217/#219) ────────────
+
+{
+  const pins: LegModePin[] = [{ id: "pin1", tripId: "t1", locationAId: "a", locationBId: "b", mode: "driving" }];
+  assert.equal(legModePinFor(pins, "a", "b")?.mode, "driving", "found in stored order");
+  assert.equal(legModePinFor(pins, "b", "a")?.mode, "driving", "found in reversed order — a pin is unordered");
+  assert.equal(legModePinFor(pins, "a", "c"), undefined, "no pin for an unrelated pair");
+  assert.equal(legModePinFor([], "a", "b"), undefined, "no pins at all");
 }
 
 console.log("pathPairs.test.ts: all assertions passed");

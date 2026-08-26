@@ -10,8 +10,8 @@
  */
 
 import { useMemo, useState } from "react";
-import { Route, TrainFront, PersonStanding, ChevronRight, ChevronDown } from "lucide-react";
-import type { Path } from "@/types/path";
+import { Route, TrainFront, PersonStanding, CarFront, ChevronRight, ChevronDown } from "lucide-react";
+import { isRailPath, type Path, type RoadProfile } from "@/types/path";
 import type { Transit } from "@/types";
 import { surfacedTransitOf, surfacedTransitIdOf, isTransferWalk } from "@/lib/surfacedTransit";
 import { pathShiftId } from "@/lib/pathPairs";
@@ -50,6 +50,64 @@ function needsSupplementMarker(path: Path, hasJrPass: boolean): boolean {
  * rather than hiding it behind a manual expand (issue #212). */
 function chainHasSupplement(chain: Path[], hasJrPass: boolean): boolean {
   return chain.some((p) => needsSupplementMarker(p, hasJrPass));
+}
+
+/**
+ * Whether a leg's mode pin control (issue #217/#218/#219) would do anything on this gap: only
+ * when nothing in the chain is currently rail-covered — pinning a rail leg to walk/drive has no
+ * effect until rail declines that cell (#218's "first capable provider wins each cell"), and the
+ * control shouldn't silently offer a no-op.
+ *
+ * Undetectable the same way for a *bus*-covered leg: `path-geometry`'s route deliberately never
+ * asks Google (ADR-0029 §2, to avoid billing it on every map load), so a bus-covered leg renders
+ * here as an ordinary OSRM/haversine answer — the same blind spot that route's own doc already
+ * names for geometry, inherited here rather than re-solved. Pinning such a leg is a quiet no-op
+ * until google declines it, same as it already silently is for `roadProfile` today.
+ */
+function legRoadFallbackApplies(chain: Path[]): boolean {
+  return !chain.some(isRailPath);
+}
+
+/**
+ * The walk/drive pin control for one gap (#219). Two icon toggles rather than a tri-state
+ * dropdown, matching `OptimizeModal`'s segmented `roadProfile` control at a size that fits a shift
+ * row: clicking the already-pinned mode clears it (back to the Trip default), clicking the other
+ * pins it. Neither button is highlighted when unpinned — there's no "trip default" to show here
+ * without also passing `roadProfile` down, and the row already reads its actual current mode off
+ * whichever shift the chain resolved to.
+ */
+function LegModePinControl({
+  pinnedMode, onPinChange,
+}: {
+  pinnedMode: RoadProfile | null;
+  onPinChange: (mode: RoadProfile | null) => void;
+}) {
+  const buttonClass = (active: boolean) =>
+    `p-1 rounded-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
+      active ? "text-brand-600 dark:text-brand-400 bg-surface-2" : "text-faint hover:text-sub hover:bg-surface-2"
+    }`;
+  return (
+    <span className="flex items-center gap-0.5 shrink-0" role="group" aria-label="Pin this leg's mode">
+      <button
+        type="button"
+        onClick={() => onPinChange(pinnedMode === "walking" ? null : "walking")}
+        aria-pressed={pinnedMode === "walking"}
+        title={pinnedMode === "walking" ? "Pinned to walking — click to clear" : "Pin this leg to walking"}
+        className={buttonClass(pinnedMode === "walking")}
+      >
+        <PersonStanding className="w-3.5 h-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => onPinChange(pinnedMode === "driving" ? null : "driving")}
+        aria-pressed={pinnedMode === "driving"}
+        title={pinnedMode === "driving" ? "Pinned to driving — click to clear" : "Pin this leg to driving"}
+        className={buttonClass(pinnedMode === "driving")}
+      >
+        <CarFront className="w-3.5 h-3.5" />
+      </button>
+    </span>
+  );
 }
 
 /** One shift row — the content template every variant shares. Field-driven, not kind-branched: a
@@ -138,6 +196,18 @@ interface PathShiftRowsProps {
    * marker on a Nozomi/Mizuho shift row. The underlying fact is always on the Path; this is what
    * decides whether showing it makes sense to *this* trip. */
   hasJrPass: boolean;
+  /** The walk/drive pin control (issue #217/#219), or `undefined` when this gap can't carry a
+   * pin at all — a zero-length "same Location" gap (ADR-0036's checkin→end-anchor case, `hotel>
+   * hotel` in `pathPairs.test.ts`) has no real leg to pin, so the caller omits this rather than
+   * `PathShiftRows` re-deriving `from.id === to.id` from information it isn't otherwise given.
+   * Still gated on the chain not being rail-covered (`legRoadFallbackApplies`) even when present. */
+  pinControl?: {
+    /** The pin currently stored for this gap's Location pair, or `null` if unpinned — resolved
+     * by the caller (`legModePinFor`) since only it holds the Trip's `legModePins` list. */
+    pinnedMode: RoadProfile | null;
+    /** Sets or clears this gap's pin (#217's API via the store). `null` clears. */
+    onPinChange: (mode: RoadProfile | null) => void;
+  };
   /** `DayCard`'s list is a real `<ol>`; `MapView`'s `StopPanel` is plain `<div>`/`<button>` rows
    * with no list semantics at all — an `<li>` there would be invalid markup. Default `"li"`. */
   as?: "li" | "div";
@@ -151,7 +221,8 @@ interface PathShiftRowsProps {
  * resolved-empty, or a real chain.
  */
 export default function PathShiftRows({
-  chain, tripId, pairKey, trailing, onStationClick, onHoverChange, highlightedPathId, hasJrPass, as = "li",
+  chain, tripId, pairKey, trailing, onStationClick, onHoverChange, highlightedPathId, hasJrPass,
+  pinControl, as = "li",
 }: PathShiftRowsProps) {
   const [expanded, setExpanded] = useState(false);
   const Row = as;
@@ -211,6 +282,7 @@ export default function PathShiftRows({
           </button>
         )}
         <span className="flex-1 min-w-2" />
+        {pinControl && legRoadFallbackApplies(chain) && <LegModePinControl {...pinControl} />}
         {trailing}
       </Row>
       {showRows && chain.map((path, i) => {

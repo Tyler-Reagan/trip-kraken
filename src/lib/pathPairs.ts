@@ -11,12 +11,23 @@
  * What comes back is one or more Paths, since a provider splits a pair at every shift (ADR-0022).
  */
 
-import type { DerivedDay, Location, ScheduledStop } from "@/types";
+import type { DerivedDay, LegModePin, Location, ScheduledStop } from "@/types";
 import type { PathEndpoint, RoadProfile } from "@/types/path";
 
 export interface PathPair {
   from: PathEndpoint;
   to: PathEndpoint;
+}
+
+/** The pin (if any) covering an unordered Location pair (issue #217/#219) — the read-side mirror
+ *  of `canonicalPinPair` in `db/index.ts`: a pin's `locationAId`/`locationBId` are canonicalized
+ *  (sorted) at the write path, so a caller naming the pair in either direction finds the same pin. */
+export function legModePinFor(pins: LegModePin[], locationIdA: string, locationIdB: string): LegModePin | undefined {
+  return pins.find(
+    (p) =>
+      (p.locationAId === locationIdA && p.locationBId === locationIdB) ||
+      (p.locationAId === locationIdB && p.locationBId === locationIdA)
+  );
 }
 
 /** What role an entry plays in a Day's chain (ADR-0036) — not a routing fact, just enough for a

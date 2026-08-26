@@ -11,7 +11,7 @@ import { deriveTripPlanDays, type DerivedDay, type Location } from "@/types";
 import type { PathEndpoint } from "@/types/path";
 import { DAY_COLORS, dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { boundsOf, metroOfDay, metrosOf, type Bounds, type TripMetro } from "@/lib/tripMetros";
-import { pairKey, pairsOfDay, dayChainEntries, pathShiftId } from "@/lib/pathPairs";
+import { pairKey, pairsOfDay, dayChainEntries, pathShiftId, legModePinFor } from "@/lib/pathPairs";
 import { haversineMeters } from "@/lib/geo";
 import { usePathGeometryContext } from "@/lib/usePathGeometry";
 import PathShiftRows from "./PathShiftRows";
@@ -686,6 +686,7 @@ function StopPanel({
   const trip = useTripStore((s) => s.trip);
   const { pathGeometry, roadProfile } = usePathGeometryContext();
   const setHighlightedPathId = useTripStore((s) => s.setHighlightedPathId);
+  const setLegModePin = useTripStore((s) => s.setLegModePin);
 
   // The row-per-Path shift list for one gap (ADR-0036) — the same component and cache DayCard's
   // sidebar uses, so the two Location lists can't structurally disagree. `as="div"`: this panel has
@@ -709,6 +710,14 @@ function StopPanel({
         onStationClick={(t) => onFocus({ tier: "point", lat: t.lat!, lng: t.lng! })}
         onHoverChange={setHighlightedPathId}
         hasJrPass={trip.hasJrPass}
+        pinControl={
+          from.id === to.id
+            ? undefined
+            : {
+                pinnedMode: legModePinFor(trip.legModePins, from.id, to.id)?.mode ?? null,
+                onPinChange: (mode) => setLegModePin(from.id, to.id, mode),
+              }
+        }
       />
     );
   };
