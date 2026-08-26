@@ -12,7 +12,7 @@ import { formatDuration, resolveVisitDuration } from "@/lib/visitDuration";
 import { Crosshair, GripVertical, MapPin, Route, Search, Trash2, TrainFront } from "lucide-react";
 import { dayDropId } from "./DayNavigator";
 import { usePathGeometryContext } from "@/lib/usePathGeometry";
-import { dayChainEntries, pairKey } from "@/lib/pathPairs";
+import { dayChainEntries, journeyRoadKindFor, pairKey } from "@/lib/pathPairs";
 import PathShiftRows from "./PathShiftRows";
 
 interface Props {
@@ -252,15 +252,20 @@ function RouteConnector({ from, to, date }: { from: Location; to: Location; date
   const healedPair = useTripStore((s) => s.healedPair);
   const trip = useTripStore((s) => s.trip);
   const setInspectedSurfacedTransit = useTripStore((s) => s.setInspectedSurfacedTransit);
+  const setJourneyRoadKind = useTripStore((s) => s.setJourneyRoadKind);
   const { pathGeometry, roadProfile } = usePathGeometryContext();
   if (from.lat === null || to.lat === null || !trip) return null;
 
   const healed = healedPair && healedPair.fromLocationId === from.id && healedPair.toLocationId === to.id ? healedPair : null;
 
-  const key = pairKey(roadProfile, {
-    from: { lat: from.lat, lng: from.lng!, locationId: from.id },
-    to: { lat: to.lat, lng: to.lng!, locationId: to.id },
-  });
+  const key = pairKey(
+    roadProfile,
+    {
+      from: { lat: from.lat, lng: from.lng!, locationId: from.id },
+      to: { lat: to.lat, lng: to.lng!, locationId: to.id },
+    },
+    trip.journeyRoadKinds
+  );
   const chain = pathGeometry.get(key);
 
   const alongTheWay = (
@@ -299,6 +304,14 @@ function RouteConnector({ from, to, date }: { from: Location; to: Location; date
       trailing={alongTheWay}
       onStationClick={setInspectedSurfacedTransit}
       hasJrPass={trip.hasJrPass}
+      kindToggle={
+        from.id === to.id
+          ? undefined
+          : {
+              kind: journeyRoadKindFor(trip.journeyRoadKinds, from.id, to.id)?.kind ?? roadProfile,
+              onKindChange: (kind) => setJourneyRoadKind(from.id, to.id, kind),
+            }
+      }
     />
   );
 }

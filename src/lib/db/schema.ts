@@ -124,18 +124,20 @@ export const placement = sqliteTable("Placement", {
   order: integer("order").notNull(),
 });
 
-// A rider's manual override of `roadProfile` for one Location pair (issue #209/#217): the road-mode
-// fallback ("rail"/"bus" always stay eligible) a pinned pair uses instead of the Trip default,
-// consulted at matrix-build time (#218). Keyed by Location pair rather than by Path/shift id —
-// Paths are never persisted (`src/types/path.ts`) and Placements are wholesale-replaced by every
-// re-optimize (ADR-0015), so neither is a safe key; Locations are the one stable thing in this
-// chain. Stored unordered: `locationAId`/`locationBId` are canonicalized (lexicographically sorted)
-// at the write path, not by insertion order — the mode preference for a leg between two Locations
-// doesn't depend on which direction the itinerary happens to traverse it after a re-optimize
-// reshuffles day order. (`pairKey` in `src/lib/pathPairs.ts` is directional, but that's a coordinate
-// cache key for a routing *answer*, which can legitimately differ by direction — a different
-// concern from which *modes are eligible*, which doesn't.)
-export const legModePin = sqliteTable("LegModePin", {
+// A rider's chosen road kind for one Journey (issue #209/#217, renamed from "LegModePin" #223 —
+// "Leg" is retired domain vocabulary (ADR-0021) and "pin" implied a defensive override that
+// resists change, which this isn't: it's a plain, resolved choice, the same status as any other
+// setting). The road kind ("rail"/"bus" always stay eligible alongside it) this Journey uses
+// instead of the Trip's `roadProfile` default, consulted at matrix-build time (#218). Keyed by
+// Location pair rather than by Path/shift id — Paths are never persisted (`src/types/path.ts`) and
+// Placements are wholesale-replaced by every re-optimize (ADR-0015), so neither is a safe key;
+// Locations are the one stable thing in this chain. Stored unordered: `locationAId`/`locationBId`
+// are canonicalized (lexicographically sorted) at the write path, not by insertion order — a
+// Journey's chosen kind doesn't depend on which direction the itinerary happens to traverse it
+// after a re-optimize reshuffles day order. (`pairKey` in `src/lib/pathPairs.ts` is directional,
+// but that's a coordinate cache key for a routing *answer*, which can legitimately differ by
+// direction — a different concern from which *kinds are eligible*, which doesn't.)
+export const journeyRoadKind = sqliteTable("JourneyRoadKind", {
   id: text("id").primaryKey(),
   tripId: text("tripId")
     .notNull()
@@ -146,7 +148,7 @@ export const legModePin = sqliteTable("LegModePin", {
   locationBId: text("locationBId")
     .notNull()
     .references(() => location.id, { onDelete: "cascade" }),
-  mode: text("mode", { enum: ["walking", "driving"] }).notNull(),
+  kind: text("kind", { enum: ["walking", "driving"] }).notNull(),
 }, (t) => [
-  uniqueIndex("leg_mode_pin_unique").on(t.tripId, t.locationAId, t.locationBId),
+  uniqueIndex("journey_road_kind_unique").on(t.tripId, t.locationAId, t.locationBId),
 ]);

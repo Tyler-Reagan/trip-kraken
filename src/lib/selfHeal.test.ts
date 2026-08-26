@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { findHealablePair, healKinds } from "./selfHeal";
-import type { Activity, Lodging, Placement, TripWithDetails } from "@/types";
+import type { Activity, JourneyRoadKind, Lodging, Placement, TripWithDetails } from "@/types";
 
 let n = 0;
 const activity = (name: string, lat: number | null = 35 + n, lng: number | null = 139 + n): Activity => ({
@@ -49,7 +49,7 @@ const trip = (locations: TripWithDetails["locations"], placements: Placement[]):
   updatedAt: new Date(),
   locations,
   placements,
-  legModePins: [],
+  journeyRoadKinds: [],
 });
 
 // Three activities in the middle of a Day: a1(0) a2(1) a3(2) — removing a2 heals a1↔a3.
@@ -130,8 +130,20 @@ const trip = (locations: TripWithDetails["locations"], placements: Placement[]):
 // healKinds mirrors optimize.ts's own selection exactly — rail/bus always, the Trip's road profile.
 {
   const t = trip([], []);
-  assert.deepEqual(healKinds({ ...t, roadProfile: "driving" }), ["rail", "bus", "driving"]);
-  assert.deepEqual(healKinds({ ...t, roadProfile: "walking" }), ["rail", "bus", "walking"]);
+  assert.deepEqual(healKinds({ ...t, roadProfile: "driving" }, "a", "b"), ["rail", "bus", "driving"]);
+  assert.deepEqual(healKinds({ ...t, roadProfile: "walking" }, "a", "b"), ["rail", "bus", "walking"]);
+}
+
+// healKinds also honors this Journey's chosen kind (#223) — a removal that heals a Journey with a
+// chosen kind must report that kind's cost, not the Trip default's. The choice excludes rail/bus
+// entirely (not just substitutes the road element) — osm-japan never declines a cell within its
+// reach, so keeping "rail" alongside a chosen kind would leave the choice permanently outranked.
+{
+  const chosen: JourneyRoadKind = { id: "k1", tripId: "t1", locationAId: "a", locationBId: "b", kind: "driving" };
+  const t = { ...trip([], []), roadProfile: "walking" as const, journeyRoadKinds: [chosen] };
+  assert.deepEqual(healKinds(t, "a", "b"), ["driving"], "the choice overrides the Trip default and excludes rail/bus");
+  assert.deepEqual(healKinds(t, "b", "a"), ["driving"], "a choice is unordered");
+  assert.deepEqual(healKinds(t, "a", "c"), ["rail", "bus", "walking"], "an unrelated pair is unaffected");
 }
 
 console.log("✓ selfHeal.test.ts passed");

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTripWithDetails } from "@/lib/db";
 import { describeJourney } from "@/lib/travelCostRegistry";
+import { journeyRoadKindFor, withJourneyRoadKind } from "@/lib/pathPairs";
 import type { Path, PathEndpoint } from "@/types/path";
 
 /**
@@ -32,9 +33,15 @@ import type { Path, PathEndpoint } from "@/types/path";
  * That is a smaller and better-understood disagreement than the one this change removes, and bus
  * geometry is its own ticket under #181.
  *
- * The client's cache key (`pairKey`) still keys on the Road profile alone, which stays correct:
- * `"rail"` is constant in every request and so discriminates nothing, while the profile genuinely
- * changes the answer for a pair `osm-japan` declines.
+ * The client's cache key (`pairKey`) keys on the Road profile and, since #223, this Journey's
+ * chosen kind if it has one — `"rail"` is constant in every request and so discriminates nothing,
+ * while either of those genuinely changes the answer for a pair `osm-japan` declines.
+ *
+ * **A Journey with a chosen kind (#209/#217/#223) asks for that kind alone** — `withJourneyRoadKind`
+ * (`pathPairs.ts`) drops `"rail"` from this route's own base list entirely when a choice exists (not
+ * a swap-in-place: `osm-japan` never actually declines a cell in its reach, so keeping `"rail"`
+ * alongside a chosen kind would leave the choice permanently outranked). The "no bus" narrowing
+ * above is untouched either way, since it was never in the base list to begin with.
  *
  * POST rather than GET because the pair list does not fit comfortably in a URL; it reads state and
  * changes none.
@@ -55,11 +62,13 @@ interface PairRequest {
 
 function parseEndpoint(value: unknown): PathEndpoint | null {
   if (!value || typeof value !== "object") return null;
-  const { lat, lng } = value as { lat?: unknown; lng?: unknown };
+  const { lat, lng, locationId } = value as { lat?: unknown; lng?: unknown; locationId?: unknown };
   if (typeof lat !== "number" || typeof lng !== "number") return null;
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
-  return { lat, lng };
+  // Kept (not stripped) so the pair's Location pin, if any, can be looked up (#223) — the client
+  // already sends it, embedded on every chain-derived endpoint (`pathPairs.ts`'s `chainOfDay`).
+  return typeof locationId === "string" ? { lat, lng, locationId } : { lat, lng };
 }
 
 function parsePairs(value: unknown): PairRequest[] | null {
@@ -115,7 +124,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // between them at all). One such pair must not fail the batch: `null` means "no geometry", the
     // map draws that pair straight and dashed, and the honest reading is unchanged.
     try {
-      return await describeJourney(pair.from, pair.to, ["rail", trip.roadProfile]);
+      // #223: a Journey with a chosen kind gets that kind instead of the Trip's `roadProfile` —
+      // the same substitution the optimizer and self-heal apply, kept to the base list this route
+      // already uses (no "bus", per the cost-avoidance reasoning above). Without this, a chosen
+      // Journey's displayed geometry (and duration — the same Path objects feed both) silently
+      // disagreed with what was actually chosen.
+      const chosen =
+        pair.from.locationId && pair.to.locationId
+          ? journeyRoadKindFor(trip.journeyRoadKinds, pair.from.locationId, pair.to.locationId)
+          : undefined;
+      const kinds = withJourneyRoadKind(["rail", trip.roadProfile], chosen);
+      return await describeJourney(pair.from, pair.to, kinds);
     } catch {
       return null;
     }

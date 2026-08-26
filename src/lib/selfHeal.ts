@@ -12,6 +12,7 @@
  */
 
 import { isActivity, type TripWithDetails } from "@/types";
+import { journeyRoadKindFor, withJourneyRoadKind } from "@/lib/pathPairs";
 import type { PathEndpoint, PathKind } from "@/types/path";
 
 export interface HealablePair {
@@ -58,7 +59,10 @@ export function findHealablePair(before: TripWithDetails, removedPlacementId: st
 
 /** The same road-kind selection `optimize.ts` uses for a full solve (ADR-0024 §3) — a healed
  * pair's cost is answered by the same registry rows a re-optimize would use for that Trip, not a
- * separate rule that could disagree with it. */
-export function healKinds(trip: TripWithDetails): PathKind[] {
-  return ["rail", "bus", trip.roadProfile];
+ * separate rule that could disagree with it. Also honors this Journey's chosen road kind (#223),
+ * the same substitution `path-geometry`'s route applies to its own base list — a removal that
+ * heals a Journey with a chosen kind must not silently report the Trip-default kind's cost instead. */
+export function healKinds(trip: TripWithDetails, locationIdA: string, locationIdB: string): PathKind[] {
+  const chosen = journeyRoadKindFor(trip.journeyRoadKinds, locationIdA, locationIdB);
+  return withJourneyRoadKind(["rail", "bus", trip.roadProfile], chosen);
 }

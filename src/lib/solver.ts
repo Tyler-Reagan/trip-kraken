@@ -37,6 +37,7 @@ import { addDaysIso, type IsoDate } from "@/types";
 import type { PathKind, RoadProfile, TravelCost } from "@/types/path";
 import { hasValidCoords } from "@/lib/geo";
 import { buildTravelMatrix } from "@/lib/travelCostRegistry";
+import { withJourneyRoadKind } from "@/lib/pathPairs";
 import { preflight } from "@/lib/vroom/preflight";
 import { buildVroomRequest } from "@/lib/vroom/request";
 import { postVroom } from "@/lib/vroom/client";
@@ -155,12 +156,13 @@ export interface OptimizationProblem {
    * in `locations`, or one that turns out ungeocoded, is simply not usable — `solve()` falls back
    * to the Lodging Anchor and warns, rather than failing. */
   edges?: { arrivalId?: string; departureId?: string };
-  /** Manual per-leg road-mode overrides (issue #209/#217/#218) — a rider's Location-pair pin that
-   * substitutes `mode` for the Trip's road kind on that one cell, instead of `roadProfile` applying
-   * uniformly. Only meaningful for a pair present in `locations`; a pin whose Location(s) aren't in
-   * this run (excluded, or dropped since) is silently a no-op — the pin persists regardless
-   * (#217), stale-pin surfacing is #219's territory. */
-  legModePins?: { locationAId: string; locationBId: string; mode: RoadProfile }[];
+  /** A rider's chosen road kind per Journey (issue #209/#217/#218, renamed from "legModePins"
+   * #223 — see `schema.ts`'s `journeyRoadKind` for why "pin"/"leg" are wrong here) — substitutes
+   * `kind` for the Trip's road kind on that one cell, instead of `roadProfile` applying uniformly.
+   * Only meaningful for a pair present in `locations`; a choice whose Location(s) aren't in this
+   * run (excluded, or dropped since) is silently a no-op — the choice persists regardless (#217),
+   * stale-choice surfacing is #219's territory. */
+  journeyRoadKinds?: { locationAId: string; locationBId: string; kind: RoadProfile }[];
 }
 
 export interface Itinerary {
@@ -175,41 +177,49 @@ export interface Itinerary {
 }
 
 /**
- * Overrides the pinned cells of an already-built matrix in place (#218). A pin doesn't change
- * *which* rail/bus providers get first crack at a cell — it only substitutes which road kind is
- * eligible if they decline — so each pinned pair gets re-composed as its own 2-point matrix through
- * the same registry (`buildTravelMatrix`), with `kinds` swapped to the pinned mode, and only that
- * cell's two directional entries are spliced back in. This keeps `composeTravelMatrix`'s "one
- * global `kinds` list per call" model untouched — no matrix API here supports a per-cell kind
- * argument in one request — while staying cheap: pins are rare (a rider overrides one leg at a
- * time), so this is at most a couple of extra 2-point provider calls, not a second full matrix.
+ * Overrides the chosen cells of an already-built matrix in place (#218, corrected #223). Each
+ * Journey with a chosen kind gets re-composed as its own 2-point matrix through the same registry
+ * (`buildTravelMatrix`), with `kinds` narrowed by `withJourneyRoadKind` to the chosen kind alone,
+ * and only that cell's two directional entries are spliced back in. This keeps
+ * `composeTravelMatrix`'s "one global `kinds` list per call" model untouched — no matrix API here
+ * supports a per-cell kind argument in one request — while staying cheap: a chosen kind is rare (a
+ * rider overrides one Journey at a time), so this is at most a couple of extra 2-point provider
+ * calls, not a second full matrix.
  *
- * No-ops a pin whose mode already matches the Trip default (nothing would change) or whose
+ * **Why the narrowed kinds list drops `"rail"`/`"bus"` entirely, not just substitutes the road
+ * element (#223's correction of this function's original shape):** `osm-japan`'s `"rail"`
+ * capability never actually declines a cell within its geographic reach — it always answers,
+ * worst case with its own walking estimate over the transit graph, indistinguishable from a real
+ * road answer by `Path.kind` alone. Keeping `"rail"` alongside a chosen kind left the choice
+ * permanently outranked; confirmed live, `["rail","walking"]` and `["rail","driving"]` returned
+ * the identical `osm-japan` answer for the same pair. A rider's choice for this Journey is
+ * explicit, so this asks for the chosen kind alone.
+ *
+ * No-ops a choice that already matches the Trip default (nothing would change) or whose
  * Location(s) aren't in this run's `matrixPoints` at all (excluded, or otherwise absent — #219's
- * stale-pin territory, not this function's).
+ * stale-choice territory, not this function's).
  */
-async function applyLegModePins(
+async function applyJourneyRoadKinds(
   matrix: TravelCost[][],
   matrixPoints: LocationInput[],
-  legModePins: NonNullable<OptimizationProblem["legModePins"]>,
+  journeyRoadKinds: NonNullable<OptimizationProblem["journeyRoadKinds"]>,
   kinds: PathKind[],
   departureTime: Date | undefined,
   hasJrPass: boolean | undefined
 ): Promise<void> {
-  if (legModePins.length === 0) return;
+  if (journeyRoadKinds.length === 0) return;
 
   const defaultRoadKind = kinds.find((k): k is RoadProfile => k === "walking" || k === "driving");
   const indexOf = new Map(matrixPoints.map((p, i) => [p.id, i]));
 
-  for (const pin of legModePins) {
-    if (pin.mode === defaultRoadKind) continue;
-    const i = indexOf.get(pin.locationAId);
-    const j = indexOf.get(pin.locationBId);
+  for (const chosen of journeyRoadKinds) {
+    if (chosen.kind === defaultRoadKind) continue;
+    const i = indexOf.get(chosen.locationAId);
+    const j = indexOf.get(chosen.locationBId);
     if (i === undefined || j === undefined || i === j) continue;
 
-    const pinnedKinds: PathKind[] = ["rail", "bus", pin.mode];
     const subMatrix = await buildTravelMatrix([matrixPoints[i], matrixPoints[j]], {
-      kinds: pinnedKinds,
+      kinds: withJourneyRoadKind(kinds, chosen),
       departureTime,
       hasJrPass,
     });
@@ -229,7 +239,7 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
     kinds = DEFAULT_KINDS,
     hasJrPass,
     edges,
-    legModePins = [],
+    journeyRoadKinds = [],
   } = problem;
 
   if (locations.length === 0) return { days: [], unplaced: [], warnings: [] };
@@ -268,7 +278,7 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
   const matrixPoints = [...placeable, ...lodgings.filter(hasValidCoords), ...transitEdges.filter(hasValidCoords)];
   const departureTime = startDate ? new Date(Date.parse(startDate + "T00:00:00Z") + dayStartMins * 60000) : undefined;
   const matrix = await buildTravelMatrix(matrixPoints, { kinds, departureTime, hasJrPass });
-  await applyLegModePins(matrix, matrixPoints, legModePins, kinds, departureTime, hasJrPass);
+  await applyJourneyRoadKinds(matrix, matrixPoints, journeyRoadKinds, kinds, departureTime, hasJrPass);
 
   const request = buildVroomRequest({
     placeable,

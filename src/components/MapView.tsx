@@ -11,7 +11,7 @@ import { deriveTripPlanDays, type DerivedDay, type Location } from "@/types";
 import type { PathEndpoint } from "@/types/path";
 import { DAY_COLORS, dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { boundsOf, metroOfDay, metrosOf, type Bounds, type TripMetro } from "@/lib/tripMetros";
-import { pairKey, pairsOfDay, dayChainEntries, pathShiftId } from "@/lib/pathPairs";
+import { pairKey, pairsOfDay, dayChainEntries, pathShiftId, journeyRoadKindFor } from "@/lib/pathPairs";
 import { haversineMeters } from "@/lib/geo";
 import { usePathGeometryContext } from "@/lib/usePathGeometry";
 import PathShiftRows from "./PathShiftRows";
@@ -266,7 +266,7 @@ export default function MapView() {
       };
 
       for (const pair of pairsOfDay(day)) {
-        const key = pairKey(roadProfile, pair);
+        const key = pairKey(roadProfile, pair, trip?.journeyRoadKinds ?? []);
         const paths = pathGeometry.get(key);
 
         // Not yet answered (§7 — the canvas never waits), or refused outright by the router.
@@ -334,7 +334,7 @@ export default function MapView() {
     }
 
     return { pointsGeoJSON: points, routesGeoJSON: routes };
-  }, [days, activeDayNumber, browsedDays, highlightedLocationId, pathGeometry, roadProfile]);
+  }, [days, activeDayNumber, browsedDays, highlightedLocationId, pathGeometry, roadProfile, trip]);
 
   // ADR-0029 §3: a Path with no real shape draws dashed, in the same day colour and opacity — the
   // traveler sees that we are guessing at that stretch, not that it matters more or less. Same
@@ -686,6 +686,7 @@ function StopPanel({
   const trip = useTripStore((s) => s.trip);
   const { pathGeometry, roadProfile } = usePathGeometryContext();
   const setHighlightedPathId = useTripStore((s) => s.setHighlightedPathId);
+  const setJourneyRoadKind = useTripStore((s) => s.setJourneyRoadKind);
 
   // The row-per-Path shift list for one gap (ADR-0036) — the same component and cache DayCard's
   // sidebar uses, so the two Location lists can't structurally disagree. `as="div"`: this panel has
@@ -696,10 +697,14 @@ function StopPanel({
   // `DayCard`'s sidebar has no canvas to highlight against, so it never wires this.
   const gap = (from: Location, to: Location) => {
     if (from.lat === null || to.lat === null || !trip) return null;
-    const key = pairKey(roadProfile, {
-      from: { lat: from.lat, lng: from.lng!, locationId: from.id },
-      to: { lat: to.lat, lng: to.lng!, locationId: to.id },
-    });
+    const key = pairKey(
+      roadProfile,
+      {
+        from: { lat: from.lat, lng: from.lng!, locationId: from.id },
+        to: { lat: to.lat, lng: to.lng!, locationId: to.id },
+      },
+      trip.journeyRoadKinds
+    );
     return (
       <PathShiftRows
         as="div"
@@ -709,6 +714,14 @@ function StopPanel({
         onStationClick={(t) => onFocus({ tier: "point", lat: t.lat!, lng: t.lng! })}
         onHoverChange={setHighlightedPathId}
         hasJrPass={trip.hasJrPass}
+        kindToggle={
+          from.id === to.id
+            ? undefined
+            : {
+                kind: journeyRoadKindFor(trip.journeyRoadKinds, from.id, to.id)?.kind ?? roadProfile,
+                onKindChange: (kind) => setJourneyRoadKind(from.id, to.id, kind),
+              }
+        }
       />
     );
   };
