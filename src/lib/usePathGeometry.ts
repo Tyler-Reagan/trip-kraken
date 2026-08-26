@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import type { DerivedDay } from "@/types";
+import type { DerivedDay, LegModePin } from "@/types";
 import type { Path, RoadProfile } from "@/types/path";
 import { pairKey, uniquePairsOfDays, type PathPair } from "@/lib/pathPairs";
 
@@ -27,7 +27,8 @@ export type PathGeometryMap = ReadonlyMap<string, Path[] | null>;
 export function usePathGeometry(
   tripId: string | null,
   days: DerivedDay[],
-  roadProfile: RoadProfile
+  roadProfile: RoadProfile,
+  legModePins: LegModePin[]
 ): PathGeometryMap {
   const held = useRef<Map<string, Path[] | null>>(new Map());
   const inFlight = useRef<Set<string>>(new Set());
@@ -54,8 +55,8 @@ export function usePathGeometry(
     if (!tripId) return;
 
     const missing: PathPair[] = [];
-    for (const pair of uniquePairsOfDays(days, roadProfile)) {
-      const key = pairKey(roadProfile, pair);
+    for (const pair of uniquePairsOfDays(days, roadProfile, legModePins)) {
+      const key = pairKey(roadProfile, pair, legModePins);
       if (held.current.has(key) || inFlight.current.has(key)) continue;
       inFlight.current.add(key);
       missing.push(pair);
@@ -79,17 +80,17 @@ export function usePathGeometry(
         // A fresh Map so the value's identity changes with its contents — consumers hold it in a
         // `useMemo` dependency list, which compares by identity.
         const next = new Map(held.current);
-        missing.forEach((pair, i) => next.set(pairKey(roadProfile, pair), results[i] ?? null));
+        missing.forEach((pair, i) => next.set(pairKey(roadProfile, pair, legModePins), results[i] ?? null));
         held.current = next;
         bump((n) => n + 1);
       } catch {
         // The canvas already drew every one of these pairs straight (§7), so a failed lookup costs
         // fidelity and never the map. Leaving the keys unheld lets a later render ask again.
       } finally {
-        for (const pair of missing) inFlight.current.delete(pairKey(roadProfile, pair));
+        for (const pair of missing) inFlight.current.delete(pairKey(roadProfile, pair, legModePins));
       }
     })();
-  }, [tripId, days, roadProfile]);
+  }, [tripId, days, roadProfile, legModePins]);
 
   return held.current;
 }

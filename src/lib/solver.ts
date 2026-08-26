@@ -37,6 +37,7 @@ import { addDaysIso, type IsoDate } from "@/types";
 import type { PathKind, RoadProfile, TravelCost } from "@/types/path";
 import { hasValidCoords } from "@/lib/geo";
 import { buildTravelMatrix } from "@/lib/travelCostRegistry";
+import { withLegModePin } from "@/lib/pathPairs";
 import { preflight } from "@/lib/vroom/preflight";
 import { buildVroomRequest } from "@/lib/vroom/request";
 import { postVroom } from "@/lib/vroom/client";
@@ -175,14 +176,22 @@ export interface Itinerary {
 }
 
 /**
- * Overrides the pinned cells of an already-built matrix in place (#218). A pin doesn't change
- * *which* rail/bus providers get first crack at a cell — it only substitutes which road kind is
- * eligible if they decline — so each pinned pair gets re-composed as its own 2-point matrix through
- * the same registry (`buildTravelMatrix`), with `kinds` swapped to the pinned mode, and only that
- * cell's two directional entries are spliced back in. This keeps `composeTravelMatrix`'s "one
- * global `kinds` list per call" model untouched — no matrix API here supports a per-cell kind
+ * Overrides the pinned cells of an already-built matrix in place (#218, corrected #223). Each
+ * pinned pair gets re-composed as its own 2-point matrix through the same registry
+ * (`buildTravelMatrix`), with `kinds` narrowed by `withLegModePin` to the pinned mode alone, and
+ * only that cell's two directional entries are spliced back in. This keeps `composeTravelMatrix`'s
+ * "one global `kinds` list per call" model untouched — no matrix API here supports a per-cell kind
  * argument in one request — while staying cheap: pins are rare (a rider overrides one leg at a
  * time), so this is at most a couple of extra 2-point provider calls, not a second full matrix.
+ *
+ * **Why the pinned kinds list drops `"rail"`/`"bus"` entirely, not just substitutes the road
+ * element (#223's correction of this function's original shape):** `osm-japan`'s `"rail"`
+ * capability never actually declines a cell within its geographic reach — it always answers,
+ * worst case with its own walking estimate over the transit graph, indistinguishable from a real
+ * road answer by `Path.kind` alone. Keeping `"rail"` alongside a pinned mode left the pin
+ * permanently outranked; confirmed live, `["rail","walking"]` and `["rail","driving"]` returned
+ * the identical `osm-japan` answer for the same pair. A pin is the rider's explicit override, so
+ * this asks for the pinned mode alone.
  *
  * No-ops a pin whose mode already matches the Trip default (nothing would change) or whose
  * Location(s) aren't in this run's `matrixPoints` at all (excluded, or otherwise absent — #219's
@@ -207,9 +216,8 @@ async function applyLegModePins(
     const j = indexOf.get(pin.locationBId);
     if (i === undefined || j === undefined || i === j) continue;
 
-    const pinnedKinds: PathKind[] = ["rail", "bus", pin.mode];
     const subMatrix = await buildTravelMatrix([matrixPoints[i], matrixPoints[j]], {
-      kinds: pinnedKinds,
+      kinds: withLegModePin(kinds, pin),
       departureTime,
       hasJrPass,
     });

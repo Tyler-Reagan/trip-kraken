@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { findHealablePair, healKinds } from "./selfHeal";
-import type { Activity, Lodging, Placement, TripWithDetails } from "@/types";
+import type { Activity, LegModePin, Lodging, Placement, TripWithDetails } from "@/types";
 
 let n = 0;
 const activity = (name: string, lat: number | null = 35 + n, lng: number | null = 139 + n): Activity => ({
@@ -130,8 +130,20 @@ const trip = (locations: TripWithDetails["locations"], placements: Placement[]):
 // healKinds mirrors optimize.ts's own selection exactly — rail/bus always, the Trip's road profile.
 {
   const t = trip([], []);
-  assert.deepEqual(healKinds({ ...t, roadProfile: "driving" }), ["rail", "bus", "driving"]);
-  assert.deepEqual(healKinds({ ...t, roadProfile: "walking" }), ["rail", "bus", "walking"]);
+  assert.deepEqual(healKinds({ ...t, roadProfile: "driving" }, "a", "b"), ["rail", "bus", "driving"]);
+  assert.deepEqual(healKinds({ ...t, roadProfile: "walking" }, "a", "b"), ["rail", "bus", "walking"]);
+}
+
+// healKinds also honors a mode pin on this specific pair (#223) — a removal that heals a pinned
+// pair must report the pinned mode's cost, not the Trip default's. The pin excludes rail/bus
+// entirely (not just substitutes the road element) — osm-japan never declines a cell within its
+// reach, so keeping "rail" alongside a pinned mode would leave the pin permanently outranked.
+{
+  const pin: LegModePin = { id: "pin1", tripId: "t1", locationAId: "a", locationBId: "b", mode: "driving" };
+  const t = { ...trip([], []), roadProfile: "walking" as const, legModePins: [pin] };
+  assert.deepEqual(healKinds(t, "a", "b"), ["driving"], "the pin overrides the Trip default and excludes rail/bus");
+  assert.deepEqual(healKinds(t, "b", "a"), ["driving"], "a pin is unordered");
+  assert.deepEqual(healKinds(t, "a", "c"), ["rail", "bus", "walking"], "an unrelated pair is unaffected");
 }
 
 console.log("✓ selfHeal.test.ts passed");

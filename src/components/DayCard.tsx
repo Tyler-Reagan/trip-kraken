@@ -258,10 +258,14 @@ function RouteConnector({ from, to, date }: { from: Location; to: Location; date
 
   const healed = healedPair && healedPair.fromLocationId === from.id && healedPair.toLocationId === to.id ? healedPair : null;
 
-  const key = pairKey(roadProfile, {
-    from: { lat: from.lat, lng: from.lng!, locationId: from.id },
-    to: { lat: to.lat, lng: to.lng!, locationId: to.id },
-  });
+  const key = pairKey(
+    roadProfile,
+    {
+      from: { lat: from.lat, lng: from.lng!, locationId: from.id },
+      to: { lat: to.lat, lng: to.lng!, locationId: to.id },
+    },
+    trip.legModePins
+  );
   const chain = pathGeometry.get(key);
 
   const alongTheWay = (

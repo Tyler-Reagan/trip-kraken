@@ -12,7 +12,7 @@
  */
 
 import type { DerivedDay, LegModePin, Location, ScheduledStop } from "@/types";
-import type { PathEndpoint, RoadProfile } from "@/types/path";
+import type { PathEndpoint, PathKind, RoadProfile } from "@/types/path";
 
 export interface PathPair {
   from: PathEndpoint;
@@ -28,6 +28,28 @@ export function legModePinFor(pins: LegModePin[], locationIdA: string, locationI
       (p.locationAId === locationIdA && p.locationBId === locationIdB) ||
       (p.locationAId === locationIdB && p.locationBId === locationIdA)
   );
+}
+
+/**
+ * A pin's effect on a base `kinds` list (#223, correcting #217/#218's original shape). Not a
+ * substitution *within* the list — `osm-japan`'s `"rail"` capability never actually declines a
+ * cell within its geographic reach; it always answers, worst case with its own walking estimate
+ * over the transit graph (`basisOfCost: "railNetwork"`, `kind: "walking"` — indistinguishable by
+ * `Path.kind` from a real road answer). Keeping `"rail"`/`"bus"` alongside a pinned mode therefore
+ * left the pin silently outranked in both the already-shipped optimizer path
+ * (`solver.ts`'s `applyLegModePins`) and this ticket's display path — confirmed live against a
+ * pinned pair in an actual trip, where `["rail","walking"]` and `["rail","driving"]` returned the
+ * identical `osm-japan` answer.
+ *
+ * A pin is a rider's explicit override, not a soft preference transit can still win against: this
+ * drops every other kind and asks for the pinned mode alone, so `osm-japan`/Google never get a
+ * chance to answer instead. `kinds` (the caller's un-pinned base list) is only used verbatim.
+ *
+ * Takes just `{ mode }` rather than a full `LegModePin` — `solver.ts`'s own pin shape carries no
+ * `id`/`tripId`, and mode is all this ever reads.
+ */
+export function withLegModePin(kinds: PathKind[], pin: { mode: RoadProfile } | undefined): PathKind[] {
+  return pin ? [pin.mode] : kinds;
 }
 
 /** What role an entry plays in a Day's chain (ADR-0036) — not a routing fact, just enough for a
@@ -111,12 +133,22 @@ export function pairsOfDay(day: DerivedDay): PathPair[] {
 const coordOf = (p: PathEndpoint) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`;
 
 /**
- * The cache key for one pair's answer (ADR-0029 §5). Keyed on coordinates rather than `locationId`
- * so that re-geocoding a Location invalidates its entries by construction, and on the Road profile
- * because it selects which OSRM graph answered — changing it makes every held answer wrong.
+ * The cache key for one pair's answer (ADR-0029 §5, extended #223). Keyed on coordinates rather
+ * than `locationId` so that re-geocoding a Location invalidates its entries by construction, on
+ * the Road profile because it selects which OSRM graph answered, and on this pair's mode pin (if
+ * any) for the same reason — a pin changes which kind is eligible for this cell just as much as
+ * `roadProfile` does, so a held answer from before the pin was set (or after it was cleared) must
+ * not silently keep answering for it. `locationId` on either end is what makes a pin lookup
+ * possible at all; a pair without one (an interchange endpoint a decomposition created) simply
+ * can't carry a pin, same as today.
  */
-export function pairKey(profile: RoadProfile, pair: PathPair): string {
-  return `${profile}:${coordOf(pair.from)}>${coordOf(pair.to)}`;
+export function pairKey(profile: RoadProfile, pair: PathPair, pins: LegModePin[]): string {
+  const pin =
+    pair.from.locationId && pair.to.locationId
+      ? legModePinFor(pins, pair.from.locationId, pair.to.locationId)
+      : undefined;
+  const pinSuffix = pin ? `:${pin.mode}` : "";
+  return `${profile}:${coordOf(pair.from)}>${coordOf(pair.to)}${pinSuffix}`;
 }
 
 /** Identity for one decomposed shift within a gap's chain (ADR-0036) — a pair's `pairKey` plus its
@@ -129,11 +161,11 @@ export function pathShiftId(key: string, index: number): string {
 
 /** Every distinct pair across the Trip's Days, in first-seen order. Days share pairs routinely — a
  * lodging Anchor bookends consecutive Days — and each distinct pair is worth exactly one lookup. */
-export function uniquePairsOfDays(days: DerivedDay[], profile: RoadProfile): PathPair[] {
+export function uniquePairsOfDays(days: DerivedDay[], profile: RoadProfile, pins: LegModePin[]): PathPair[] {
   const seen = new Map<string, PathPair>();
   for (const day of days) {
     for (const pair of pairsOfDay(day)) {
-      const key = pairKey(profile, pair);
+      const key = pairKey(profile, pair, pins);
       if (!seen.has(key)) seen.set(key, pair);
     }
   }

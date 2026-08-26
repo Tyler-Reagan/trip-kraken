@@ -4,7 +4,7 @@
  */
 
 import assert from "node:assert/strict";
-import { pairsOfDay, pairKey, uniquePairsOfDays, dayChainEntries, dayChainPairs, legModePinFor } from "./pathPairs";
+import { pairsOfDay, pairKey, uniquePairsOfDays, dayChainEntries, dayChainPairs, legModePinFor, withLegModePin } from "./pathPairs";
 import type { PathPair } from "./pathPairs";
 import type { Activity, DerivedDay, LegModePin, Lodging, Location, Placement, ScheduledStop } from "@/types";
 
@@ -123,28 +123,28 @@ const shapeLocPairs = (pairs: { from: Location; to: Location }[]) => pairs.map((
 
 {
   const p: PathPair = { from: { lat: 35.0, lng: 139.0 }, to: { lat: 35.1, lng: 139.1 } };
-  assert.equal(pairKey("walking", p), "walking:139.000000,35.000000>139.100000,35.100000");
+  assert.equal(pairKey("walking", p, []), "walking:139.000000,35.000000>139.100000,35.100000");
 
   assert.notEqual(
-    pairKey("walking", p),
-    pairKey("driving", p),
+    pairKey("walking", p, []),
+    pairKey("driving", p, []),
     "the Road profile selects the OSRM graph, so it must key the answer"
   );
 
   const reversed: PathPair = { from: p.to, to: p.from };
-  assert.notEqual(pairKey("walking", p), pairKey("walking", reversed), "direction is part of the pair");
+  assert.notEqual(pairKey("walking", p, []), pairKey("walking", reversed, []), "direction is part of the pair");
 
   const moved: PathPair = { from: { lat: 35.0, lng: 139.0 }, to: { lat: 35.100001, lng: 139.1 } };
-  assert.notEqual(pairKey("walking", p), pairKey("walking", moved), "a re-geocode invalidates by construction");
+  assert.notEqual(pairKey("walking", p, []), pairKey("walking", moved, []), "a re-geocode invalidates by construction");
 
   const sameCoordsOtherLocation: PathPair = {
     from: { lat: 35.0, lng: 139.0, locationId: "x" },
     to: { lat: 35.1, lng: 139.1, locationId: "y" },
   };
   assert.equal(
-    pairKey("walking", p),
-    pairKey("walking", sameCoordsOtherLocation),
-    "identity plays no part: two Locations at one point share an answer"
+    pairKey("walking", p, []),
+    pairKey("walking", sameCoordsOtherLocation, []),
+    "identity plays no part when neither carries a pin: two Locations at one point share an answer"
   );
 }
 
@@ -152,7 +152,49 @@ const shapeLocPairs = (pairs: { from: Location; to: Location }[]) => pairs.map((
   // Float arithmetic reaching the same point by a different route must produce the same key.
   const direct: PathPair = { from: { lat: 35.1, lng: 139.0 }, to: { lat: 35.2, lng: 139.0 } };
   const summed: PathPair = { from: { lat: 35.0 + 0.1, lng: 139.0 }, to: { lat: 0.1 + 35.1, lng: 139.0 } };
-  assert.equal(pairKey("walking", direct), pairKey("walking", summed), "fixed precision absorbs float drift");
+  assert.equal(pairKey("walking", direct, []), pairKey("walking", summed, []), "fixed precision absorbs float drift");
+}
+
+// A pin changes which kind answers this pair (#218), so it must key the held answer too (#223) —
+// otherwise a pair fetched before a pin was set (or after it was cleared) keeps answering for it.
+{
+  const p: PathPair = {
+    from: { lat: 35.0, lng: 139.0, locationId: "x" },
+    to: { lat: 35.1, lng: 139.1, locationId: "y" },
+  };
+  const pin: LegModePin = { id: "pin1", tripId: "t1", locationAId: "x", locationBId: "y", mode: "driving" };
+
+  assert.notEqual(pairKey("walking", p, [pin]), pairKey("walking", p, []), "pinning invalidates the unpinned answer");
+  assert.ok(
+    pairKey("walking", p, [pin]).endsWith(":driving") && pairKey("walking", { from: p.to, to: p.from }, [pin]).endsWith(":driving"),
+    "a pin is unordered, so both directions of the same pair carry the same pin suffix (direction still keys the coordinates)"
+  );
+
+  const unrelatedPin: LegModePin = { id: "pin2", tripId: "t1", locationAId: "x", locationBId: "z", mode: "driving" };
+  assert.equal(
+    pairKey("walking", p, [unrelatedPin]),
+    pairKey("walking", p, []),
+    "a pin on a different pair doesn't affect this one's key"
+  );
+
+  const noLocationId: PathPair = { from: { lat: 35.0, lng: 139.0 }, to: { lat: 35.1, lng: 139.1 } };
+  assert.equal(
+    pairKey("walking", noLocationId, [pin]),
+    pairKey("walking", noLocationId, []),
+    "a pair with no locationId can't carry a pin, same as legModePinFor already requires"
+  );
+}
+
+// ── withLegModePin: the one place a pin's effect on a base kinds list is decided ─────────────────
+
+{
+  // Not a substitution within the list — osm-japan never declines a cell within its reach, so
+  // keeping "rail" alongside a pinned mode leaves the pin permanently outranked (#223). A pin
+  // drops every other kind and asks for the pinned mode alone.
+  const pin: LegModePin = { id: "pin1", tripId: "t1", locationAId: "a", locationBId: "b", mode: "driving" };
+  assert.deepEqual(withLegModePin(["rail", "bus", "walking"], pin), ["driving"], "a pin excludes rail/bus entirely, not just the road element");
+  assert.deepEqual(withLegModePin(["rail", "walking"], pin), ["driving"], "same, for a base list without bus");
+  assert.deepEqual(withLegModePin(["rail", "bus", "walking"], undefined), ["rail", "bus", "walking"], "no pin, no change");
 }
 
 // ── uniquePairsOfDays: one lookup per distinct pair ──────────────────────────────────────────
@@ -166,7 +208,7 @@ const shapeLocPairs = (pairs: { from: Location; to: Location }[]) => pairs.map((
     day({ dayNumber: 2, startAnchor: hotel, stops: [stop(a1, 1)], endAnchor: hotel }),
   ];
   assert.deepEqual(
-    shape(uniquePairsOfDays(days, "walking")),
+    shape(uniquePairsOfDays(days, "walking", [])),
     ["hotel>a1", "a1>hotel"],
     "a pair shared across Days is looked up once"
   );
@@ -178,13 +220,13 @@ const shapeLocPairs = (pairs: { from: Location; to: Location }[]) => pairs.map((
     day({ dayNumber: 2, startAnchor: lodging("h", 35.0, 139.0), stops: [stop(activity("a2", 35.2, 139.2), 1)] }),
   ];
   assert.deepEqual(
-    shape(uniquePairsOfDays(days, "walking")),
+    shape(uniquePairsOfDays(days, "walking", [])),
     ["h>a1", "h>a2"],
     "distinct pairs across Days are all kept, in first-seen order"
   );
 }
 
-assert.deepEqual(uniquePairsOfDays([], "walking"), [], "a Trip with no Days needs no lookups");
+assert.deepEqual(uniquePairsOfDays([], "walking", []), [], "a Trip with no Days needs no lookups");
 
 // ── dayChainEntries / dayChainPairs: render-oriented chain, ungeocoded entries kept (ADR-0036) ──
 

@@ -32,7 +32,7 @@ export async function DELETE(
   // here would be worse than one during optimize. The registry's decline chain guarantees a
   // haversine answer at worst, visibly stamped `basisOfCost: straightLine` — nothing here needs
   // its own try/catch.
-  const paths = await describeJourney(pair.from, pair.to, healKinds(before), {
+  const paths = await describeJourney(pair.from, pair.to, healKinds(before, pair.from.locationId, pair.to.locationId), {
     departureTime: new Date(`${pair.date}T09:00:00`),
   });
   // The whole chain's cost, not its first Path's (ADR-0032): a decomposed rail Journey now starts

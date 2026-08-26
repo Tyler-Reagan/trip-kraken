@@ -266,7 +266,7 @@ export default function MapView() {
       };
 
       for (const pair of pairsOfDay(day)) {
-        const key = pairKey(roadProfile, pair);
+        const key = pairKey(roadProfile, pair, trip?.legModePins ?? []);
         const paths = pathGeometry.get(key);
 
         // Not yet answered (§7 — the canvas never waits), or refused outright by the router.
@@ -334,7 +334,7 @@ export default function MapView() {
     }
 
     return { pointsGeoJSON: points, routesGeoJSON: routes };
-  }, [days, activeDayNumber, browsedDays, highlightedLocationId, pathGeometry, roadProfile]);
+  }, [days, activeDayNumber, browsedDays, highlightedLocationId, pathGeometry, roadProfile, trip]);
 
   // ADR-0029 §3: a Path with no real shape draws dashed, in the same day colour and opacity — the
   // traveler sees that we are guessing at that stretch, not that it matters more or less. Same
@@ -697,10 +697,14 @@ function StopPanel({
   // `DayCard`'s sidebar has no canvas to highlight against, so it never wires this.
   const gap = (from: Location, to: Location) => {
     if (from.lat === null || to.lat === null || !trip) return null;
-    const key = pairKey(roadProfile, {
-      from: { lat: from.lat, lng: from.lng!, locationId: from.id },
-      to: { lat: to.lat, lng: to.lng!, locationId: to.id },
-    });
+    const key = pairKey(
+      roadProfile,
+      {
+        from: { lat: from.lat, lng: from.lng!, locationId: from.id },
+        to: { lat: to.lat, lng: to.lng!, locationId: to.id },
+      },
+      trip.legModePins
+    );
     return (
       <PathShiftRows
         as="div"
