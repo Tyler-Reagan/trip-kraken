@@ -272,6 +272,7 @@ function buildLines(
           lat: osmNode.lat,
           lng: osmNode.lon,
           sequence,
+          osmNodeId: osmNode.id,
           // Omitted, not set to `undefined`, when unknown — matches how `RideEdge.geometry` is
           // left absent below, and keeps an in-memory StopNode deepEqual-comparable against one
           // reloaded from the store (transitGraphStore.ts's load() makes the same choice).
@@ -318,7 +319,14 @@ function addCluster(graph: TransitGraph, id: string, name: string, stopNodeIds: 
   graph.clusters.set(id, { id, name, stopNodeIds });
   for (let i = 0; i < stopNodeIds.length; i++) {
     for (let j = i + 1; j < stopNodeIds.length; j++) {
-      graph.transferEdges.push({ fromStopId: stopNodeIds[i], toStopId: stopNodeIds[j], clusterId: id });
+      const a = stopNodeIds[i];
+      const b = stopNodeIds[j];
+      // Same physical point (issue #159) — a direction-split or through-running relation duplicate,
+      // never a real interchange. No transfer edge here: `buildAdjacency` already makes riding
+      // between two stop nodes at one `osmNodeId` free, via the ride-adjacency union, so a costed
+      // edge here would only be dead weight a shortest path never prefers.
+      if (graph.stopNodes.get(a)?.osmNodeId === graph.stopNodes.get(b)?.osmNodeId) continue;
+      graph.transferEdges.push({ fromStopId: a, toStopId: b, clusterId: id });
     }
   }
 }

@@ -305,3 +305,68 @@ classifier is ingestion work, #87's domain). Concrete leads for that follow-up:
 > Widening the snap radius removes this Trip's trigger, not the trap — any Location beyond 2,000 m
 > from rail still reaches it. ADR-0024 §4's decline ladder assumes each rung degrades *gracefully*,
 > and a foot profile asked to cross a country does not. Owed by a separate change.
+
+> ### Amended 2026-08-27 — a stop node's identity is per *line*; a physical platform's is per *raw OSM node*, and the two were conflated
+>
+> §"Two-tier station model" specifies "one [stop node] per line passing through a station" — correct,
+> and unchanged by this amendment. What it left unstated is that OSM represents one physical
+> Japanese service at **several relation granularities at once**: a direction-split pair (one
+> relation each way), and a separate 直通運転 (through-running) relation spanning two operators'
+> networks over the same track. Every one of those relations passing through the same physical point
+> became its own stop node, correctly, per the two-tier model — but every *pair* of those stop nodes
+> also landed in one station cluster and got a transfer edge between them, incorrectly, charging
+> `TRANSFER_MINUTES` to move between two representations of standing on the same platform. See
+> issue #159 for the finding: measured against the pinned 260101 extract, Shibuya's underground
+> cluster alone carried 20 stop nodes and 190 pairwise transfer edges — the complete graph — where
+> physical inspection found two platform pairs; nationwide, 69,428 transfer edges against 20,281 ride
+> edges, a ratio the topology does not support.
+>
+> **Root cause, confirmed against `db/transit-japan.db`:** stop nodes at the *exact* coordinate
+> recur in large groups — six stop nodes at one point (Saikyo Line, both Narita Express directions,
+> both Shonan-Shinjuku Line variants), eleven at another (Hanzōmon/Den-en-toshi's several
+> through-running relations) — because `stopNodeId` (`transitGraphIngest.ts`) is `relationId:osmNodeId`:
+> the same raw OSM node, visited by several relations, makes several stop nodes, each correctly
+> distinct for *ride*-edge purposes (a traveler narrated "board the Tokyu-Toyoko Line" needs that
+> line's own name, not a merged one) but never actually apart for *transfer*-cost purposes.
+>
+> **Decision: a stop node keeps its line-scoped identity (`id`) but gains a second, physical-point
+> identity (`osmNodeId` — the raw OSM node it sits at, already computed at ingest, just not
+> retained). Two stop nodes sharing an `osmNodeId` are never a real interchange, and are handled at
+> two points:**
+>
+> 1. **Ingest never emits a transfer edge for a same-`osmNodeId` pair** (`addCluster`,
+>    `transitGraphIngest.ts`) — removing the dead weight directly, rather than leaving it for the
+>    search to route around.
+> 2. **`buildAdjacency` (`osmTransitProvider.ts`) unions each stop node's ride-adjacency with every
+>    same-`osmNodeId` sibling's own outgoing ride links**, so continuing onto a sibling's line costs
+>    nothing extra and creates no `TransferStep` — riding is still per-relation (a run's own steps
+>    still name the one line it's on), but crossing from one relation's stop node to a sibling's is
+>    free, silent, and invisible to `decompose` (ADR-0032 §3): a line-name change still starts a new
+>    rail Path (a traveler is told the line changed, which is real and worth telling), it just does
+>    so without an intervening walking "transfer" Path, since none was crossed. Every lookup that
+>    needs the ride's *own* line (speed, operator, JR Pass exclusion) reads it off the link's true
+>    origin stop node, never off whichever sibling the search happened to be standing on when it
+>    found the link — the bug this would otherwise reintroduce, since a borrowed link's speed or
+>    operator is its true line's, not the borrower's.
+>
+> **Why not merge same-point stop nodes into one.** Collapsing them into a single shared identity
+> would lose exactly the per-line `lineName`/`lineType`/`operator` a ride edge departing from that
+> point needs — the two-tier model's whole reason for existing. The adjacency union gets the same
+> effect (free movement between them) without touching stop-node identity, ride edges, or narration
+> at all.
+>
+> **Why not a platform-ref OSM tag instead.** Candidate directions considered when this was filed
+> (issue #159) included reading `public_transport=stop_position`/platform refs to identify a
+> physical platform. Rejected: the raw OSM node id already *is* an unambiguous physical-point key
+> for exactly this purpose, present on every relation, needing no new tag whose coverage in the
+> pinned extract was never measured.
+>
+> **What this does not fix.** The inverse failure noted alongside the original finding — a real
+> interchange (e.g. Shibuya's `stop_area` split into a surface and an underground group) missing a
+> transfer edge because OSM's own clustering drew the line between them — is untouched: that is a
+> *clustering* gap (two real physical points that should be one cluster and aren't), the opposite
+> shape of problem from this amendment's (two representations of one physical point that were
+> wrongly treated as two). Left for a future finding against real interchange data, not guessed at
+> here. Also untouched: same-point stop nodes still multiply the *ride*-adjacency's edge count at a
+> cluster with many duplicate lines (an efficiency question, since Dijkstra's answer is unaffected by
+> parallel same-cost edges) — real, not costed, and not what made this a correctness bug.

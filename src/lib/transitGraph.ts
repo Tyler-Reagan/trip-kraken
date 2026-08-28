@@ -34,6 +34,15 @@ export interface StopNode {
   lng: number;
   /** Position along the line's ordered stop sequence — what makes ride edges "consecutive". */
   sequence: number;
+  /** The raw OSM node this stop node sits at (issue #159) — physical-platform identity, distinct
+   * from `id`, which is scoped per *line* (`relationId:osmNodeId`, ADR-0019's two-tier model: one
+   * stop node per line through a station). Japanese through-running and direction-split route
+   * relations put several stop nodes on the exact same physical point; two stop nodes sharing an
+   * `osmNodeId` are the same platform under different line labels, never a real interchange.
+   * `buildAdjacency` (`osmTransitProvider.ts`) is the one place this is read at runtime, to make
+   * riding from one to the other free instead of charging the flat transfer cost for standing
+   * still. */
+  osmNodeId: string;
   /** The line's operator, one canonical value per line/relation (issue #210) — the same
    * granularity `lineType` already uses. A through-service that changes Operator partway along
    * one line (ADR-0021) is not resolved here; every stop on the line takes the relation's own

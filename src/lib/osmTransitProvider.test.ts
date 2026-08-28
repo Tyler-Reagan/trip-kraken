@@ -42,15 +42,15 @@ function buildFixture(): TransitGraph {
 
   // Commuter loop: Tokyo -> Kanda -> Akihabara (two consecutive hops, same line).
   graph.stopNodes.set("loop-tokyo", {
-    id: "loop-tokyo", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
+    id: "loop-tokyo", osmNodeId: "loop-tokyo", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
     stationName: "Tokyo", lat: 35.6812, lng: 139.7671, sequence: 0,
   });
   graph.stopNodes.set("loop-kanda", {
-    id: "loop-kanda", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
+    id: "loop-kanda", osmNodeId: "loop-kanda", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
     stationName: "Kanda", lat: 35.6918, lng: 139.7708, sequence: 1,
   });
   graph.stopNodes.set("loop-akihabara", {
-    id: "loop-akihabara", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
+    id: "loop-akihabara", osmNodeId: "loop-akihabara", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
     stationName: "Akihabara", lat: 35.6984, lng: 139.7731, sequence: 2,
   });
   // Two traced hops (ADR-0030): each shape runs from its edge's `fromStopId` to its `toStopId`,
@@ -68,11 +68,11 @@ function buildFixture(): TransitGraph {
 
   // Subway spur: Tokyo -> Otemachi (one hop, different line, interchanges with the loop at Tokyo).
   graph.stopNodes.set("spur-tokyo", {
-    id: "spur-tokyo", lineId: "spur", lineName: "Spur Subway", lineType: "subway",
+    id: "spur-tokyo", osmNodeId: "spur-tokyo", lineId: "spur", lineName: "Spur Subway", lineType: "subway",
     stationName: "Tokyo", lat: 35.6812, lng: 139.7671, sequence: 0,
   });
   graph.stopNodes.set("spur-otemachi", {
-    id: "spur-otemachi", lineId: "spur", lineName: "Spur Subway", lineType: "subway",
+    id: "spur-otemachi", osmNodeId: "spur-otemachi", lineId: "spur", lineName: "Spur Subway", lineType: "subway",
     stationName: "Otemachi", lat: 35.687, lng: 139.7645, sequence: 1,
   });
   // Deliberately untraced — the refused case (ADR-0030 §1). A Journey crossing it must carry a
@@ -90,11 +90,11 @@ function buildFixture(): TransitGraph {
   // class as a subway hop would need many stops for — used to compare effective speed, not to
   // interchange with the loop/spur (an isolated one-line network is enough for a speed check).
   graph.stopNodes.set("shinkansen-tokyo", {
-    id: "shinkansen-tokyo", lineId: "shinkansen", lineName: "Tokaido Shinkansen", lineType: "shinkansen",
+    id: "shinkansen-tokyo", osmNodeId: "shinkansen-tokyo", lineId: "shinkansen", lineName: "Tokaido Shinkansen", lineType: "shinkansen",
     stationName: "Tokyo (Shinkansen)", lat: 35.6812, lng: 139.7671, sequence: 0,
   });
   graph.stopNodes.set("shinkansen-nagoya", {
-    id: "shinkansen-nagoya", lineId: "shinkansen", lineName: "Tokaido Shinkansen", lineType: "shinkansen",
+    id: "shinkansen-nagoya", osmNodeId: "shinkansen-nagoya", lineId: "shinkansen", lineName: "Tokaido Shinkansen", lineType: "shinkansen",
     stationName: "Nagoya", lat: 35.1709, lng: 136.8815, sequence: 1,
   });
   graph.rideEdges.push({ fromStopId: "shinkansen-tokyo", toStopId: "shinkansen-nagoya", distanceMeters: 260_000 });
@@ -102,11 +102,11 @@ function buildFixture(): TransitGraph {
   // An isolated subway hop of the exact same distance as the Shinkansen trunk above — a clean
   // apples-to-apples duration comparison (same distance, different line type) with no derived rate.
   graph.stopNodes.set("compare-subway-a", {
-    id: "compare-subway-a", lineId: "compare-subway", lineName: "Compare Subway", lineType: "subway",
+    id: "compare-subway-a", osmNodeId: "compare-subway-a", lineId: "compare-subway", lineName: "Compare Subway", lineType: "subway",
     stationName: "Compare A", lat: 35.0, lng: 139.0, sequence: 0,
   });
   graph.stopNodes.set("compare-subway-b", {
-    id: "compare-subway-b", lineId: "compare-subway", lineName: "Compare Subway", lineType: "subway",
+    id: "compare-subway-b", osmNodeId: "compare-subway-b", lineId: "compare-subway", lineName: "Compare Subway", lineType: "subway",
     stationName: "Compare B", lat: 35.0, lng: 141.0, sequence: 1,
   });
   graph.rideEdges.push({ fromStopId: "compare-subway-a", toStopId: "compare-subway-b", distanceMeters: 260_000 });
@@ -114,7 +114,7 @@ function buildFixture(): TransitGraph {
   // A decoy stop node within Akihabara's snap radius but farther away than the real Akihabara
   // stop — proves station-snapping picks the nearest candidate, not just any candidate in range.
   graph.stopNodes.set("decoy-near-akihabara", {
-    id: "decoy-near-akihabara", lineId: "decoy", lineName: "Decoy Line", lineType: "commuter",
+    id: "decoy-near-akihabara", osmNodeId: "decoy-near-akihabara", lineId: "decoy", lineName: "Decoy Line", lineType: "commuter",
     stationName: "Decoy", lat: 35.703, lng: 139.7731, sequence: 0,
   });
 
@@ -122,10 +122,35 @@ function buildFixture(): TransitGraph {
   // shape is a resort Lodging sitting above its town, with its one station a long-but-walkable
   // way downhill and nothing at all inside the dense-urban radius (ADR-0019, amended 2026-08-17).
   graph.stopNodes.set("loop-outlying", {
-    id: "loop-outlying", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
+    id: "loop-outlying", osmNodeId: "loop-outlying", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
     stationName: "Outlying", lat: 35.8, lng: 139.7731, sequence: 3,
   });
   graph.rideEdges.push({ fromStopId: "loop-akihabara", toStopId: "loop-outlying", distanceMeters: 11_000 });
+
+  // Through-running duplicate (issue #159): two route relations — Line A, commuter; Line B, subway
+  // — sharing one physical point (`through-shared-point`), the shape Japanese direction-split and
+  // 直通運転 relations actually take. Isolated in its own corner of the fixture (lat ~34, everything
+  // else lives at ~35) so it can't be reached any other way. Deliberately no cluster and no
+  // transfer edge between the two `-shared` stop nodes — matching what ingest now produces for a
+  // same-`osmNodeId` pair (`transitGraphIngest.test.ts` covers that half).
+  graph.stopNodes.set("through-a-start", {
+    id: "through-a-start", osmNodeId: "through-a-start", lineId: "through-a", lineName: "Through Line A",
+    lineType: "commuter", stationName: "Through Start", lat: 34.0, lng: 135.0, sequence: 0,
+  });
+  graph.stopNodes.set("through-a-shared", {
+    id: "through-a-shared", osmNodeId: "through-shared-point", lineId: "through-a", lineName: "Through Line A",
+    lineType: "commuter", stationName: "Through Junction", lat: 34.01, lng: 135.01, sequence: 1,
+  });
+  graph.rideEdges.push({ fromStopId: "through-a-start", toStopId: "through-a-shared", distanceMeters: 4000 });
+  graph.stopNodes.set("through-b-shared", {
+    id: "through-b-shared", osmNodeId: "through-shared-point", lineId: "through-b", lineName: "Through Line B",
+    lineType: "subway", stationName: "Through Junction", lat: 34.01, lng: 135.01, sequence: 0,
+  });
+  graph.stopNodes.set("through-b-end", {
+    id: "through-b-end", osmNodeId: "through-b-end", lineId: "through-b", lineName: "Through Line B",
+    lineType: "subway", stationName: "Through End", lat: 34.02, lng: 135.02, sequence: 1,
+  });
+  graph.rideEdges.push({ fromStopId: "through-b-shared", toStopId: "through-b-end", distanceMeters: 3000 });
 
   return graph;
 }
@@ -200,6 +225,30 @@ assert.ok(
   "and so do their distances"
 );
 assert.equal(summed.basisOfCost, "railNetwork", "the summed Journey reports the basis of its dominant Path, not its weakest");
+
+// ── Issue #159: crossing a same-platform through-running boundary is free, and not a transfer ──
+// Contrast with `multiLine` above: that's a *real* interchange (different physical points, still
+// costed, still its own walking Path). This crosses two route relations sharing one physical point
+// — Line A ends and Line B begins at the identical `osmNodeId` — which must decompose into two
+// adjacent rail Paths with nothing walking in between, and must not charge TRANSFER_MINUTES for it.
+const nearThroughStart = P(34.0001, 135.0001);
+const nearThroughEnd = P(34.0201, 135.0201);
+const throughJourney = await describe(nearThroughStart, nearThroughEnd, ["rail"]);
+assert.deepEqual(
+  throughJourney.map((p) => p.kind),
+  ["walking", "rail", "rail", "walking"],
+  "a same-platform line boundary decomposes into two adjacent rail Paths, no transfer Path between them"
+);
+assert.equal((throughJourney[1] as { lineName: string }).lineName, "Through Line A");
+assert.equal((throughJourney[2] as { lineName: string }).lineName, "Through Line B");
+const throughRailMinutes =
+  throughJourney[1].travelCost.durationSeconds / 60 + throughJourney[2].travelCost.durationSeconds / 60;
+const expectedThroughRailMinutes =
+  (4000 / 1000 / LINE_TYPE_SPEEDS_KMH.commuter) * 60 + (3000 / 1000 / LINE_TYPE_SPEEDS_KMH.subway) * 60;
+assert.ok(
+  Math.abs(throughRailMinutes - expectedThroughRailMinutes) < 1e-6,
+  "the two rides cost exactly their own ride time — no TRANSFER_MINUTES and no re-boarding charge for standing still"
+);
 
 // ── Single-ride journey: Akihabara -> Kanda stays on one line ──
 const singleRide = await describe(nearAkihabara, nearKanda, ["rail"]);
@@ -384,41 +433,41 @@ function buildJrPassFixture(): TransitGraph {
   const jrPassGraph = createGraph();
 
   jrPassGraph.stopNodes.set("jrA", {
-    id: "jrA", lineId: "jr-line", lineName: "JR Line", lineType: "commuter", operator: "JR East",
+    id: "jrA", osmNodeId: "jrA", lineId: "jr-line", lineName: "JR Line", lineType: "commuter", operator: "JR East",
     stationName: "JR A", lat: 34.70, lng: 135.50, sequence: 0,
   });
   jrPassGraph.stopNodes.set("jrB", {
-    id: "jrB", lineId: "jr-line", lineName: "JR Line", lineType: "commuter", operator: "JR East",
+    id: "jrB", osmNodeId: "jrB", lineId: "jr-line", lineName: "JR Line", lineType: "commuter", operator: "JR East",
     stationName: "JR B", lat: 34.71, lng: 135.50, sequence: 1,
   });
   jrPassGraph.rideEdges.push({ fromStopId: "jrA", toStopId: "jrB", distanceMeters: 1000 });
 
   jrPassGraph.stopNodes.set("privateA", {
-    id: "privateA", lineId: "private-line", lineName: "Private Line", lineType: "commuter", operator: "Meitetsu",
+    id: "privateA", osmNodeId: "privateA", lineId: "private-line", lineName: "Private Line", lineType: "commuter", operator: "Meitetsu",
     stationName: "Private A", lat: 34.80, lng: 135.50, sequence: 0,
   });
   jrPassGraph.stopNodes.set("privateB", {
-    id: "privateB", lineId: "private-line", lineName: "Private Line", lineType: "commuter", operator: "Meitetsu",
+    id: "privateB", osmNodeId: "privateB", lineId: "private-line", lineName: "Private Line", lineType: "commuter", operator: "Meitetsu",
     stationName: "Private B", lat: 34.81, lng: 135.50, sequence: 1,
   });
   jrPassGraph.rideEdges.push({ fromStopId: "privateA", toStopId: "privateB", distanceMeters: 1000 });
 
   jrPassGraph.stopNodes.set("unknownA", {
-    id: "unknownA", lineId: "unknown-line", lineName: "Unknown Line", lineType: "commuter",
+    id: "unknownA", osmNodeId: "unknownA", lineId: "unknown-line", lineName: "Unknown Line", lineType: "commuter",
     stationName: "Unknown A", lat: 34.90, lng: 135.50, sequence: 0,
   });
   jrPassGraph.stopNodes.set("unknownB", {
-    id: "unknownB", lineId: "unknown-line", lineName: "Unknown Line", lineType: "commuter",
+    id: "unknownB", osmNodeId: "unknownB", lineId: "unknown-line", lineName: "Unknown Line", lineType: "commuter",
     stationName: "Unknown B", lat: 34.91, lng: 135.50, sequence: 1,
   });
   jrPassGraph.rideEdges.push({ fromStopId: "unknownA", toStopId: "unknownB", distanceMeters: 1000 });
 
   jrPassGraph.stopNodes.set("nozomiA", {
-    id: "nozomiA", lineId: "nozomi-line", lineName: "Nozomi", lineType: "shinkansen", operator: "JR Central",
+    id: "nozomiA", osmNodeId: "nozomiA", lineId: "nozomi-line", lineName: "Nozomi", lineType: "shinkansen", operator: "JR Central",
     stationName: "Nozomi A", lat: 35.00, lng: 135.50, sequence: 0,
   });
   jrPassGraph.stopNodes.set("nozomiB", {
-    id: "nozomiB", lineId: "nozomi-line", lineName: "Nozomi", lineType: "shinkansen", operator: "JR Central",
+    id: "nozomiB", osmNodeId: "nozomiB", lineId: "nozomi-line", lineName: "Nozomi", lineType: "shinkansen", operator: "JR Central",
     stationName: "Nozomi B", lat: 35.01, lng: 135.50, sequence: 1,
   });
   jrPassGraph.rideEdges.push({ fromStopId: "nozomiA", toStopId: "nozomiB", distanceMeters: 1000 });
