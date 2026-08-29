@@ -29,7 +29,7 @@ async function main() {
   // ── Scope kind ↔ mode mapping (what routes gate on) ──
   assert.equal(modeForScope({ kind: "anchor", lat: 1, lng: 2 }), "anchored");
   assert.equal(modeForScope({ kind: "none" }), "unanchored");
-  assert.equal(modeForScope({ kind: "route", polyline: "abc" }), "alongRoute");
+  assert.equal(modeForScope({ kind: "route", polyline: "abc", origin: { lat: 1, lng: 2 } }), "alongRoute");
 
   // ── Declared modes ──
   const google = getDiscoveryProvider("google")!;
@@ -91,8 +91,9 @@ async function main() {
     "none scope without query rejects"
   );
 
-  // route scope → text search with searchAlongRouteParameters; missing query fails loud
-  await google.search({ query: "bakery", scope: { kind: "route", polyline: "abc123" }, limit: 5 });
+  // route scope → text search with searchAlongRouteParameters + routingParameters; missing query fails loud
+  const origin = { lat: 35.71, lng: 139.79 };
+  await google.search({ query: "bakery", scope: { kind: "route", polyline: "abc123", origin }, limit: 5 });
   assert.ok(lastUrl.endsWith("places:searchText"), "route scope hits searchText");
   assert.equal(lastBody.textQuery, "bakery", "query becomes textQuery");
   assert.deepEqual(
@@ -100,8 +101,13 @@ async function main() {
     { polyline: { encodedPolyline: "abc123" } },
     "polyline becomes searchAlongRouteParameters"
   );
+  assert.deepEqual(
+    lastBody.routingParameters,
+    { origin: { latitude: 35.71, longitude: 139.79 } },
+    "scope origin becomes routingParameters"
+  );
   await assert.rejects(
-    () => google.search({ scope: { kind: "route", polyline: "abc123" } }),
+    () => google.search({ scope: { kind: "route", polyline: "abc123", origin } }),
     /query is required/,
     "route scope without query rejects"
   );
@@ -113,6 +119,7 @@ async function main() {
     return {
       placeId: "x", name: "x", address: "", lat: null, lng: null,
       rating: null, reviewCount: null, categories: [], priceLevel: null, distanceMeters: null,
+      detourMeters: null,
       ...over,
     };
   }
@@ -129,6 +136,30 @@ async function main() {
     place({ placeId: "novel", rating: 4.0, categories: ["museum"] }),
   ], dayCats);
   assert.deepEqual(diverse.map((p) => p.placeId), ["novel", "same"], "novel category gets the diversity bonus");
+
+  // ── #107: detourMeters spreads results along the corridor instead of clustering at the origin ──
+  // 9 places, all top-rated, 7 of them clustered in the first 10% of a corridor (the reproduction
+  // in #107 itself) and 2 spread further out. A flat rating sort would put all 9 origin-clustered
+  // places first; stratifying by position must surface at least one of the far ones early.
+  const clustered = [
+    ...Array.from({ length: 7 }, (_, i) => place({ placeId: `origin-${i}`, rating: 4.9, reviewCount: 2000, detourMeters: 50 + i })),
+    place({ placeId: "mid", rating: 4.0, reviewCount: 100, detourMeters: 5000 }),
+    place({ placeId: "far", rating: 4.0, reviewCount: 100, detourMeters: 9500 }),
+  ];
+  const spread = scoreAndSort(clustered);
+  assert.equal(spread.length, 9, "no places dropped");
+  const top3Ids = spread.slice(0, 3).map((p) => p.placeId);
+  assert.ok(
+    top3Ids.includes("mid") || top3Ids.includes("far"),
+    "top results are not all clustered at the corridor origin"
+  );
+
+  // Places with no detourMeters (anchor/unanchored scope) are untouched by stratification.
+  const noDetour = scoreAndSort([
+    place({ placeId: "low",  rating: 3.0, reviewCount: 10 }),
+    place({ placeId: "high", rating: 4.8, reviewCount: 5000 }),
+  ]);
+  assert.deepEqual(noDetour.map((p) => p.placeId), ["high", "low"], "null detourMeters → unchanged rating sort");
 
   console.log("✓ discovery.test.ts passed");
 }

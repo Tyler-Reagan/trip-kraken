@@ -250,4 +250,9 @@ export type NearbyPlace = {
   categories: string[];
   priceLevel: number | null; // 0–4
   distanceMeters: number | null;
+  /** Route-relative distance from the corridor's origin to this place, sourced from Places API
+   * (New) `routingSummaries` (#107) — null outside the along-route scope, where it's never
+   * requested. A response data field, not a ranking promise (ADR-0009): providers populate it,
+   * `scoreAndSort` decides what to do with it. */
+  detourMeters: number | null;
 };

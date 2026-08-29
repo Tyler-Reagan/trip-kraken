@@ -59,6 +59,7 @@ async function main() {
   assert.deepEqual(r.categories, ["tourist_attraction"], "generic place types stripped");
   assert.equal(r.priceLevel, 2, "PRICE_LEVEL_MODERATE enum → 2");
   assert.equal(r.distanceMeters, null, "unanchored → no distance");
+  assert.equal(r.detourMeters, null, "unanchored → no detour (routingSummaries never requested)");
 
   // ── searchText: zero results is an empty object, not a status field ──
   mockFetch({});
@@ -123,7 +124,7 @@ async function main() {
 
   // ── searchAlongRoute: text search with a structured corridor param ──
   mockFetch({ places: [newPlace] });
-  results = await searchAlongRoute("bakery", "abc123", { limit: 5, openNow: true });
+  results = await searchAlongRoute("bakery", "abc123", { lat: 35.71, lng: 139.79 }, { limit: 5, openNow: true });
   assert.equal(lastRequest!.url, "https://places.googleapis.com/v1/places:searchText", "along-route uses text search");
   assert.deepEqual(
     requestBody(),
@@ -131,11 +132,35 @@ async function main() {
       textQuery: "bakery",
       pageSize: 5,
       searchAlongRouteParameters: { polyline: { encodedPolyline: "abc123" } },
+      routingParameters: { origin: { latitude: 35.71, longitude: 139.79 } },
       openNow: true,
     },
-    "polyline becomes searchAlongRouteParameters, no location bias"
+    "polyline becomes searchAlongRouteParameters, origin becomes routingParameters, no location bias"
+  );
+  assert.ok(
+    requestHeader("X-Goog-FieldMask")?.includes("routingSummaries.legs.distanceMeters"),
+    "field mask requests routingSummaries for along-route"
   );
   assert.equal(results[0].placeId, "place-1", "along-route result mapped");
+  assert.equal(results[0].detourMeters, null, "no routingSummaries in response → null detourMeters");
+
+  // ── searchAlongRoute: routingSummaries, index-aligned with places, becomes detourMeters ──
+  mockFetch({
+    places: [
+      { ...newPlace, id: "near" },
+      { ...newPlace, id: "far" },
+    ],
+    routingSummaries: [{ legs: [{ distanceMeters: 400 }] }, { legs: [{ distanceMeters: 3200 }] }],
+  });
+  results = await searchAlongRoute("bakery", "abc123", { lat: 35.71, lng: 139.79 });
+  assert.deepEqual(
+    results.map((p) => [p.placeId, p.detourMeters]),
+    [
+      ["near", 400],
+      ["far", 3200],
+    ],
+    "routingSummaries mapped onto detourMeters by index"
+  );
 
   // ── findPlaceFromText: single best match with bias circle ──
   mockFetch({ places: [{ id: "place-2", location: { latitude: 34.66, longitude: 135.5 } }] });
