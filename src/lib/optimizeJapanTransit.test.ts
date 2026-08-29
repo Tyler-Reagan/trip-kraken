@@ -38,15 +38,15 @@ function buildFixture(): TransitGraph {
 
   // Commuter loop: Tokyo -> Kanda -> Akihabara (two consecutive hops, same line).
   graph.stopNodes.set("loop-tokyo", {
-    id: "loop-tokyo", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
+    id: "loop-tokyo", osmNodeId: "loop-tokyo", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
     stationName: "Tokyo", lat: 35.6812, lng: 139.7671, sequence: 0,
   });
   graph.stopNodes.set("loop-kanda", {
-    id: "loop-kanda", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
+    id: "loop-kanda", osmNodeId: "loop-kanda", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
     stationName: "Kanda", lat: 35.6918, lng: 139.7708, sequence: 1,
   });
   graph.stopNodes.set("loop-akihabara", {
-    id: "loop-akihabara", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
+    id: "loop-akihabara", osmNodeId: "loop-akihabara", lineId: "loop", lineName: "Loop Line", lineType: "commuter",
     stationName: "Akihabara", lat: 35.6984, lng: 139.7731, sequence: 2,
   });
   graph.rideEdges.push({ fromStopId: "loop-tokyo", toStopId: "loop-kanda", distanceMeters: 1200 });
@@ -54,11 +54,11 @@ function buildFixture(): TransitGraph {
 
   // Subway spur: Tokyo -> Otemachi (different line, interchanges with the loop at Tokyo).
   graph.stopNodes.set("spur-tokyo", {
-    id: "spur-tokyo", lineId: "spur", lineName: "Spur Subway", lineType: "subway",
+    id: "spur-tokyo", osmNodeId: "spur-tokyo", lineId: "spur", lineName: "Spur Subway", lineType: "subway",
     stationName: "Tokyo", lat: 35.6812, lng: 139.7671, sequence: 0,
   });
   graph.stopNodes.set("spur-otemachi", {
-    id: "spur-otemachi", lineId: "spur", lineName: "Spur Subway", lineType: "subway",
+    id: "spur-otemachi", osmNodeId: "spur-otemachi", lineId: "spur", lineName: "Spur Subway", lineType: "subway",
     stationName: "Otemachi", lat: 35.687, lng: 139.7645, sequence: 1,
   });
   graph.rideEdges.push({ fromStopId: "spur-tokyo", toStopId: "spur-otemachi", distanceMeters: 900 });

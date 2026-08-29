@@ -42,7 +42,8 @@ function createSchema(sqlite: Database.Database): void {
       lat REAL NOT NULL,
       lng REAL NOT NULL,
       sequence INTEGER NOT NULL,
-      operator TEXT
+      operator TEXT,
+      osmNodeId TEXT NOT NULL
     );
     CREATE TABLE Cluster (
       id TEXT PRIMARY KEY,
@@ -91,7 +92,7 @@ export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH,
   try {
     createSchema(sqlite);
     const insertStop = sqlite.prepare(
-      "INSERT INTO StopNode (id, lineId, lineName, lineType, stationName, lat, lng, sequence, operator) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO StopNode (id, lineId, lineName, lineType, stationName, lat, lng, sequence, operator, osmNodeId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
     const insertCluster = sqlite.prepare("INSERT INTO Cluster (id, name) VALUES (?, ?)");
     const insertMember = sqlite.prepare(
@@ -109,7 +110,7 @@ export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH,
 
     const writeAll = sqlite.transaction(() => {
       for (const stop of graph.stopNodes.values()) {
-        insertStop.run(stop.id, stop.lineId, stop.lineName, stop.lineType, stop.stationName, stop.lat, stop.lng, stop.sequence, stop.operator ?? null);
+        insertStop.run(stop.id, stop.lineId, stop.lineName, stop.lineType, stop.stationName, stop.lat, stop.lng, stop.sequence, stop.operator ?? null, stop.osmNodeId);
       }
       for (const cluster of graph.clusters.values()) {
         insertCluster.run(cluster.id, cluster.name);
@@ -147,6 +148,23 @@ export function load(filePath: string = DEFAULT_GRAPH_PATH): { graph: TransitGra
 
   const sqlite = new Database(filePath, { readonly: true, fileMustExist: true });
   try {
+    // A schema check, not a version number: this file has no `Meta` schema-version column to read
+    // instead (ADR-0030 §6's `snapshotDate`/`region` answer a different question). Issue #159 added
+    // `StopNode.osmNodeId`, and a file ingested before that change would silently read it back as
+    // `undefined` for every row — which `buildAdjacency`'s same-platform union (`osmTransitProvider.ts`)
+    // would then read as "every stop node in the graph shares one physical point", merging the whole
+    // graph's ride adjacency into one group. That is exactly the silent-corruption failure mode
+    // ADR-0017/ADR-0018 §4 exist to rule out elsewhere in this codebase; the missing-file check above
+    // already treats "ingestion never ran" as loud, and a stale schema is the same class of problem.
+    const stopNodeColumns = new Set(
+      (sqlite.prepare("PRAGMA table_info(StopNode)").all() as { name: string }[]).map((c) => c.name)
+    );
+    if (!stopNodeColumns.has("osmNodeId")) {
+      throw new Error(
+        `transit graph at ${filePath} predates issue #159 (StopNode.osmNodeId) — re-run \`pnpm ingest:transit-graph\``
+      );
+    }
+
     const graph = createGraph();
 
     for (const row of sqlite.prepare("SELECT * FROM StopNode").all() as (Omit<StopNode, "operator"> & {

@@ -190,8 +190,15 @@ interface Adjacency {
 /** One crossing of one ride edge, in one direction. `geometry` is the shape as stored — always
  * `fromStopId` → `toStopId` of the *edge*, never of this link — and `forward` says whether the two
  * agree. That is ADR-0030 §8: the shape is stored once, and the direction is resolved when read.
- * Both links share the one `geometry` object, so crossing an edge backwards costs no memory. */
+ * Both links share the one `geometry` object, so crossing an edge backwards costs no memory.
+ *
+ * `fromStopId` is the edge's *true* origin — the stop node whose line this ride actually belongs
+ * to — which stays fixed even when this same link object gets filed under a same-platform sibling's
+ * bucket too (issue #159, below). Every lookup that needs the ride's own line (speed, operator, JR
+ * Pass exclusion) reads it from here, never from whichever node the search happened to be sitting
+ * on when it found this link. */
 interface RideLink {
+  fromStopId: string;
   toStopId: string;
   distanceMeters: number;
   lineName: string;
@@ -214,8 +221,38 @@ function buildAdjacency(graph: TransitGraph): Adjacency {
   for (const edge of graph.rideEdges) {
     const lineName = graph.stopNodes.get(edge.fromStopId)?.lineName ?? graph.stopNodes.get(edge.toStopId)?.lineName ?? "";
     const shared = { distanceMeters: edge.distanceMeters, lineName, geometry: edge.geometry };
-    addRide(edge.fromStopId, { ...shared, toStopId: edge.toStopId, forward: true });
-    addRide(edge.toStopId, { ...shared, toStopId: edge.fromStopId, forward: false });
+    addRide(edge.fromStopId, { ...shared, fromStopId: edge.fromStopId, toStopId: edge.toStopId, forward: true });
+    addRide(edge.toStopId, { ...shared, fromStopId: edge.toStopId, toStopId: edge.fromStopId, forward: false });
+  }
+
+  // Same-platform union (issue #159): a direction-split or through-running route relation puts
+  // several stop nodes — one per relation, ADR-0019's two-tier model — on the exact same physical
+  // OSM node. Riding onward from any one of them is not a transfer, it's standing still, so every
+  // stop node sharing an `osmNodeId` is made to see every sibling's own outgoing ride links, at no
+  // extra Dijkstra cost (no separate edge, no queue entry — just a wider adjacency list). Each link
+  // keeps its true `fromStopId` (set above), so the line it actually belongs to — and therefore its
+  // speed, operator, and JR Pass status — is unaffected by which sibling handed it out. Real
+  // transfer edges between *different* physical points are untouched; ingest (`transitGraphIngest.ts`)
+  // already omits a transfer edge for a same-`osmNodeId` pair, since it would only ever be a costlier,
+  // never-chosen alternative to this.
+  const byOsmNode = new Map<string, string[]>();
+  for (const stop of graph.stopNodes.values()) {
+    const siblings = byOsmNode.get(stop.osmNodeId) ?? [];
+    siblings.push(stop.id);
+    byOsmNode.set(stop.osmNodeId, siblings);
+  }
+  for (const siblings of byOsmNode.values()) {
+    if (siblings.length < 2) continue;
+    // Snapshot each sibling's *native* links before writing any back — otherwise an earlier
+    // sibling's already-extended list would get borrowed again by a later one in the same group,
+    // duplicating (and, over a large interchange, compounding) entries.
+    const native = new Map(siblings.map((id) => [id, ride.get(id) ?? []]));
+    for (const stopId of siblings) {
+      const borrowed = siblings
+        .filter((siblingId) => siblingId !== stopId)
+        .flatMap((siblingId) => native.get(siblingId) ?? []);
+      if (borrowed.length > 0) ride.set(stopId, [...(native.get(stopId) ?? []), ...borrowed]);
+    }
   }
 
   const transfer: Adjacency["transfer"] = new Map();
@@ -318,11 +355,14 @@ function shortestPath(
 
     for (const rideEdge of adjacency.ride.get(current.id) ?? []) {
       if (visited.has(rideEdge.toStopId)) continue;
+      // Both reads key off `rideEdge.fromStopId`, the link's true origin — never `current.id`,
+      // which is only the *physical point* the search is standing at (issue #159's same-platform
+      // union above can hand `current` a sibling's own link, belonging to a different line).
       // Hard-exclude a confirmed non-JR ride edge under a JR Pass (issue #211) — never a transfer
       // edge, since every ride edge reachable from a non-JR stop node belongs to that same
       // non-JR line and is excluded in its own turn; nothing extra reaches through a walk.
-      if (hasJrPass && isExcludedUnderJrPass(graph.stopNodes.get(current.id)?.operator)) continue;
-      const lineType = graph.stopNodes.get(current.id)?.lineType ?? "commuter";
+      if (hasJrPass && isExcludedUnderJrPass(graph.stopNodes.get(rideEdge.fromStopId)?.operator)) continue;
+      const lineType = graph.stopNodes.get(rideEdge.fromStopId)?.lineType ?? "commuter";
       const speed = LINE_TYPE_SPEEDS_KMH[lineType];
       const candidateTime = currentTime + minutesForMeters(rideEdge.distanceMeters, speed);
       if (candidateTime < (timeMin.get(rideEdge.toStopId) ?? Infinity)) {
@@ -331,7 +371,7 @@ function shortestPath(
         if (withSteps) {
           steps.set(rideEdge.toStopId, [
             ...currentSteps,
-            { kind: "ride", lineName: rideEdge.lineName, fromStopId: current.id, toStopId: rideEdge.toStopId },
+            { kind: "ride", lineName: rideEdge.lineName, fromStopId: rideEdge.fromStopId, toStopId: rideEdge.toStopId },
           ]);
         }
         push(rideEdge.toStopId, candidateTime);

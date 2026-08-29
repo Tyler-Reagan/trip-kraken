@@ -177,6 +177,34 @@ assert.deepEqual(
   "cluster joins every stop node whose raw OSM node the stop_area references, across lines"
 );
 
+// ── Issue #159: no transfer edge between two stop nodes at the same raw OSM node ──
+// R1:tokyoA (Shinkansen) and R3:tokyoA (Yamanote) both sit on raw node "tokyoA" — two route
+// relations sharing one physical point, exactly the through-running/direction-split shape that
+// used to charge a phantom 5-minute "transfer" for staying put. R2:tokyoB sits on a genuinely
+// different raw node ("tokyoB") in the same cluster, so it's a real interchange and keeps its edge.
+const hasTransferEdge = (a: string, b: string) =>
+  graph.transferEdges.some(
+    (e) => (e.fromStopId === a && e.toStopId === b) || (e.fromStopId === b && e.toStopId === a)
+  );
+assert.equal(
+  hasTransferEdge("R1:tokyoA", "R3:tokyoA"),
+  false,
+  "same raw OSM node -> no transfer edge, not a real interchange"
+);
+assert.ok(
+  hasTransferEdge("R1:tokyoA", "R2:tokyoB"),
+  "different raw OSM nodes in one cluster -> still a real transfer edge"
+);
+assert.ok(
+  hasTransferEdge("R3:tokyoA", "R2:tokyoB"),
+  "different raw OSM nodes in one cluster -> still a real transfer edge"
+);
+assert.equal(
+  graph.stopNodes.get("R1:tokyoA")!.osmNodeId,
+  "tokyoA",
+  "a stop node records the raw OSM node it sits at"
+);
+
 const shibuyaCluster = [...graph.clusters.values()].find((c) => c.id === "GroupShibuya");
 assert.ok(shibuyaCluster, "stop_area_group relation becomes a merged cluster");
 assert.deepEqual(

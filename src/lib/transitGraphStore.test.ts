@@ -20,6 +20,7 @@ function buildFixture(): TransitGraph {
   // Yamanote line: two consecutive stops.
   graph.stopNodes.set("yamanote-tokyo", {
     id: "yamanote-tokyo",
+    osmNodeId: "yamanote-tokyo",
     lineId: "yamanote",
     lineName: "Yamanote Line",
     lineType: "commuter",
@@ -30,6 +31,7 @@ function buildFixture(): TransitGraph {
   });
   graph.stopNodes.set("yamanote-kanda", {
     id: "yamanote-kanda",
+    osmNodeId: "yamanote-kanda",
     lineId: "yamanote",
     lineName: "Yamanote Line",
     lineType: "commuter",
@@ -54,6 +56,7 @@ function buildFixture(): TransitGraph {
   // Marunouchi line: a stop node at the same physical station as Tokyo (an interchange).
   graph.stopNodes.set("marunouchi-tokyo", {
     id: "marunouchi-tokyo",
+    osmNodeId: "marunouchi-tokyo",
     lineId: "marunouchi",
     lineName: "Marunouchi Line",
     lineType: "subway",
@@ -64,6 +67,7 @@ function buildFixture(): TransitGraph {
   });
   graph.stopNodes.set("marunouchi-otemachi", {
     id: "marunouchi-otemachi",
+    osmNodeId: "marunouchi-otemachi",
     lineId: "marunouchi",
     lineName: "Marunouchi Line",
     lineType: "subway",
@@ -102,6 +106,27 @@ const dbPath = path.join(dir, "transit-japan.db");
 
 // ── Missing file: loud error, never a silent empty graph ──
 assert.throws(() => load(dbPath), /transit graph not ingested/, "missing graph file must throw loudly");
+
+// ── A pre-#159 file (no StopNode.osmNodeId column): loud error, never a silent same-point merge ──
+// Hand-rolled rather than via save(), which always writes the current (post-#159) schema — this
+// stands in for a real file ingested before this column existed.
+const stalePath = path.join(dir, "stale-pre-159.db");
+{
+  const stale = new Database(stalePath);
+  stale.exec(`
+    CREATE TABLE StopNode (
+      id TEXT PRIMARY KEY, lineId TEXT NOT NULL, lineName TEXT NOT NULL, lineType TEXT NOT NULL,
+      stationName TEXT NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL, sequence INTEGER NOT NULL,
+      operator TEXT
+    );
+  `);
+  stale.close();
+}
+assert.throws(
+  () => load(stalePath),
+  /predates issue #159/,
+  "a graph file from before StopNode.osmNodeId must throw loudly, not silently merge every stop node into one group"
+);
 
 // ── Round trip: save then load must be structurally identical ──
 const original = buildFixture();
