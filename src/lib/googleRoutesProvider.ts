@@ -94,6 +94,16 @@ function toSeconds(duration: string): number {
   return n;
 }
 
+/** Shared by every fetch this provider makes (`fetchMatrixChunk`, `computeRoutePolyline`,
+ *  `describeJourney`) — the three used to repeat this block verbatim. A non-2xx response is
+ *  always a genuine failure here (unlike a Google-answered "no route", which is a `null` decline
+ *  each caller handles on its own), so there's nothing provider-specific left to parameterize. */
+async function throwOnGoogleRoutesError(res: Response): Promise<void> {
+  if (res.ok) return;
+  const text = await res.text().catch(() => "");
+  throw new Error(`Google Routes API error: HTTP ${res.status} ${text}`);
+}
+
 type MatrixElement = {
   originIndex: number;
   destinationIndex: number;
@@ -127,10 +137,7 @@ async function fetchMatrixChunk(
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Google Routes API error: HTTP ${res.status} ${text}`);
-  }
+  await throwOnGoogleRoutesError(res);
   return (await res.json()) as MatrixElement[];
 }
 
@@ -238,10 +245,7 @@ export async function computeRoutePolyline(
       travelMode: googleMode,
     }),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Google Routes API error: HTTP ${res.status} ${text}`);
-  }
+  await throwOnGoogleRoutesError(res);
   const data = (await res.json()) as PolylineResponse;
   return data.routes?.[0]?.polyline?.encodedPolyline ?? null;
 }
@@ -290,10 +294,7 @@ export const googleRoutesProvider: PathProvider = {
       },
       body: JSON.stringify(body),
     });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Google Routes API error: HTTP ${res.status} ${text}`);
-    }
+    await throwOnGoogleRoutesError(res);
     const data = (await res.json()) as ComputeRoutesResponse;
     const route = data.routes?.[0];
     // No route is Google successfully answering "no route exists" — a decline (ADR-0024 §4), not a

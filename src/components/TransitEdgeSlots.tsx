@@ -10,7 +10,7 @@ import {
 import { useTripStore } from "@/store/tripStore";
 import {
   isActivity,
-  isTransit,
+  tripEdgesOf,
   type IsoDate,
   type Location,
   type Transit,
@@ -160,14 +160,7 @@ function EdgeRow({
 export function TransitSection({ trip }: { trip: TripWithDetails }) {
   const saveTransitEdge = useTripStore((s) => s.saveTransitEdge);
 
-  const arrival =
-    trip.locations.find(
-      (l): l is Transit => isTransit(l) && l.arriveAt != null,
-    ) ?? null;
-  const departure =
-    trip.locations.find(
-      (l): l is Transit => isTransit(l) && l.departAt != null,
-    ) ?? null;
+  const { arrival, departure } = tripEdgesOf(trip);
 
   // Excluded activities aren't offered — an edge, like a lodging booking, promotes a place *into*
   // active use (ADR-0015). A Location already holding the *other* edge is still a legitimate

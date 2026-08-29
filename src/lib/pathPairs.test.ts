@@ -11,6 +11,7 @@ import {
   dayChainEntries,
   dayChainPairs,
   journeyRoadKindFor,
+  resolveJourneyKindToggle,
   withJourneyRoadKind,
 } from "./pathPairs";
 import type { PathPair } from "./pathPairs";
@@ -469,6 +470,45 @@ assert.deepEqual(
     journeyRoadKindFor([], "a", "b"),
     undefined,
     "no choices at all",
+  );
+}
+
+// ── resolveJourneyKindToggle: DayCard's RouteConnector and MapView's StopPanel share this ───────
+
+{
+  const kinds: JourneyRoadKind[] = [
+    {
+      id: "k1",
+      tripId: "t1",
+      locationAId: "a",
+      locationBId: "b",
+      kind: "driving",
+    },
+  ];
+  assert.equal(
+    resolveJourneyKindToggle(kinds, "walking", "a", "b", () => {})?.kind,
+    "driving",
+    "an explicit choice wins over the Trip's roadProfile default",
+  );
+  assert.equal(
+    resolveJourneyKindToggle(kinds, "walking", "a", "c", () => {})?.kind,
+    "walking",
+    "no choice for this pair falls back to roadProfile",
+  );
+  assert.equal(
+    resolveJourneyKindToggle([], "walking", "hotel", "hotel", () => {}),
+    undefined,
+    "a zero-length same-Location gap has no real Journey to choose a kind for",
+  );
+
+  let received: [string, string, string | null] | null = null;
+  resolveJourneyKindToggle([], "walking", "a", "b", (kind) => {
+    received = ["a", "b", kind];
+  })?.onKindChange("driving");
+  assert.deepEqual(
+    received,
+    ["a", "b", "driving"],
+    "onKindChange is wired through unchanged",
   );
 }
 

@@ -1,9 +1,15 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import type { DerivedDay, JourneyRoadKind } from "@/types";
+import type { DerivedDay, JourneyRoadKind, Location } from "@/types";
 import type { Path, RoadProfile } from "@/types/path";
-import { pairKey, uniquePairsOfDays, type PathPair } from "@/lib/pathPairs";
+import {
+  pairKey,
+  resolveJourneyKindToggle,
+  uniquePairsOfDays,
+  type PathPair,
+} from "@/lib/pathPairs";
+import { useTripStore } from "@/store/tripStore";
 
 /** What one pair resolved to. `null` records a pair the router refused outright — held so it is
  * asked once, not once per render. A held entry is never re-requested. */
@@ -132,4 +138,46 @@ export function usePathGeometryContext(): PathGeometryContextValue {
       "usePathGeometryContext: no PathGeometryProvider above this component",
     );
   return ctx;
+}
+
+export interface JourneyGap {
+  key: string;
+  chain: Path[] | null | undefined;
+  kindToggle: ReturnType<typeof resolveJourneyKindToggle>;
+}
+
+/**
+ * One Location-to-Location gap's resolved geometry and kind toggle — `DayCard`'s `RouteConnector`
+ * and `MapView`'s `StopPanel` both render a gap from the same three facts (this pair's held
+ * `Path[]`, and the Journey's effective walk/drive kind), so the lookup lives here once rather
+ * than in both. `null` when the gap can't be resolved at all (either end ungeocoded, or no Trip
+ * loaded yet) — the caller renders nothing rather than working from partial data.
+ */
+export function useJourneyGap(from: Location, to: Location): JourneyGap | null {
+  const trip = useTripStore((s) => s.trip);
+  const setJourneyRoadKind = useTripStore((s) => s.setJourneyRoadKind);
+  const { pathGeometry, roadProfile } = usePathGeometryContext();
+
+  if (from.lat === null || to.lat === null || !trip) return null;
+
+  const key = pairKey(
+    roadProfile,
+    {
+      from: { lat: from.lat, lng: from.lng!, locationId: from.id },
+      to: { lat: to.lat, lng: to.lng!, locationId: to.id },
+    },
+    trip.journeyRoadKinds,
+  );
+
+  return {
+    key,
+    chain: pathGeometry.get(key),
+    kindToggle: resolveJourneyKindToggle(
+      trip.journeyRoadKinds,
+      roadProfile,
+      from.id,
+      to.id,
+      (kind) => setJourneyRoadKind(from.id, to.id, kind),
+    ),
+  };
 }

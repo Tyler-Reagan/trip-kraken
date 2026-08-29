@@ -67,6 +67,29 @@ export function withJourneyRoadKind(
   return chosen ? [chosen.kind] : kinds;
 }
 
+/** The walk/drive kind toggle for one Journey (issue #217/#219) — `undefined` for a zero-length
+ *  "same Location" gap, which has no real Journey to choose a kind for. Resolves the Journey's
+ *  effective kind (an explicit choice if one is stored, else the Trip's `roadProfile` default) and
+ *  wires `onKindChange` to store a new choice for this pair. Shared by `DayCard`'s sidebar and
+ *  `MapView`'s `StopPanel` via `useJourneyGap` (`usePathGeometry.ts`) so the two surfaces can't
+ *  resolve a Journey's kind differently. */
+export function resolveJourneyKindToggle(
+  journeyRoadKinds: JourneyRoadKind[],
+  roadProfile: RoadProfile,
+  fromId: string,
+  toId: string,
+  onKindChange: (kind: RoadProfile | null) => void,
+):
+  | { kind: RoadProfile; onKindChange: (kind: RoadProfile | null) => void }
+  | undefined {
+  if (fromId === toId) return undefined;
+  return {
+    kind:
+      journeyRoadKindFor(journeyRoadKinds, fromId, toId)?.kind ?? roadProfile,
+    onKindChange,
+  };
+}
+
 /** What role an entry plays in a Day's chain (ADR-0036) — not a routing fact, just enough for a
  *  render surface to pick the right row component. */
 export type ChainRole = "start" | "checkin" | "stop" | "end";

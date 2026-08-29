@@ -1,7 +1,11 @@
 /**
  * The only module in `src/lib/vroom/` that touches the network. Matches `osrmProvider.ts`'s
- * `fetchOsrmJson` pattern exactly — bare `fetch`, no timeout, no retry, two error tiers (transport,
- * then application) — so the two upstream HTTP services this codebase depends on fail the same way.
+ * `fetchOsrmJson` pattern — no retry, two error tiers (transport, then application), and a timeout
+ * so a stopped or wedged container fails loudly rather than hanging the caller — so the two
+ * upstream HTTP services this codebase depends on fail the same way. `VROOM_TIMEOUT_MS` is far
+ * more generous than OSRM's: a request here is a whole trip's routing problem for VROOM to solve,
+ * not one table lookup, and there's no measured worst-case solve time yet to size it against —
+ * this is a starting point, not a measured ceiling.
  *
  * Per ADR-0023's Consequences, `solve()` gains an infrastructure dependency: an unconfigured or
  * unreachable VROOM must fail loudly, never silently produce a straight-line plan. Both failure
@@ -16,6 +20,8 @@ import type {
   VroomSolution,
 } from "@/lib/vroom/wire";
 
+const VROOM_TIMEOUT_MS = 120_000;
+
 export async function postVroom(request: VroomRequest): Promise<VroomSolution> {
   const url = process.env.VROOM_URL;
   if (!url) throw new Error("vroomClient: VROOM_URL is not set");
@@ -24,6 +30,7 @@ export async function postVroom(request: VroomRequest): Promise<VroomSolution> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
+    signal: AbortSignal.timeout(VROOM_TIMEOUT_MS),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -61,6 +68,7 @@ export async function postVroomPlan(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
+      signal: AbortSignal.timeout(VROOM_TIMEOUT_MS),
     });
     if (!res.ok) {
       console.warn(

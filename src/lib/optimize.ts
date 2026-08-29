@@ -21,6 +21,7 @@ import {
   dayNumberOf,
   addDaysIso,
   numDaysOf,
+  tripEdgesOf,
   type Location,
   type Transit,
   type TripWithDetails,
@@ -68,17 +69,7 @@ export async function optimizeTrip(
   const lodgings = trip.locations.filter(isLodging);
   const activities = trip.locations.filter((l) => isActivity(l) && !l.excluded);
 
-  // The trip's two edges (ADR-0028) — at most one Location carries `arriveAt`, one `departAt`, by
-  // construction (a partial unique index backs it). Both may be the same Location: a round trip
-  // through one airport.
-  const arrival =
-    trip.locations.find(
-      (l): l is Transit => isTransit(l) && l.arriveAt != null,
-    ) ?? null;
-  const departure =
-    trip.locations.find(
-      (l): l is Transit => isTransit(l) && l.departAt != null,
-    ) ?? null;
+  const { arrival, departure } = tripEdgesOf(trip);
   const edgeLocations = [arrival, departure].filter(
     (l): l is Transit => l != null,
   );
