@@ -1,0 +1,30 @@
+# ADR-0037: VROOM on Fly.io, scale-to-zero. Built from VROOM-Project/vroom-docker's Dockerfile,
+# pinned to v1.15.0 — no image is published past v1.14.0-rc.2 (docker-compose.yml's own comment),
+# so building from source is forced, not chosen. Deployed via scripts/deploy-vroom-fly.sh, which
+# clones the pinned tag to a local directory and deploys from that clone: Fly's compose-import
+# support for a service whose build.context is itself a remote git URL is unconfirmed, and cloning
+# first sidesteps the question entirely (ADR-0037's stated fallback) rather than gambling on it.
+app = "trip-kraken-vroom"
+primary_region = "sjc"
+
+[build]
+  [build.args]
+    VROOM_RELEASE = "v1.15.0"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

@@ -17,6 +17,9 @@ import { dedupeName } from "@/lib/dedupeName";
  * `Activity | Transit | Lodging` union. The plan is stored as `Placement`s; day-clustering, anchors,
  * and roles are *not* materialized here — they project from the constraint fields at read time via
  * the helpers in `@/types`. There is no Stay table, no locking, and no reconcile diff (ADR-0015).
+ *
+ * Every function here is async (ADR-0037): Turso/libSQL is Promise-based even against a local
+ * file, unlike the synchronous better-sqlite3 driver this replaced.
  */
 
 export const newId = () => randomUUID();
@@ -62,8 +65,9 @@ function toLocation(r: typeof location.$inferSelect): Location {
 
 // ─── Reads ────────────────────────────────────────────────────────────────────
 
-export function listTrips() {
-  const rows = getDrizzle()
+export async function listTrips() {
+  const db = await getDrizzle();
+  const rows = await db
     .select({ ...getTableColumns(trip), locationCount: count(location.id) })
     .from(trip)
     .leftJoin(location, eq(location.tripId, trip.id))
@@ -74,30 +78,30 @@ export function listTrips() {
   return rows.map((r) => ({ ...parseTrip(r), _count: { locations: r.locationCount } }));
 }
 
-export function getTripWithDetails(id: string): TripWithDetails | null {
-  const db = getDrizzle();
+export async function getTripWithDetails(id: string): Promise<TripWithDetails | null> {
+  const db = await getDrizzle();
 
-  const tripRow = db.select().from(trip).where(eq(trip.id, id)).get();
+  const tripRow = await db.select().from(trip).where(eq(trip.id, id)).get();
   if (!tripRow) return null;
 
-  const locations = db
+  const locationRows = await db
     .select()
     .from(location)
     .where(eq(location.tripId, id))
     .orderBy(asc(location.name))
-    .all()
-    .map(toLocation);
+    .all();
+  const locations = locationRows.map(toLocation);
 
   // The plan, flat and ordered. Day-clustering and projected lodging/transit presence are derived
   // by the consumer (Timeline) from these placements + the locations' constraint fields.
-  const placements: Placement[] = db
+  const placements: Placement[] = await db
     .select()
     .from(placement)
     .where(eq(placement.tripId, id))
     .orderBy(asc(placement.date), asc(placement.order))
     .all();
 
-  const journeyRoadKinds: JourneyRoadKind[] = db
+  const journeyRoadKinds: JourneyRoadKind[] = await db
     .select()
     .from(journeyRoadKind)
     .where(eq(journeyRoadKind.tripId, id))
@@ -112,26 +116,29 @@ function canonicalJourneyPair(locationIdA: string, locationIdB: string): [string
   return locationIdA < locationIdB ? [locationIdA, locationIdB] : [locationIdB, locationIdA];
 }
 
-function requireTrip(tripId: string): TripWithDetails {
-  const t = getTripWithDetails(tripId);
+async function requireTrip(tripId: string): Promise<TripWithDetails> {
+  const t = await getTripWithDetails(tripId);
   if (!t) throw new Error(`Trip ${tripId} not found after write — possible DB inconsistency`);
   return t;
 }
 
-export function tripExists(tripId: string): boolean {
-  return getDrizzle().select({ id: trip.id }).from(trip).where(eq(trip.id, tripId)).get() !== undefined;
+export async function tripExists(tripId: string): Promise<boolean> {
+  const db = await getDrizzle();
+  return (await db.select({ id: trip.id }).from(trip).where(eq(trip.id, tripId)).get()) !== undefined;
 }
 
-export function getLocation(locationId: string): Location | null {
-  const row = getDrizzle().select().from(location).where(eq(location.id, locationId)).get();
+export async function getLocation(locationId: string): Promise<Location | null> {
+  const db = await getDrizzle();
+  const row = await db.select().from(location).where(eq(location.id, locationId)).get();
   return row ? toLocation(row) : null;
 }
 
-export function getLocationCoords(
+export async function getLocationCoords(
   tripId: string,
   locationId: string
-): { lat: number | null; lng: number | null } | null {
-  const r = getDrizzle()
+): Promise<{ lat: number | null; lng: number | null } | null> {
+  const db = await getDrizzle();
+  const r = await db
     .select({ lat: location.lat, lng: location.lng })
     .from(location)
     .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
@@ -139,19 +146,21 @@ export function getLocationCoords(
   return r ?? null;
 }
 
-export function locationExistsByPlaceId(tripId: string, placeId: string): boolean {
+export async function locationExistsByPlaceId(tripId: string, placeId: string): Promise<boolean> {
+  const db = await getDrizzle();
   return (
-    getDrizzle()
+    (await db
       .select({ id: location.id })
       .from(location)
       .where(and(eq(location.tripId, tripId), eq(location.placeId, placeId)))
-      .get() !== undefined
+      .get()) !== undefined
   );
 }
 
 /** Distinct categories across the activities placed on a date (for nearby diversity scoring). */
-export function getDayCategories(tripId: string, date: IsoDate): string[] {
-  const rows = getDrizzle()
+export async function getDayCategories(tripId: string, date: IsoDate): Promise<string[]> {
+  const db = await getDrizzle();
+  const rows = await db
     .select({ categories: location.categories })
     .from(placement)
     .innerJoin(location, eq(location.id, placement.locationId))
@@ -186,8 +195,8 @@ export class TripNameCollisionError extends Error {
  * that matters (whether the create came from a blank-trip form or a My Maps re-import); this check
  * is shared by both call sites rather than each re-deriving its own notion of "the same trip."
  */
-export function checkTripNameCollision(name: string): TripNameCollision | null {
-  const trips = listTrips();
+export async function checkTripNameCollision(name: string): Promise<TripNameCollision | null> {
+  const trips = await listTrips();
   const matches = trips.filter((t) => t.name === name);
   if (matches.length === 0) return null;
   return {
@@ -197,7 +206,7 @@ export function checkTripNameCollision(name: string): TripNameCollision | null {
   };
 }
 
-export function createTripWithLocations(data: {
+export async function createTripWithLocations(data: {
   name: string;
   /** Null for blank-slate trips (ADR-0010); the My Maps import passes the source URL. */
   sourceUrl?: string | null;
@@ -211,44 +220,50 @@ export function createTripWithLocations(data: {
     lng?: number | null;
     placeId?: string | null;
   }>;
-}): TripWithDetails {
+}): Promise<TripWithDetails> {
   const tripId = newId();
+  const db = await getDrizzle();
 
   try {
-    getDrizzle().transaction((tx) => {
-      tx.insert(trip)
-        .values({
-          id: tripId,
-          name: data.name,
-          sourceUrl: data.sourceUrl ?? null,
-          startDate: data.startDate,
-          endDate: data.endDate,
-        })
-        .run();
+    await db.transaction(async (tx) => {
+      await tx.insert(trip).values({
+        id: tripId,
+        name: data.name,
+        sourceUrl: data.sourceUrl ?? null,
+        startDate: data.startDate,
+        endDate: data.endDate,
+      });
       for (const loc of data.locations) {
         // Imported places start as activities; kind is elevated later by the gesture that attaches
         // a constraint (e.g. setLodgingDates). enrichment is pending so they get geocoded.
-        tx.insert(location)
-          .values({
-            id: newId(),
-            tripId,
-            name: loc.name,
-            address: loc.address ?? null,
-            lat: loc.lat ?? null,
-            lng: loc.lng ?? null,
-            placeId: loc.placeId ?? null,
-            enrichmentStatus: "pending",
-          })
-          .run();
+        await tx.insert(location).values({
+          id: newId(),
+          tripId,
+          name: loc.name,
+          address: loc.address ?? null,
+          lat: loc.lat ?? null,
+          lng: loc.lng ?? null,
+          placeId: loc.placeId ?? null,
+          enrichmentStatus: "pending",
+        });
       }
     });
   } catch (e) {
     // The DB is the final word on uniqueness (#121) — the app-level checkTripNameCollision
     // pre-check is best-effort and can lose a race between two concurrent creates. Translate the
     // constraint violation into the same shape the pre-check returns, so a caller handles both
-    // identically.
-    if (e instanceof Error && "code" in e && e.code === "SQLITE_CONSTRAINT_UNIQUE" && e.message.includes("Trip.name")) {
-      const collision = checkTripNameCollision(data.name);
+    // identically. Drizzle wraps the driver error in a DrizzleQueryError; the libSQL error it
+    // wraps carries the specific SQLite code in `extendedCode` (`code` is only the generic
+    // "SQLITE_CONSTRAINT"), and the original "UNIQUE constraint failed: Trip.name" message lives
+    // on that wrapped cause, not on DrizzleQueryError's own (generic "Failed query: ...") message.
+    const cause = e instanceof Error ? e.cause : undefined;
+    if (
+      cause instanceof Error &&
+      "extendedCode" in cause &&
+      cause.extendedCode === "SQLITE_CONSTRAINT_UNIQUE" &&
+      cause.message.includes("Trip.name")
+    ) {
+      const collision = await checkTripNameCollision(data.name);
       if (collision) throw new TripNameCollisionError(collision);
     }
     throw e;
@@ -257,7 +272,7 @@ export function createTripWithLocations(data: {
   return requireTrip(tripId);
 }
 
-export function updateTrip(
+export async function updateTrip(
   id: string,
   fields: {
     name?: string;
@@ -268,9 +283,11 @@ export function updateTrip(
     transitCaveatDismissed?: boolean;
     hasJrPass?: boolean;
   }
-): TripWithDetails {
-  getDrizzle().transaction((tx) => {
-    tx.update(trip)
+): Promise<TripWithDetails> {
+  const db = await getDrizzle();
+  await db.transaction(async (tx) => {
+    await tx
+      .update(trip)
       .set({
         ...(fields.name !== undefined ? { name: fields.name } : {}),
         ...(fields.startDate !== undefined ? { startDate: fields.startDate } : {}),
@@ -281,23 +298,22 @@ export function updateTrip(
         ...(fields.hasJrPass !== undefined ? { hasJrPass: fields.hasJrPass } : {}),
         updatedAt: sql`(datetime('now'))`,
       })
-      .where(eq(trip.id, id))
-      .run();
+      .where(eq(trip.id, id));
 
     // The trip edges' date component follows the trip's own dates (ADR-0028 §3) — a user never
     // edits it directly, so a date-range change must carry a stored arrival/departure forward
     // rather than leaving it pointing at a date the trip no longer has.
-    if (fields.startDate !== undefined) rewriteEdgeDate(tx, id, "arriveAt", fields.startDate);
-    if (fields.endDate !== undefined) rewriteEdgeDate(tx, id, "departAt", fields.endDate);
+    if (fields.startDate !== undefined) await rewriteEdgeDate(tx, id, "arriveAt", fields.startDate);
+    if (fields.endDate !== undefined) await rewriteEdgeDate(tx, id, "departAt", fields.endDate);
   });
   return requireTrip(id);
 }
 
 /** Re-stamp a trip edge's date component after the trip's date range moves, preserving any time
  *  the edge already carried (ADR-0028 §3). A no-op when no Location currently holds that edge. */
-function rewriteEdgeDate(tx: Tx, tripId: string, field: "arriveAt" | "departAt", newDate: IsoDate) {
+async function rewriteEdgeDate(tx: Tx, tripId: string, field: "arriveAt" | "departAt", newDate: IsoDate) {
   const column = field === "arriveAt" ? location.arriveAt : location.departAt;
-  const row = tx
+  const row = await tx
     .select({ id: location.id, value: column })
     .from(location)
     .where(and(eq(location.tripId, tripId), isNotNull(column)))
@@ -305,26 +321,27 @@ function rewriteEdgeDate(tx: Tx, tripId: string, field: "arriveAt" | "departAt",
   if (!row || row.value == null) return;
   const time = row.value.includes("T") ? row.value.slice(row.value.indexOf("T")) : "";
   const next = `${newDate}${time}`;
-  if (field === "arriveAt") tx.update(location).set({ arriveAt: next }).where(eq(location.id, row.id)).run();
-  else tx.update(location).set({ departAt: next }).where(eq(location.id, row.id)).run();
+  if (field === "arriveAt") await tx.update(location).set({ arriveAt: next }).where(eq(location.id, row.id));
+  else await tx.update(location).set({ departAt: next }).where(eq(location.id, row.id));
 }
 
-export function deleteTrip(id: string): void {
-  getDrizzle().delete(trip).where(eq(trip.id, id)).run();
+export async function deleteTrip(id: string): Promise<void> {
+  const db = await getDrizzle();
+  await db.delete(trip).where(eq(trip.id, id));
 }
 
 /**
  * Set or clear a day's label (ADR-0015). Days are a derived clustering, not an entity, so the only
  * thing a day owns — its label — lives in a {date → label} map on the Trip. An empty label clears.
  */
-export function setDayLabel(tripId: string, date: IsoDate, label: string | null): TripWithDetails {
-  const db = getDrizzle();
-  const row = db.select({ dayLabels: trip.dayLabels }).from(trip).where(eq(trip.id, tripId)).get();
+export async function setDayLabel(tripId: string, date: IsoDate, label: string | null): Promise<TripWithDetails> {
+  const db = await getDrizzle();
+  const row = await db.select({ dayLabels: trip.dayLabels }).from(trip).where(eq(trip.id, tripId)).get();
   if (!row) throw new Error("Trip not found");
   const labels = { ...(row.dayLabels ?? {}) };
   if (label && label.trim()) labels[date] = label;
   else delete labels[date];
-  db.update(trip).set({ dayLabels: labels, updatedAt: sql`(datetime('now'))` }).where(eq(trip.id, tripId)).run();
+  await db.update(trip).set({ dayLabels: labels, updatedAt: sql`(datetime('now'))` }).where(eq(trip.id, tripId));
   return requireTrip(tripId);
 }
 
@@ -333,29 +350,29 @@ export function setDayLabel(tripId: string, date: IsoDate, label: string | null)
  * canonicalized pair rather than insert-then-conflict — a Journey has one current choice, not a
  * history of them.
  */
-export function setJourneyRoadKind(
+export async function setJourneyRoadKind(
   tripId: string,
   fromLocationId: string,
   toLocationId: string,
   kind: RoadProfile | null
-): TripWithDetails {
-  const db = getDrizzle();
+): Promise<TripWithDetails> {
+  const db = await getDrizzle();
   const [locationAId, locationBId] = canonicalJourneyPair(fromLocationId, toLocationId);
 
   if (kind === null) {
-    db.delete(journeyRoadKind)
+    await db
+      .delete(journeyRoadKind)
       .where(
         and(
           eq(journeyRoadKind.tripId, tripId),
           eq(journeyRoadKind.locationAId, locationAId),
           eq(journeyRoadKind.locationBId, locationBId)
         )
-      )
-      .run();
+      );
     return requireTrip(tripId);
   }
 
-  const existing = db
+  const existing = await db
     .select({ id: journeyRoadKind.id })
     .from(journeyRoadKind)
     .where(
@@ -368,9 +385,9 @@ export function setJourneyRoadKind(
     .get();
 
   if (existing) {
-    db.update(journeyRoadKind).set({ kind }).where(eq(journeyRoadKind.id, existing.id)).run();
+    await db.update(journeyRoadKind).set({ kind }).where(eq(journeyRoadKind.id, existing.id));
   } else {
-    db.insert(journeyRoadKind).values({ id: newId(), tripId, locationAId, locationBId, kind }).run();
+    await db.insert(journeyRoadKind).values({ id: newId(), tripId, locationAId, locationBId, kind });
   }
 
   return requireTrip(tripId);
@@ -384,16 +401,15 @@ export function setJourneyRoadKind(
  * lock-preserving diff — that machinery is gone. Only activities are placed; the caller (optimizer)
  * upholds that invariant.
  */
-export function setPlacements(
+export async function setPlacements(
   tripId: string,
   placements: Array<{ locationId: string; date: IsoDate; order: number }>
-): TripWithDetails {
-  getDrizzle().transaction((tx) => {
-    tx.delete(placement).where(eq(placement.tripId, tripId)).run();
+): Promise<TripWithDetails> {
+  const db = await getDrizzle();
+  await db.transaction(async (tx) => {
+    await tx.delete(placement).where(eq(placement.tripId, tripId));
     for (const p of placements) {
-      tx.insert(placement)
-        .values({ id: newId(), tripId, locationId: p.locationId, date: p.date, order: p.order })
-        .run();
+      await tx.insert(placement).values({ id: newId(), tripId, locationId: p.locationId, date: p.date, order: p.order });
     }
   });
   return requireTrip(tripId);
@@ -403,10 +419,10 @@ type Tx = Parameters<Parameters<Drizzle["transaction"]>[0]>[0];
 
 /** Replace a trip's placements wholesale within a transaction (small per-trip row counts, so this
  *  is simpler and no slower than diffing which rows actually changed). */
-function replacePlacements(tx: Tx, tripId: string, placements: Placement[]) {
-  tx.delete(placement).where(eq(placement.tripId, tripId)).run();
+async function replacePlacements(tx: Tx, tripId: string, placements: Placement[]) {
+  await tx.delete(placement).where(eq(placement.tripId, tripId));
   for (const p of placements) {
-    tx.insert(placement).values({ id: p.id, tripId: p.tripId, locationId: p.locationId, date: p.date, order: p.order }).run();
+    await tx.insert(placement).values({ id: p.id, tripId: p.tripId, locationId: p.locationId, date: p.date, order: p.order });
   }
 }
 
@@ -417,23 +433,24 @@ function replacePlacements(tx: Tx, tripId: string, placements: Placement[]) {
  * algorithm (src/lib/placementOrdering.ts) so the server and the store's optimistic client patch
  * can never drift apart.
  */
-export function addPlacement(
+export async function addPlacement(
   tripId: string,
   locationId: string,
   date: IsoDate,
   order?: number
-): TripWithDetails {
-  getDrizzle().transaction((tx) => {
-    const loc = tx
+): Promise<TripWithDetails> {
+  const db = await getDrizzle();
+  await db.transaction(async (tx) => {
+    const loc = await tx
       .select({ id: location.id })
       .from(location)
       .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
       .get();
     if (!loc) throw new Error("Location not found in trip");
 
-    const existing = tx.select().from(placement).where(eq(placement.tripId, tripId)).all();
+    const existing = await tx.select().from(placement).where(eq(placement.tripId, tripId)).all();
     const next = insertPlacement(existing, tripId, { id: newId(), locationId, date, order });
-    replacePlacements(tx, tripId, next);
+    await replacePlacements(tx, tripId, next);
   });
   return requireTrip(tripId);
 }
@@ -445,28 +462,27 @@ export function addPlacement(
  * (src/lib/placementOrdering.ts) so the server and the store's optimistic client patch can never
  * drift apart.
  */
-export function movePlacement(
+export async function movePlacement(
   tripId: string,
   placementId: string,
   date: IsoDate,
   order: number
-): TripWithDetails {
-  getDrizzle().transaction((tx) => {
-    const existing = tx.select().from(placement).where(eq(placement.tripId, tripId)).all();
+): Promise<TripWithDetails> {
+  const db = await getDrizzle();
+  await db.transaction(async (tx) => {
+    const existing = await tx.select().from(placement).where(eq(placement.tripId, tripId)).all();
     if (!existing.some((p) => p.id === placementId)) throw new Error("Placement not found");
     const next = reorderPlacements(existing, placementId, date, order);
-    replacePlacements(tx, tripId, next);
+    await replacePlacements(tx, tripId, next);
   });
   return requireTrip(tripId);
 }
 
 /** Unschedule an activity (ADR-0015): delete the placement, never the Location — it stays a
  *  candidate in the Manifest. */
-export function removePlacement(tripId: string, placementId: string): TripWithDetails {
-  getDrizzle()
-    .delete(placement)
-    .where(and(eq(placement.id, placementId), eq(placement.tripId, tripId)))
-    .run();
+export async function removePlacement(tripId: string, placementId: string): Promise<TripWithDetails> {
+  const db = await getDrizzle();
+  await db.delete(placement).where(and(eq(placement.id, placementId), eq(placement.tripId, tripId)));
   return requireTrip(tripId);
 }
 
@@ -481,12 +497,12 @@ export class LodgingValidationError extends Error {}
  * nights in [checkInDate, checkOutDate). Validates ordering and non-overlap with the trip's other
  * lodgings (you sleep in one place per night; same-place multiplicity is out of scope).
  */
-export function setLodgingDates(
+export async function setLodgingDates(
   tripId: string,
   locationId: string,
   dates: { checkInDate: IsoDate; checkOutDate: IsoDate }
-): TripWithDetails {
-  const db = getDrizzle();
+): Promise<TripWithDetails> {
+  const db = await getDrizzle();
   const { checkInDate, checkOutDate } = dates;
 
   if (Number.isNaN(Date.parse(checkInDate)) || Number.isNaN(Date.parse(checkOutDate)))
@@ -498,7 +514,7 @@ export function setLodgingDates(
   // drop: a stay it discards leaves a Location that is a lodging by kind — so filtered out of the
   // activity list — with no night to render on, invisible in both views. Checking out the morning
   // after the final night is normal, hence `checkOutDate > startDate` rather than `<= endDate`.
-  const owner = db
+  const owner = await db
     .select({ startDate: trip.startDate, endDate: trip.endDate })
     .from(trip)
     .where(eq(trip.id, tripId))
@@ -509,7 +525,7 @@ export function setLodgingDates(
       `Stay (${checkInDate} to ${checkOutDate}) falls outside the trip's dates (${owner.startDate} to ${owner.endDate})`
     );
 
-  const target = db
+  const target = await db
     .select({ id: location.id })
     .from(location)
     .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
@@ -518,7 +534,7 @@ export function setLodgingDates(
 
   // Half-open intervals overlap iff each starts before the other ends. Adjacent same-day switches
   // (checkOut == next checkIn) are fine.
-  const others = db
+  const others = await db
     .select({ checkInDate: location.checkInDate, checkOutDate: location.checkOutDate })
     .from(location)
     .where(and(eq(location.tripId, tripId), eq(location.kind, "lodging"), ne(location.id, locationId)))
@@ -528,21 +544,18 @@ export function setLodgingDates(
       throw new LodgingValidationError("Booking overlaps an existing lodging");
   }
 
-  db.update(location)
-    .set({ kind: "lodging", checkInDate, checkOutDate })
-    .where(eq(location.id, locationId))
-    .run();
+  await db.update(location).set({ kind: "lodging", checkInDate, checkOutDate }).where(eq(location.id, locationId));
   return requireTrip(tripId);
 }
 
 /** Relegate a lodging back to a plain activity (ADR-0015): removing the booking — its constraint —
  *  drops it to kind=activity and clears the dates. */
-export function clearLodging(tripId: string, locationId: string): TripWithDetails {
-  getDrizzle()
+export async function clearLodging(tripId: string, locationId: string): Promise<TripWithDetails> {
+  const db = await getDrizzle();
+  await db
     .update(location)
     .set({ kind: "activity", checkInDate: null, checkOutDate: null })
-    .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
-    .run();
+    .where(and(eq(location.id, locationId), eq(location.tripId, tripId)));
   return requireTrip(tripId);
 }
 
@@ -553,15 +566,15 @@ export function clearLodging(tripId: string, locationId: string): TripWithDetail
  * re-validates non-overlap, so a rejected import is pre-checked here to avoid leaving an orphan
  * Location behind.
  */
-export function importBookingLodging(tripId: string, booking: ParsedBooking): TripWithDetails {
-  const db = getDrizzle();
-  if (!tripExists(tripId)) throw new LodgingValidationError("Trip not found");
+export async function importBookingLodging(tripId: string, booking: ParsedBooking): Promise<TripWithDetails> {
+  const db = await getDrizzle();
+  if (!(await tripExists(tripId))) throw new LodgingValidationError("Trip not found");
   if (Number.isNaN(Date.parse(booking.checkInDate)) || Number.isNaN(Date.parse(booking.checkOutDate)))
     throw new LodgingValidationError("Invalid check-in/check-out date");
   if (booking.checkInDate >= booking.checkOutDate)
     throw new LodgingValidationError("Check-in must be before check-out");
 
-  const existingLodgings = db
+  const existingLodgings = await db
     .select({ checkInDate: location.checkInDate, checkOutDate: location.checkOutDate })
     .from(location)
     .where(and(eq(location.tripId, tripId), eq(location.kind, "lodging")))
@@ -571,7 +584,7 @@ export function importBookingLodging(tripId: string, booking: ParsedBooking): Tr
       throw new LodgingValidationError("Booking overlaps an existing lodging");
   }
 
-  const locs = db
+  const locs = await db
     .select({ id: location.id, name: location.name })
     .from(location)
     .where(eq(location.tripId, tripId))
@@ -579,7 +592,7 @@ export function importBookingLodging(tripId: string, booking: ParsedBooking): Tr
   const match = locs.find((l) => l.name.trim().toLowerCase() === booking.property.trim().toLowerCase());
   const locationId = match
     ? match.id
-    : createLocation(tripId, { name: booking.property, enrichmentStatus: "pending" }).id;
+    : (await createLocation(tripId, { name: booking.property, enrichmentStatus: "pending" })).id;
 
   return setLodgingDates(tripId, locationId, {
     checkInDate: booking.checkInDate,
@@ -606,12 +619,12 @@ const HHMM = /^\d{2}:\d{2}$/;
  * separate clear step and the two can never disagree. A partial unique index (schema.ts) backs
  * this as a database guarantee, not just a write-path convention.
  */
-export function setTripArrival(tripId: string, locationId: string, time: string | null): TripWithDetails {
-  const db = getDrizzle();
+export async function setTripArrival(tripId: string, locationId: string, time: string | null): Promise<TripWithDetails> {
+  const db = await getDrizzle();
   if (time != null && !HHMM.test(time)) throw new TransitValidationError("Invalid time (expected HH:MM)");
-  const t = db.select({ startDate: trip.startDate }).from(trip).where(eq(trip.id, tripId)).get();
+  const t = await db.select({ startDate: trip.startDate }).from(trip).where(eq(trip.id, tripId)).get();
   if (!t) throw new TransitValidationError("Trip not found");
-  const target = db
+  const target = await db
     .select({ id: location.id })
     .from(location)
     .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
@@ -619,32 +632,32 @@ export function setTripArrival(tripId: string, locationId: string, time: string 
   if (!target) throw new TransitValidationError("Location is not in this trip");
   const arriveAt = time != null ? `${t.startDate}T${time}` : t.startDate;
 
-  db.transaction((tx) => {
+  await db.transaction(async (tx) => {
     // Release whoever held the arrival before — clearing the field alone isn't enough if that was
     // its only edge, or the release would leave a `kind: transit` row with both fields null.
-    const holder = tx
+    const holder = await tx
       .select({ id: location.id, departAt: location.departAt })
       .from(location)
       .where(and(eq(location.tripId, tripId), isNotNull(location.arriveAt), ne(location.id, locationId)))
       .get();
     if (holder) {
-      tx.update(location)
+      await tx
+        .update(location)
         .set({ arriveAt: null, ...(holder.departAt == null ? { kind: "activity" } : {}) })
-        .where(eq(location.id, holder.id))
-        .run();
+        .where(eq(location.id, holder.id));
     }
-    tx.update(location).set({ kind: "transit", arriveAt }).where(eq(location.id, locationId)).run();
+    await tx.update(location).set({ kind: "transit", arriveAt }).where(eq(location.id, locationId));
   });
   return requireTrip(tripId);
 }
 
 /** The departure mirror of `setTripArrival` — the trip's last date (ADR-0028 §1/§2). */
-export function setTripDeparture(tripId: string, locationId: string, time: string | null): TripWithDetails {
-  const db = getDrizzle();
+export async function setTripDeparture(tripId: string, locationId: string, time: string | null): Promise<TripWithDetails> {
+  const db = await getDrizzle();
   if (time != null && !HHMM.test(time)) throw new TransitValidationError("Invalid time (expected HH:MM)");
-  const t = db.select({ endDate: trip.endDate }).from(trip).where(eq(trip.id, tripId)).get();
+  const t = await db.select({ endDate: trip.endDate }).from(trip).where(eq(trip.id, tripId)).get();
   if (!t) throw new TransitValidationError("Trip not found");
-  const target = db
+  const target = await db
     .select({ id: location.id })
     .from(location)
     .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
@@ -652,19 +665,19 @@ export function setTripDeparture(tripId: string, locationId: string, time: strin
   if (!target) throw new TransitValidationError("Location is not in this trip");
   const departAt = time != null ? `${t.endDate}T${time}` : t.endDate;
 
-  db.transaction((tx) => {
-    const holder = tx
+  await db.transaction(async (tx) => {
+    const holder = await tx
       .select({ id: location.id, arriveAt: location.arriveAt })
       .from(location)
       .where(and(eq(location.tripId, tripId), isNotNull(location.departAt), ne(location.id, locationId)))
       .get();
     if (holder) {
-      tx.update(location)
+      await tx
+        .update(location)
         .set({ departAt: null, ...(holder.arriveAt == null ? { kind: "activity" } : {}) })
-        .where(eq(location.id, holder.id))
-        .run();
+        .where(eq(location.id, holder.id));
     }
-    tx.update(location).set({ kind: "transit", departAt }).where(eq(location.id, locationId)).run();
+    await tx.update(location).set({ kind: "transit", departAt }).where(eq(location.id, locationId));
   });
   return requireTrip(tripId);
 }
@@ -674,9 +687,9 @@ export function setTripDeparture(tripId: string, locationId: string, time: strin
  * relegates the Location back to `kind: activity` — the same "removing the constraint drops the
  * kind" rule `clearLodging` follows; clearing one of two still leaves it transit.
  */
-export function clearTripEdge(tripId: string, locationId: string, which: "arrival" | "departure"): TripWithDetails {
-  const db = getDrizzle();
-  const row = db
+export async function clearTripEdge(tripId: string, locationId: string, which: "arrival" | "departure"): Promise<TripWithDetails> {
+  const db = await getDrizzle();
+  const row = await db
     .select({ arriveAt: location.arriveAt, departAt: location.departAt })
     .from(location)
     .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
@@ -686,13 +699,13 @@ export function clearTripEdge(tripId: string, locationId: string, which: "arriva
   const clearingArrival = which === "arrival";
   const relegate = (clearingArrival ? row.departAt : row.arriveAt) == null;
 
-  db.update(location)
+  await db
+    .update(location)
     .set({
       ...(clearingArrival ? { arriveAt: null } : { departAt: null }),
       ...(relegate ? { kind: "activity" } : {}),
     })
-    .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
-    .run();
+    .where(and(eq(location.id, locationId), eq(location.tripId, tripId)));
   return requireTrip(tripId);
 }
 
@@ -714,35 +727,33 @@ export type NewLocationInput = {
   enrichmentStatus?: "done" | "pending" | "failed";
 };
 
-export function createLocation(tripId: string, data: NewLocationInput): Location {
+export async function createLocation(tripId: string, data: NewLocationInput): Promise<Location> {
   const id = newId();
-  getDrizzle()
-    .insert(location)
-    .values({
-      id,
-      tripId,
-      name: data.name,
-      address: data.address ?? null,
-      lat: data.lat ?? null,
-      lng: data.lng ?? null,
-      placeId: data.placeId ?? null,
-      rating: data.rating ?? null,
-      reviewCount: data.reviewCount ?? null,
-      categories: data.categories ?? null,
-      phone: data.phone ?? null,
-      openTime: data.openTime ?? null,
-      closeTime: data.closeTime ?? null,
-      hoursJson: data.hoursJson ?? null,
-      enrichmentStatus: data.enrichmentStatus ?? "done",
-    })
-    .run();
-  const loc = getLocation(id);
+  const db = await getDrizzle();
+  await db.insert(location).values({
+    id,
+    tripId,
+    name: data.name,
+    address: data.address ?? null,
+    lat: data.lat ?? null,
+    lng: data.lng ?? null,
+    placeId: data.placeId ?? null,
+    rating: data.rating ?? null,
+    reviewCount: data.reviewCount ?? null,
+    categories: data.categories ?? null,
+    phone: data.phone ?? null,
+    openTime: data.openTime ?? null,
+    closeTime: data.closeTime ?? null,
+    hoursJson: data.hoursJson ?? null,
+    enrichmentStatus: data.enrichmentStatus ?? "done",
+  });
+  const loc = await getLocation(id);
   if (!loc) throw new Error("Location not found after insert");
   return loc;
 }
 
 /** Update a Location's editable fields. Lodging dates are managed via setLodgingDates, not here. */
-export function updateLocation(
+export async function updateLocation(
   tripId: string,
   locationId: string,
   fields: {
@@ -751,7 +762,7 @@ export function updateLocation(
     name?: string;
     visitDuration?: number | null;
   }
-): Location | null {
+): Promise<Location | null> {
   const set = {
     ...(fields.excluded !== undefined ? { excluded: fields.excluded } : {}),
     ...(fields.note !== undefined ? { note: fields.note } : {}),
@@ -759,18 +770,19 @@ export function updateLocation(
     ...(fields.visitDuration !== undefined ? { visitDuration: fields.visitDuration } : {}),
   };
   if (Object.keys(set).length) {
-    getDrizzle()
+    const db = await getDrizzle();
+    await db
       .update(location)
       .set(set)
-      .where(and(eq(location.id, locationId), eq(location.tripId, tripId)))
-      .run();
+      .where(and(eq(location.id, locationId), eq(location.tripId, tripId)));
   }
   return getLocation(locationId);
 }
 
 /** Delete a Location; its placements cascade away (ADR-0015 — no Stay to dissolve first). */
-export function deleteLocation(locationId: string): void {
-  getDrizzle().delete(location).where(eq(location.id, locationId)).run();
+export async function deleteLocation(locationId: string): Promise<void> {
+  const db = await getDrizzle();
+  await db.delete(location).where(eq(location.id, locationId));
 }
 
 // ─── Enrichment ───────────────────────────────────────────────────────────────
@@ -786,41 +798,40 @@ export type EnrichableLocation = {
 /** Every Location still `enrichmentStatus: 'pending'`, across every Trip — the durable work-list
  *  ADR-0009 decided on (#124): no separate jobs table, the pending rows *are* the queue. Read once
  *  at server startup to re-enqueue anything the in-memory queue lost to a process restart. */
-export function getPendingLocationIds(): string[] {
-  return getDrizzle()
-    .select({ id: location.id })
-    .from(location)
-    .where(eq(location.enrichmentStatus, "pending"))
-    .all()
-    .map((r) => r.id);
+export async function getPendingLocationIds(): Promise<string[]> {
+  const db = await getDrizzle();
+  const rows = await db.select({ id: location.id }).from(location).where(eq(location.enrichmentStatus, "pending")).all();
+  return rows.map((r) => r.id);
 }
 
-export function getEnrichableLocations(tripId: string): EnrichableLocation[] {
-  return getDrizzle()
+export async function getEnrichableLocations(tripId: string): Promise<EnrichableLocation[]> {
+  const db = await getDrizzle();
+  return db
     .select({ id: location.id, name: location.name, lat: location.lat, lng: location.lng, placeId: location.placeId })
     .from(location)
     .where(and(eq(location.tripId, tripId), inArray(location.enrichmentStatus, ["pending", "failed"])))
     .all();
 }
 
-export function getLocationForEnrichment(locationId: string): EnrichableLocation | null {
+export async function getLocationForEnrichment(locationId: string): Promise<EnrichableLocation | null> {
+  const db = await getDrizzle();
   return (
-    getDrizzle()
+    (await db
       .select({ id: location.id, name: location.name, lat: location.lat, lng: location.lng, placeId: location.placeId })
       .from(location)
       .where(eq(location.id, locationId))
-      .get() ?? null
+      .get()) ?? null
   );
 }
 
 /** `reason` is what the Retry affordance shows the user, so it must read as a sentence about this
  *  place, not as a stack frame. */
-export function markEnrichmentFailed(locationId: string, reason: string): void {
-  getDrizzle()
+export async function markEnrichmentFailed(locationId: string, reason: string): Promise<void> {
+  const db = await getDrizzle();
+  await db
     .update(location)
     .set({ enrichmentStatus: "failed", enrichmentError: reason })
-    .where(eq(location.id, locationId))
-    .run();
+    .where(eq(location.id, locationId));
 }
 
 /**
@@ -828,9 +839,9 @@ export function markEnrichmentFailed(locationId: string, reason: string): void {
  * overwrite good data with null), and mark 'done'. Returns false (and marks 'failed') when the
  * enrichment is empty.
  */
-export function applyEnrichment(locationId: string, e: Partial<LocationEnrichment>): boolean {
+export async function applyEnrichment(locationId: string, e: Partial<LocationEnrichment>): Promise<boolean> {
   if (Object.keys(e).length === 0) {
-    markEnrichmentFailed(locationId, "No matching place found for this name.");
+    await markEnrichmentFailed(locationId, "No matching place found for this name.");
     return false;
   }
   // Clearing the error alongside the status: a row that succeeds on retry must not keep showing
@@ -847,6 +858,7 @@ export function applyEnrichment(locationId: string, e: Partial<LocationEnrichmen
   if (e.openTime != null) set.openTime = e.openTime;
   if (e.closeTime != null) set.closeTime = e.closeTime;
   if (e.hoursJson != null) set.hoursJson = e.hoursJson;
-  getDrizzle().update(location).set(set).where(eq(location.id, locationId)).run();
+  const db = await getDrizzle();
+  await db.update(location).set(set).where(eq(location.id, locationId));
   return true;
 }

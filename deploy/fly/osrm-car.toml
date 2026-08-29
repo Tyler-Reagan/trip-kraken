@@ -1,0 +1,29 @@
+# ADR-0037: osrm-car on Fly.io, scale-to-zero. Runs the same published image and --mmap
+# invocation as docker-compose.yml's osrm-car service, unmodified — no build step, no Dockerfile,
+# just the image plus a Volume for the graph files scripts/build-osrm-graphs.sh already produces
+# locally. Seeded via scripts/seed-osrm-fly-volume.sh (fly sftp), not baked into the image: the
+# graph is dev-time, gitignored, and independent of the app's release cadence.
+app = "trip-kraken-osrm-car"
+primary_region = "sjc"
+
+[build]
+  image = "ghcr.io/project-osrm/osrm-backend:26.4.1-debian"
+
+[processes]
+  app = "osrm-routed --algorithm mld --mmap --max-table-size 1000 -p 5000 /data/road.osrm"
+
+[[mounts]]
+  source = "osrm_car_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 5000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

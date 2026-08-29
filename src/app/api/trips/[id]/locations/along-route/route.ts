@@ -86,7 +86,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: tripId } = await params;
-  const trip = getTripWithDetails(tripId);
+  const trip = await getTripWithDetails(tripId);
   if (!trip) {
     return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   }
@@ -105,8 +105,8 @@ export async function GET(
     return NextResponse.json({ error: "from and to are required" }, { status: 400 });
   }
 
-  const from = getLocationCoords(tripId, fromId);
-  const to = getLocationCoords(tripId, toId);
+  const from = await getLocationCoords(tripId, fromId);
+  const to = await getLocationCoords(tripId, toId);
   if (!from || !to) {
     return NextResponse.json({ error: "Location not found" }, { status: 404 });
   }

@@ -44,19 +44,19 @@ export async function PATCH(
 
   try {
     if (checkInDate === null) {
-      clearLodging(tripId, locationId);
+      await clearLodging(tripId, locationId);
     } else if (checkInDate !== undefined && checkOutDate !== undefined) {
-      setLodgingDates(tripId, locationId, { checkInDate, checkOutDate });
+      await setLodgingDates(tripId, locationId, { checkInDate, checkOutDate });
     }
     if (arriveAt === null) {
-      clearTripEdge(tripId, locationId, "arrival");
+      await clearTripEdge(tripId, locationId, "arrival");
     } else if (arriveAt !== undefined) {
-      setTripArrival(tripId, locationId, arriveAt === "" ? null : arriveAt);
+      await setTripArrival(tripId, locationId, arriveAt === "" ? null : arriveAt);
     }
     if (departAt === null) {
-      clearTripEdge(tripId, locationId, "departure");
+      await clearTripEdge(tripId, locationId, "departure");
     } else if (departAt !== undefined) {
-      setTripDeparture(tripId, locationId, departAt === "" ? null : departAt);
+      await setTripDeparture(tripId, locationId, departAt === "" ? null : departAt);
     }
   } catch (err) {
     if (err instanceof LodgingValidationError || err instanceof TransitValidationError) {
@@ -65,8 +65,8 @@ export async function PATCH(
     throw err;
   }
 
-  updateLocation(tripId, locationId, { excluded, note, name, visitDuration });
-  return NextResponse.json(getLocation(locationId));
+  await updateLocation(tripId, locationId, { excluded, note, name, visitDuration });
+  return NextResponse.json(await getLocation(locationId));
 }
 
 export async function DELETE(
@@ -74,6 +74,6 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; locationId: string }> }
 ) {
   const { locationId } = await params;
-  deleteLocation(locationId);
+  await deleteLocation(locationId);
   return new NextResponse(null, { status: 204 });
 }

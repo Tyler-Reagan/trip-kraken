@@ -15,7 +15,7 @@ export async function POST(
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
-  if (placeId && locationExistsByPlaceId(tripId, placeId)) {
+  if (placeId && (await locationExistsByPlaceId(tripId, placeId))) {
     return NextResponse.json({ error: "Already in trip" }, { status: 409 });
   }
 
@@ -60,7 +60,7 @@ export async function POST(
   }
   // else: no placeId and no coordinates — nothing enrichable; leave as 'done'
 
-  const location = createLocation(tripId, {
+  const location = await createLocation(tripId, {
     name,
     address: inlineAddress,
     lat: resolvedLat,

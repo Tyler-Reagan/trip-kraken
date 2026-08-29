@@ -101,7 +101,7 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: tripId } = await params;
 
-  const trip = getTripWithDetails(tripId);
+  const trip = await getTripWithDetails(tripId);
   if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
   let body: unknown;

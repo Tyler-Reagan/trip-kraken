@@ -8,7 +8,7 @@ export async function GET(
 ) {
   const { id: tripId, locationId } = await params;
 
-  const loc = getLocationCoords(tripId, locationId);
+  const loc = await getLocationCoords(tripId, locationId);
 
   if (!loc) return NextResponse.json({ error: "Location not found" }, { status: 404 });
   if (loc.lat === null || loc.lng === null) {
@@ -38,7 +38,7 @@ export async function GET(
     const places = await provider.search({ query: keyword, scope, limit, openNow });
 
     // Category set for the target day (diversity bonus in the ranking).
-    const dayCategories = new Set<string>(date ? getDayCategories(tripId, date) : []);
+    const dayCategories = new Set<string>(date ? await getDayCategories(tripId, date) : []);
     return NextResponse.json(scoreAndSort(places, dayCategories));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

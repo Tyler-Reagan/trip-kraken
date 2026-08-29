@@ -44,13 +44,21 @@ Stops can be dragged between days and reordered within a day. Individual locatio
 
 ## Persistence
 
-Trips, locations, and itineraries are stored in a **SQLite database** (`db/dev.db`) using Node's built-in `node:sqlite` module (no ORM, no external database server required).
+Trips, locations, and itineraries are stored via **Drizzle ORM** (`src/lib/db/`) over a SQLite-family
+database. Locally that's a single file, `db/dev.db`, opened directly — no server, no account
+needed. Set `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` (see **Hosting** below) to point the same code
+at a hosted Turso/libSQL database instead — the schema is identical either way.
 
 **Caveats to be aware of:**
 
-- **Single-file, local storage.** The database lives on the same machine as the server. There is no sync, backup, or cloud storage. If `db/dev.db` is deleted, all trips are gone.
-- **No authentication.** All trips are accessible to anyone who can reach the server. This is a single-user, local-first app — not suitable for multi-user or public deployment without adding an auth layer.
-- **Schema migrations are manual.** The schema is initialized on startup via `CREATE TABLE IF NOT EXISTS` statements. Columns added after a database already exists (e.g., `rating`, `reviewCount`, `categories`) are applied with `ALTER TABLE` statements on startup. If you modify the schema, you are responsible for migration.
+- **Local dev storage is still single-file.** Without `TURSO_DATABASE_URL` set, the database lives
+  on the same machine as the server, with no sync or backup. If `db/dev.db` is deleted, all local
+  trips are gone. A hosted Turso database doesn't have this caveat.
+- **Authentication is a shared password, not accounts.** ADR-0037 gates every route behind a single `SITE_PASSWORD` checked in `src/proxy.ts` — sized for a couple of trusted people, not a real user base. There's no per-user identity, no rate limiting, and no audit trail.
+- **Schema migrations are real, but still your responsibility to generate.** `db/migrations/`
+  holds versioned SQL migrations (`drizzle-kit generate`), applied automatically on startup by
+  `src/lib/db/client.ts`. If you change `schema.ts`, you're responsible for generating the
+  migration — there's no drift detection.
 - **Itinerary state is fully rebuilt on re-optimization.** Running the optimizer deletes existing `ItineraryDay` and `ItineraryStop` records and regenerates them. Any manual day labels you've set will survive (they're stored on the day record), but stop order is reset.
 
 ---
@@ -65,7 +73,7 @@ Trips, locations, and itineraries are stored in a **SQLite database** (`db/dev.d
 | Styling         | Tailwind CSS                                               |
 | Map rendering   | MapLibre GL + react-map-gl                                 |
 | Drag-and-drop   | dnd-kit                                                    |
-| Database        | SQLite via `node:sqlite` (built-in, no Prisma)             |
+| Database        | Drizzle ORM over `@libsql/client` — a local file in dev, Turso in production (ADR-0037) |
 | KML parsing     | fast-xml-parser + adm-zip                                  |
 | HTML parsing    | cheerio (Tabelog scraper)                                  |
 | External APIs   | Google Maps Geocoding API, Google Places (Nearby Search, Text Search, Place Details), Tabelog (scraped) |
@@ -109,8 +117,9 @@ NEXT_PUBLIC_STADIA_API_KEY=your_key_here
 Optimization (ADR-0023) and road travel cost (ADR-0024) depend on two self-hosted services,
 defined in `docker-compose.yml`. There is no hosted alternative: `docs/research/hosted-routing-alternatives.md`
 found that every hosted matrix API but one forbids the server-side matrix this app builds, in
-their own terms of service. This is the entire deployment story for now (ADR-0025) — nothing
-here is Vercel-shaped, and that is a deliberate, recorded posture, not an oversight.
+their own terms of service. `docker-compose.yml` remains the local dev story; for a hosted
+deployment, see **Hosting** below (ADR-0037) — the app itself is Vercel-shaped now, VROOM and OSRM
+still aren't (and per ADR-0025/ADR-0037, don't need to be).
 
 **Before the first build**, raise Docker Desktop's memory allocation to at least 12 GB
 (Settings → Resources). This is a prerequisite, not a troubleshooting step: the default (7.75 GB
@@ -176,13 +185,71 @@ the check that matters most — POSTs a fixture built to violate a time window i
 mode (`-c`) and confirms a violation comes back. A VROOM build without `libglpk` linked accepts
 plan-mode requests and silently ignores them, which only a check like this one catches.
 
-### 4. Run
+### 4. Set a site password
+
+The app is gated behind a single shared password (ADR-0037) — there are no user accounts. Add to
+`.env.local`:
+
+```env
+SITE_PASSWORD=choose_something_not_guessable
+```
+
+Anyone without the password is redirected to `/login`; entering it sets a cookie that persists
+until the password changes. This is sized for a couple of trusted people, not a public launch —
+see ADR-0037 for the scope this deliberately doesn't cover (no rate limiting, no per-user
+accounts).
+
+### 5. Run
 
 ```bash
 pnpm dev
 ```
 
 App is available at [http://localhost:3000](http://localhost:3000).
+
+---
+
+## Hosting
+
+ADR-0037 covers the whole hosting posture for a small, private deployment (1-2 trusted people,
+not a public launch): the app on Vercel, the database on Turso, VROOM/OSRM on Fly.io.
+
+**VROOM + OSRM on Fly.io.** `deploy/fly/` holds one `fly.toml` per service
+(`vroom.toml`, `osrm-car.toml`, `osrm-foot.toml`), each configured for scale-to-zero
+(`auto_stop_machines`/`auto_start_machines`, `min_machines_running = 0`) so the apps only cost
+compute while actually handling a request, not for sitting idle. OSRM's two apps deploy straight
+from the published `ghcr.io/project-osrm/osrm-backend` image — no build step — with a Fly Volume
+mounted at `/data` for the graph files `pnpm build:osrm-graphs` produces locally. VROOM has no
+published image (same reason as the local Docker build: nothing exists past `v1.14.0-rc.2`), so
+it's deployed via `scripts/deploy-vroom-fly.sh`, which clones `VROOM-Project/vroom-docker` at the
+pinned tag and deploys from that clone — Fly's Docker Compose import support for a service whose
+build context is itself a remote git URL is unconfirmed, and cloning first sidesteps the question
+entirely.
+
+To (re)deploy:
+
+```bash
+./scripts/deploy-vroom-fly.sh
+fly deploy --config deploy/fly/osrm-car.toml
+fly deploy --config deploy/fly/osrm-foot.toml
+```
+
+The OSRM volumes need seeding once (or after rebuilding the graphs) — create the volume, run a
+placeholder machine attached to it, and `fly sftp put -R` (or a loop over individual files) the
+contents of `db/osrm/car`/`db/osrm/foot` before the real `osrm-routed` deploy, since `osrm-routed`
+expects `/data/road.osrm*` to already exist. This is the same `db/osrm/` output
+`transfer-osrm-graphs.sh` already knows how to move between machines — only the destination
+(a Fly Volume, over SFTP) differs from moving it to a second laptop.
+
+**Database on Turso.** See `src/lib/db/client.ts` — set `TURSO_DATABASE_URL` and
+`TURSO_AUTH_TOKEN` (from `turso db show <name> --url` / `turso db tokens create <name>`, or
+`scripts/setup-hosting-accounts.sh`) wherever the app runs. Unset, it falls back to a local
+`db/dev.db` file, so local dev needs no Turso account.
+
+**The app on Vercel.** Set `VROOM_URL`, `OSRM_FOOT_URL`, `OSRM_CAR_URL` to the three Fly `.fly.dev`
+hostnames, plus `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` and `SITE_PASSWORD`, as Vercel environment
+variables — everything `.env.local` already documents above, just pointed at hosted services
+instead of `localhost`.
 
 ---
 

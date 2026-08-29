@@ -53,7 +53,7 @@ function toInput(l: Location): LocationInput {
 }
 
 export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): Promise<OptimizeResult> {
-  const trip = getTripWithDetails(tripId);
+  const trip = await getTripWithDetails(tripId);
   if (!trip) throw new Error(`Trip ${tripId} not found`);
 
   const numDays = numDaysOf(trip.startDate, trip.endDate);
@@ -108,7 +108,7 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
   );
 
   return {
-    trip: setPlacements(tripId, placements),
+    trip: await setPlacements(tripId, placements),
     unplaced: itinerary.unplaced,
     warnings: itinerary.warnings,
   };

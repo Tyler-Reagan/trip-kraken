@@ -8,12 +8,12 @@ export async function POST(
 ) {
   const { id: tripId } = await params;
 
-  if (!tripExists(tripId)) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+  if (!(await tripExists(tripId))) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
   // Eligibility: locations flagged as needing enrichment (pending at creation, failed on
   // a prior attempt). This endpoint is the retry/recovery path — the happy path runs
   // automatically via the enrichment queue on location creation.
-  const locations = getEnrichableLocations(tripId);
+  const locations = await getEnrichableLocations(tripId);
 
   const total = locations.length;
   let enriched = 0;
@@ -22,10 +22,10 @@ export async function POST(
   for (const loc of locations) {
     try {
       const result = await enrichLocation(loc);
-      if (applyEnrichment(loc.id, result)) enriched++;
+      if (await applyEnrichment(loc.id, result)) enriched++;
       else errors++;
     } catch (err) {
-      markEnrichmentFailed(loc.id, err instanceof Error ? err.message : String(err));
+      await markEnrichmentFailed(loc.id, err instanceof Error ? err.message : String(err));
       errors++;
     }
 

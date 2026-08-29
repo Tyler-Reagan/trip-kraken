@@ -13,7 +13,7 @@ export async function GET(
 ) {
   const { id: tripId } = await params;
 
-  if (!tripExists(tripId)) {
+  if (!(await tripExists(tripId))) {
     return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   }
 

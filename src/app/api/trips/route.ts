@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { listTrips, createTripWithLocations, checkTripNameCollision, deleteTrip, TripNameCollisionError } from "@/lib/db";
 
 export async function GET() {
-  return NextResponse.json(listTrips());
+  return NextResponse.json(await listTrips());
 }
 
 const isIsoDate = (s: unknown): s is string =>
@@ -31,18 +31,18 @@ export async function POST(req: NextRequest) {
   // Same name-collision guard the My Maps import uses (#119 follow-up) — a blank trip typed twice
   // is just as easy to end up indistinguishable from an earlier one on the homepage.
   if (!onDuplicate) {
-    const collision = checkTripNameCollision(name);
+    const collision = await checkTripNameCollision(name);
     if (collision) return NextResponse.json(collision, { status: 409 });
   }
   if (onDuplicate === "overwrite" && replaceTripId) {
-    deleteTrip(replaceTripId);
+    await deleteTrip(replaceTripId);
   }
 
   // The pre-check above is skipped when the client already resolved a duplicate (onDuplicate set)
   // — the DB's unique index is the backstop for both that case and the race between two concurrent
   // creates that both pass the pre-check (#121).
   try {
-    const trip = createTripWithLocations({ name, sourceUrl: null, startDate, endDate, locations: [] });
+    const trip = await createTripWithLocations({ name, sourceUrl: null, startDate, endDate, locations: [] });
     return NextResponse.json(trip, { status: 201 });
   } catch (e) {
     if (e instanceof TripNameCollisionError) return NextResponse.json(e.collision, { status: 409 });

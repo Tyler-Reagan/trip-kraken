@@ -13,9 +13,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { createClient } from "@libsql/client";
+import { drizzle } from "drizzle-orm/libsql";
+import { migrate } from "drizzle-orm/libsql/migrator";
 import * as schema from "@/lib/db/schema";
 import { solve } from "@/lib/solver";
 import { optimizeTrip } from "@/lib/optimize";
@@ -309,12 +309,12 @@ await withEnv(
 // ── optimizeTrip orchestrator (over a temp DB) ────────────────────────────────
 
 const dir = fs.mkdtempSync(path.join(tmpdir(), "tk-opt-"));
-const sqlite = new Database(path.join(dir, "test.db"));
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
-const db = drizzle(sqlite, { schema });
-migrate(db, { migrationsFolder: path.join(process.cwd(), "db", "migrations") });
-(globalThis as unknown as { _drizzle?: typeof db })._drizzle = db;
+const client = createClient({ url: `file:${path.join(dir, "test.db")}` });
+await client.execute("PRAGMA journal_mode = WAL");
+await client.execute("PRAGMA foreign_keys = ON");
+const db = drizzle(client, { schema });
+await migrate(db, { migrationsFolder: path.join(process.cwd(), "db", "migrations") });
+(globalThis as unknown as { _drizzle?: Promise<typeof db> })._drizzle = Promise.resolve(db);
 
 await withEnv({ VROOM_URL: "http://localhost:8080", OSRM_FOOT_URL: undefined, OSRM_CAR_URL: undefined }, async () => {
   const calls = { vroom: 0, osrm: 0 };
@@ -322,7 +322,7 @@ await withEnv({ VROOM_URL: "http://localhost:8080", OSRM_FOOT_URL: undefined, OS
 
   // 3-day trip; lodging H across all nights; three activities with coords, close enough to
   // single-link into one metro cluster H covers; one excluded.
-  const trip = createTripWithLocations({
+  const trip = await createTripWithLocations({
     name: "Opt trip",
     sourceUrl: "",
     startDate: "2026-06-24",
@@ -335,9 +335,9 @@ await withEnv({ VROOM_URL: "http://localhost:8080", OSRM_FOOT_URL: undefined, OS
     ],
   });
   const id = (n: string) => trip.locations.find((l) => l.name === n)!.id;
-  setLodgingDates(trip.id, id("H"), { checkInDate: "2026-06-24", checkOutDate: "2026-06-27" });
-  const W = createLocation(trip.id, { name: "W (excluded)", lat: 35.2, lng: 139.2 }).id;
-  updateLocation(trip.id, W, { excluded: true });
+  await setLodgingDates(trip.id, id("H"), { checkInDate: "2026-06-24", checkOutDate: "2026-06-27" });
+  const W = (await createLocation(trip.id, { name: "W (excluded)", lat: 35.2, lng: 139.2 })).id;
+  await updateLocation(trip.id, W, { excluded: true });
 
   const after = await optimizeTrip(trip.id);
   const placed = new Set(after.trip.placements.map((p) => p.locationId));
@@ -355,7 +355,7 @@ await withEnv({ VROOM_URL: "http://localhost:8080", OSRM_FOOT_URL: undefined, OS
   // Re-optimize is wholesale: the count stays put, not appended.
   const again = await optimizeTrip(trip.id);
   assert.equal(again.trip.placements.length, after.trip.placements.length, "re-optimize replaces, never appends");
-  assert.equal(getTripWithDetails(trip.id)!.placements.length, 3, "exactly the three activities remain placed");
+  assert.equal((await getTripWithDetails(trip.id))!.placements.length, 3, "exactly the three activities remain placed");
 });
 
 // ── A trip-edge Transit Location is an Anchor, never a Placement (ADR-0028 §4) — the #156
@@ -368,7 +368,7 @@ await withEnv({ VROOM_URL: "http://localhost:8080", OSRM_FOOT_URL: undefined, OS
     calls
   );
 
-  const trip = createTripWithLocations({
+  const trip = await createTripWithLocations({
     name: "Edge trip",
     sourceUrl: "",
     startDate: "2026-06-24",
@@ -380,8 +380,8 @@ await withEnv({ VROOM_URL: "http://localhost:8080", OSRM_FOOT_URL: undefined, OS
     ],
   });
   const id = (n: string) => trip.locations.find((l) => l.name === n)!.id;
-  setLodgingDates(trip.id, id("H"), { checkInDate: "2026-06-24", checkOutDate: "2026-06-27" });
-  setTripArrival(trip.id, id("Airport"), "14:00");
+  await setLodgingDates(trip.id, id("H"), { checkInDate: "2026-06-24", checkOutDate: "2026-06-27" });
+  await setTripArrival(trip.id, id("Airport"), "14:00");
 
   const after = await optimizeTrip(trip.id);
   const placed = new Set(after.trip.placements.map((p) => p.locationId));

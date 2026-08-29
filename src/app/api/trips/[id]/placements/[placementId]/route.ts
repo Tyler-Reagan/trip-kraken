@@ -20,10 +20,10 @@ export async function DELETE(
 ) {
   const { id: tripId, placementId } = await params;
 
-  const before = getTripWithDetails(tripId);
+  const before = await getTripWithDetails(tripId);
   const pair = before ? findHealablePair(before, placementId) : null;
 
-  removePlacement(tripId, placementId);
+  await removePlacement(tripId, placementId);
 
   if (!pair || !before) return NextResponse.json({ healedPair: null });
 

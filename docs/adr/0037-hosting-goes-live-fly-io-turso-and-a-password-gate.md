@@ -110,7 +110,7 @@ the database to Turso, and gate access with a custom password-check middleware.*
   before this became a real product — a future reader finding those gaps should read them as
   deliberate for this scope, not oversights, but also not permanent.
 - **Follow-on work, not yet done:** a `fly.toml` (or confirmed working Compose import) for the
-  VROOM/OSRM services, the Turso account and schema migration, `middleware.ts` for the password
+  VROOM/OSRM services, the Turso account and schema migration, `src/proxy.ts` for the password
   gate, and updated environment documentation. README's framing — "nothing here is Vercel-shaped,
   and that is a deliberate, recorded posture" — needs a follow-up edit once this ships, since the
   app itself now *is* Vercel-shaped even though VROOM/OSRM still aren't functions.

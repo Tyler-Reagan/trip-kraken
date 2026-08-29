@@ -32,6 +32,6 @@ export async function PATCH(
     );
   }
 
-  const trip = setJourneyRoadKind(tripId, fromLocationId, toLocationId, kind as RoadProfile | null);
+  const trip = await setJourneyRoadKind(tripId, fromLocationId, toLocationId, kind as RoadProfile | null);
   return NextResponse.json(trip);
 }

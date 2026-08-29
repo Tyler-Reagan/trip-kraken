@@ -7,7 +7,7 @@ import HelpButton from "@/components/HelpButton";
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const trips = listTrips();
+  const trips = await listTrips();
 
   return (
     <div className="space-y-10">
