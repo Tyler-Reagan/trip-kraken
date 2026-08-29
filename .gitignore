@@ -49,3 +49,4 @@ osrm-graphs-20260812.tar.zst
 .claude/
 .vercel
 .env*
+!.env.example

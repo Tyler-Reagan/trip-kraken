@@ -92,7 +92,16 @@ pnpm install
 
 ### 2. Configure environment
 
-Create `.env.local` in the project root:
+Copy `.env.example` to `.env.local` and fill in real values as you go through the steps below —
+it's the checked-in source of truth for every variable this app reads, kept in sync with what's
+actually configured on Vercel (see [docs/ci-cd-and-environments.md](docs/ci-cd-and-environments.md)
+for how local, Preview, and Production env vars relate, and the runbook for changing a hosted one).
+
+```bash
+cp .env.example .env.local
+```
+
+At minimum:
 
 ```env
 GOOGLE_MAPS_API_KEY=your_key_here
@@ -250,6 +259,14 @@ expects `/data/road.osrm*` to already exist. This is the same `db/osrm/` output
 hostnames, plus `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` and `SITE_PASSWORD`, as Vercel environment
 variables — everything `.env.local` already documents above, just pointed at hosted services
 instead of `localhost`.
+
+**Deploys are automatic** — Vercel's GitHub integration builds a Preview URL for every PR and
+deploys straight to Production on every merge to `main`; there's no separate deploy workflow to
+run by hand. See [docs/ci-cd-and-environments.md](docs/ci-cd-and-environments.md) for the full
+pipeline, how to change a hosted env var (it needs a redeploy to take effect — easy to miss), how
+to roll back a bad deploy, and the deliberate risk that Preview and Production currently share the
+same database and VROOM/OSRM services. Cost factors for this whole setup are in
+[docs/hosting-and-costs.md](docs/hosting-and-costs.md).
 
 ---
 
