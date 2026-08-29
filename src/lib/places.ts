@@ -1,5 +1,6 @@
 import type { NearbyPlace } from "@/types";
 import { haversineMeters } from "./geo";
+import type { Point } from "./geo";
 
 /**
  * Places API (New) client (migrated off the deprecated legacy endpoints, #102).
@@ -36,7 +37,12 @@ type NewPlace = {
   currentOpeningHours?: { openNow?: boolean };
 };
 
-type SearchResponse = { places?: NewPlace[] };
+/** Per-place distance/duration from a declared origin along a real route — Places API (New)'s
+ * `routingSummaries`, parallel-indexed to `places[]`. Only requested by `searchAlongRoute` (#107);
+ * every other search leaves it out of the field mask, so it's absent from the response entirely. */
+type RoutingSummary = { legs?: { distanceMeters?: number }[] };
+
+type SearchResponse = { places?: NewPlace[]; routingSummaries?: RoutingSummary[] };
 
 /** New expresses price as an enum; NearbyPlace keeps the legacy 0–4 scale. */
 const PRICE_LEVELS: Record<string, number> = {
@@ -51,7 +57,7 @@ function stripGenericTypes(types: string[]): string[] {
   return types.filter((t) => t !== "point_of_interest" && t !== "establishment");
 }
 
-function toNearbyPlace(p: NewPlace): NearbyPlace {
+function toNearbyPlace(p: NewPlace, detourMeters: number | null = null): NearbyPlace {
   return {
     placeId: p.id,
     name: p.displayName?.text ?? "",
@@ -63,6 +69,7 @@ function toNearbyPlace(p: NewPlace): NearbyPlace {
     categories: stripGenericTypes(p.types ?? []),
     priceLevel: p.priceLevel !== undefined ? (PRICE_LEVELS[p.priceLevel] ?? null) : null,
     distanceMeters: null,
+    detourMeters,
   };
 }
 
@@ -72,12 +79,14 @@ function requireApiKey(): string {
   return apiKey;
 }
 
-/** POST a search (`places:searchText` / `places:searchNearby`); throws on API errors. */
+/** POST a search (`places:searchText` / `places:searchNearby`); throws on API errors. Returns the
+ * full response shape (not just `places`) so `searchAlongRoute` can also read `routingSummaries`
+ * (#107) without a bespoke fetch of its own. */
 async function postSearch(
   method: "searchText" | "searchNearby",
   body: Record<string, unknown>,
   fieldMask: string = SEARCH_FIELD_MASK
-): Promise<NewPlace[]> {
+): Promise<SearchResponse> {
   const res = await fetch(`${PLACES_BASE}/places:${method}`, {
     method: "POST",
     headers: {
@@ -93,7 +102,7 @@ async function postSearch(
   if (!res.ok) {
     throw new Error(data.error?.message ?? `Google Places API error: HTTP ${res.status}`);
   }
-  return data.places ?? [];
+  return data;
 }
 
 function circle(lat: number, lng: number, radius: number) {
@@ -117,7 +126,7 @@ export async function searchNearby(
   // a bias, not a restriction (legacy restricted hard), so cut off beyond-radius
   // results in-process to keep the radius meaning what the UI says it means.
   if (opts.keyword) {
-    const places = await postSearch("searchText", {
+    const { places = [] } = await postSearch("searchText", {
       textQuery: opts.keyword,
       pageSize: limit,
       locationBias: circle(lat, lng, radius),
@@ -129,11 +138,11 @@ export async function searchNearby(
           !p.location ||
           haversineMeters({ lat, lng }, { lat: p.location.latitude, lng: p.location.longitude }) <= radius
       )
-      .map(toNearbyPlace);
+      .map((p) => toNearbyPlace(p));
   }
 
   // searchNearby has no openNow filter, so request the flag and filter in-process.
-  const places = await postSearch(
+  const { places = [] } = await postSearch(
     "searchNearby",
     {
       locationRestriction: circle(lat, lng, radius),
@@ -142,7 +151,7 @@ export async function searchNearby(
     opts.openNow ? `${SEARCH_FIELD_MASK},places.currentOpeningHours.openNow` : SEARCH_FIELD_MASK
   );
   const filtered = opts.openNow ? places.filter((p) => p.currentOpeningHours?.openNow) : places;
-  return filtered.map(toNearbyPlace);
+  return filtered.map((p) => toNearbyPlace(p));
 }
 
 /**
@@ -154,12 +163,12 @@ export async function searchText(
   query: string,
   opts: { limit?: number; openNow?: boolean } = {}
 ): Promise<NearbyPlace[]> {
-  const places = await postSearch("searchText", {
+  const { places = [] } = await postSearch("searchText", {
     textQuery: query,
     pageSize: Math.min(opts.limit ?? 20, 20),
     ...(opts.openNow ? { openNow: true } : {}),
   });
-  return places.map(toNearbyPlace);
+  return places.map((p) => toNearbyPlace(p));
 }
 
 /**
@@ -167,19 +176,30 @@ export async function searchText(
  * caller-computed encoded polyline. `searchAlongRouteParameters` is the structured
  * mechanism New requires for this — the same query as bare text has no corridor bias
  * and returns unrelated results (#100 prototype finding).
+ *
+ * `origin` (#107) requests `routingSummaries` alongside the along-route results — each result's
+ * real-route distance from the corridor's start, which `scoreAndSort` uses to spread results
+ * along the corridor instead of letting them cluster at the origin end. A response data field,
+ * not a ranking promise (ADR-0009): this function only populates `detourMeters`, never sorts.
  */
 export async function searchAlongRoute(
   query: string,
   polyline: string,
+  origin: Point,
   opts: { limit?: number; openNow?: boolean } = {}
 ): Promise<NearbyPlace[]> {
-  const places = await postSearch("searchText", {
-    textQuery: query,
-    pageSize: Math.min(opts.limit ?? 20, 20),
-    searchAlongRouteParameters: { polyline: { encodedPolyline: polyline } },
-    ...(opts.openNow ? { openNow: true } : {}),
-  });
-  return places.map(toNearbyPlace);
+  const { places = [], routingSummaries = [] } = await postSearch(
+    "searchText",
+    {
+      textQuery: query,
+      pageSize: Math.min(opts.limit ?? 20, 20),
+      searchAlongRouteParameters: { polyline: { encodedPolyline: polyline } },
+      routingParameters: { origin: { latitude: origin.lat, longitude: origin.lng } },
+      ...(opts.openNow ? { openNow: true } : {}),
+    },
+    `${SEARCH_FIELD_MASK},routingSummaries.legs.distanceMeters`
+  );
+  return places.map((p, i) => toNearbyPlace(p, routingSummaries[i]?.legs?.[0]?.distanceMeters ?? null));
 }
 
 // ─── Place Details enrichment ────────────────────────────────────────────────
@@ -275,7 +295,7 @@ export async function findPlaceFromText(
   biasRadius = 1000
 ): Promise<{ placeId: string; lat: number; lng: number } | null> {
   try {
-    const places = await postSearch(
+    const { places = [] } = await postSearch(
       "searchText",
       {
         textQuery: name,

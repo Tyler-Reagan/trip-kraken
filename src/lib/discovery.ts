@@ -15,13 +15,17 @@
 import type { NearbyPlace } from "@/types";
 import { searchAlongRoute, searchNearby, searchText } from "./places";
 import { haversineMeters } from "./geo";
+import type { Point } from "./geo";
 
 export type DiscoveryMode = "anchored" | "unanchored" | "alongRoute";
 
 export type DiscoveryScope =
   | { kind: "anchor"; lat: number; lng: number; radius?: number }
   | { kind: "none" }
-  | { kind: "route"; polyline: string }; // encoded polyline; caller computes it once per Path
+  // encoded polyline + origin; caller computes both once per Path (ADR-0009). `origin` is what
+  // lets a provider request a per-result distance-from-origin (#107) — the same "caller-computed
+  // routing fact" status as the polyline, not Google-specific.
+  | { kind: "route"; polyline: string; origin: Point };
 
 export interface DiscoveryQuery {
   /** Free text. Required for "none"/"route" scopes (validated at the routes);
@@ -81,7 +85,7 @@ const googleProvider: DiscoveryProvider = {
         return searchText(q.query, { limit: q.limit, openNow: q.openNow });
       case "route":
         if (!q.query) throw new Error("query is required for along-route discovery");
-        return searchAlongRoute(q.query, scope.polyline, { limit: q.limit, openNow: q.openNow });
+        return searchAlongRoute(q.query, scope.polyline, scope.origin, { limit: q.limit, openNow: q.openNow });
     }
   },
 };
@@ -107,6 +111,15 @@ export function listDiscoveryProviders(): readonly DiscoveryProvider[] {
  * Rank discovery results: rating quality + review depth, plus an optional
  * category-diversity bonus (anchored search uses it to favour variety on a day;
  * pass an empty set for no bonus). Shared by both discovery routes.
+ *
+ * #107: when results carry `detourMeters` (along-route scope only — always null elsewhere, so
+ * this branch never fires for anchor/unanchored search), a flat rating sort clusters the top
+ * results at the corridor's origin, because Google's own along-route results already skew there
+ * for dense categories. Splitting the batch's own detourMeters range into thirds (not
+ * equal-*count* buckets — a real corridor is exactly this skewed, with most results clustered
+ * near the origin, so count-based buckets would still lump the far outliers in with the tail of
+ * that cluster) and round-robin merging the rating-sorted buckets spreads the top results across
+ * the corridor by construction.
  */
 export function scoreAndSort(
   places: NearbyPlace[],
@@ -119,8 +132,23 @@ export function scoreAndSort(
       dayCategories.size > 0 && p.categories.some((c) => !dayCategories.has(c)) ? 20 : 0;
     return ratingScore + reviewBonus + diversityBonus;
   }
-  return places
-    .map((p) => ({ p, s: score(p) }))
-    .sort((a, b) => b.s - a.s)
-    .map(({ p }) => p);
+  const byScore = (list: NearbyPlace[]) => [...list].sort((a, b) => score(b) - score(a));
+
+  const withDetour = places.filter((p) => p.detourMeters !== null);
+  if (withDetour.length === 0) return byScore(places);
+
+  const withoutDetour = places.filter((p) => p.detourMeters === null);
+  const min = Math.min(...withDetour.map((p) => p.detourMeters!));
+  const max = Math.max(...withDetour.map((p) => p.detourMeters!));
+  const span = max - min;
+  const bucketOf = (d: number) => (span === 0 ? 0 : Math.min(2, Math.floor(((d - min) / span) * 3)));
+  const raw: NearbyPlace[][] = [[], [], []];
+  for (const p of withDetour) raw[bucketOf(p.detourMeters!)].push(p);
+  const buckets = raw.map(byScore).filter((b) => b.length > 0);
+
+  const merged: NearbyPlace[] = [];
+  for (let i = 0; i < withDetour.length; i++) {
+    for (const bucket of buckets) if (bucket[i]) merged.push(bucket[i]);
+  }
+  return [...merged, ...byScore(withoutDetour)];
 }
