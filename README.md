@@ -49,7 +49,7 @@ Trips, locations, and itineraries are stored in a **SQLite database** (`db/dev.d
 **Caveats to be aware of:**
 
 - **Single-file, local storage.** The database lives on the same machine as the server. There is no sync, backup, or cloud storage. If `db/dev.db` is deleted, all trips are gone.
-- **No authentication.** All trips are accessible to anyone who can reach the server. This is a single-user, local-first app — not suitable for multi-user or public deployment without adding an auth layer.
+- **Authentication is a shared password, not accounts.** ADR-0037 gates every route behind a single `SITE_PASSWORD` checked in `src/proxy.ts` — sized for a couple of trusted people, not a real user base. There's no per-user identity, no rate limiting, and no audit trail.
 - **Schema migrations are manual.** The schema is initialized on startup via `CREATE TABLE IF NOT EXISTS` statements. Columns added after a database already exists (e.g., `rating`, `reviewCount`, `categories`) are applied with `ALTER TABLE` statements on startup. If you modify the schema, you are responsible for migration.
 - **Itinerary state is fully rebuilt on re-optimization.** Running the optimizer deletes existing `ItineraryDay` and `ItineraryStop` records and regenerates them. Any manual day labels you've set will survive (they're stored on the day record), but stop order is reset.
 
@@ -176,7 +176,21 @@ the check that matters most — POSTs a fixture built to violate a time window i
 mode (`-c`) and confirms a violation comes back. A VROOM build without `libglpk` linked accepts
 plan-mode requests and silently ignores them, which only a check like this one catches.
 
-### 4. Run
+### 4. Set a site password
+
+The app is gated behind a single shared password (ADR-0037) — there are no user accounts. Add to
+`.env.local`:
+
+```env
+SITE_PASSWORD=choose_something_not_guessable
+```
+
+Anyone without the password is redirected to `/login`; entering it sets a cookie that persists
+until the password changes. This is sized for a couple of trusted people, not a public launch —
+see ADR-0037 for the scope this deliberately doesn't cover (no rate limiting, no per-user
+accounts).
+
+### 5. Run
 
 ```bash
 pnpm dev
