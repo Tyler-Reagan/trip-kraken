@@ -1,0 +1,1 @@
+ALTER TABLE `Location` ADD `category` text;

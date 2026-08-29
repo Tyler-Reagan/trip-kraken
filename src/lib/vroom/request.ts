@@ -20,6 +20,14 @@ import type { VroomJob, VroomRequest, VroomVehicle } from "@/lib/vroom/wire";
  * quarantine exists to prevent. */
 const TRIP_PROFILE = "trip";
 
+/** Axis 0, the first capacity dimension wired (ADR-0023 §4, #153): at most this many food-category
+ * Activities per Day. Generous by design — §4 requires starting generous and narrowing only against
+ * a measured unassignment cost, never a guess — chosen from `docs/research/activity-category-capacity-153.md`'s
+ * measurement on a realistic-density fixture, which found this value costs zero placements while a
+ * tighter one starts dropping Activities. Every job and every vehicle in a request carries this one
+ * axis; VROOM requires `delivery`'s length to match `capacity`'s across the whole request. */
+const FOOD_CAPACITY_PER_DAY = 3;
+
 export interface BuildVroomRequestInput {
   /** Every Activity surviving `preflight` — jobs are built 1:1 from this. */
   placeable: LocationInput[];
@@ -133,6 +141,7 @@ function vehicleForDay(day: SolverInputDay): VroomVehicle {
     // only limiter: rung 1 (`max_tasks`) is removed as of ADR-0023 §6's 2026-08-18 amendment, since
     // real `service` durations (see jobForActivity) make this window load-bearing on its own.
     ...(day.reachableMetros.length > 0 ? { skills: day.reachableMetros } : {}), // rung 2, unaffected
+    capacity: [FOOD_CAPACITY_PER_DAY],
     profile: TRIP_PROFILE,
   };
 }
@@ -155,6 +164,7 @@ function jobForActivity(
     service,
     ...(windows && windows.length > 0 ? { time_windows: windows } : {}),
     ...(metro != null ? { skills: [metro] } : {}),
+    delivery: [activity.category === "food" ? 1 : 0],
   };
 }
 

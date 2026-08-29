@@ -74,6 +74,10 @@ export const location = sqliteTable("Location", {
   rating: real("rating"),
   reviewCount: integer("reviewCount"),
   categories: text("categories", { mode: "json" }).$type<string[]>(),
+  // The small, domain-facing vocabulary derived from `categories` at write time (ADR-0023 §4,
+  // issue #153) — what a VROOM capacity dimension keys off. Null means "not yet derived" (no
+  // `categories` yet), distinct from the derived value `"other"`. See `activityCategory.ts`.
+  category: text("category", { enum: ["food", "nightlife", "shopping", "sight", "other"] }),
   visitDuration: integer("visitDuration"),
   openTime: text("openTime"),
   closeTime: text("closeTime"),

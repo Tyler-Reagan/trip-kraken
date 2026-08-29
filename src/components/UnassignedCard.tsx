@@ -51,6 +51,7 @@ function categoryOf(u: Unplaced): Category | null {
           return { icon: MapPinOff, label: "Too far from every day" };
         case "day-full":
         case "day-too-short":
+        case "category-full":
           return { icon: PackageX, label: "No day has room" };
         case "after-closing":
         case "before-opening":

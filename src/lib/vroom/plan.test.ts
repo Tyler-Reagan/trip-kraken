@@ -207,6 +207,25 @@ const solution: VroomSolution = {
 }
 
 {
+  // #153's capacity axis: `load` arrives on the *route*, never the probe's own job step — verified
+  // live against the running container, not guessed at. The job step itself carries no violation.
+  const categoryFull: VroomPlanSolution = {
+    code: 0,
+    routes: [
+      {
+        vehicle: 1,
+        steps: [{ type: "start" }, { type: "job", id: 2, violations: [] }, { type: "end" }],
+        violations: [{ cause: "load" }],
+      },
+    ],
+  };
+  assert.deepEqual(parseVroomViolations(categoryFull, [{ jobId: 2, vehicleId: 1 }]).get(2), {
+    cause: "category-full",
+    dayNumber: 1,
+  });
+}
+
+{
   // The Activity's own conflict outranks the Day's: closing hours survive rearranging the Day.
   const both: VroomPlanSolution = {
     code: 0,

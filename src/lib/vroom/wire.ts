@@ -25,6 +25,7 @@
  * | A Day's usable hours                         | `vehicle.time_window`              | |
  * | Per-Day Placement cap                        | `vehicle.max_tasks`                | |
  * | Metro reachable from a Day's Anchor          | `vehicle.skills` ⊇ `job.skills`    | Integer ordinals; "skill" means nothing here beyond set membership |
+ * | Per-Day category cap (ADR-0023 §4, #153)     | `vehicle.capacity` / `job.delivery` | One axis today (food); `delivery[i] ≤` what `capacity[i]` allows across the Day's jobs |
  * | Opening hours across the Trip's dates        | `job.time_windows`                 | |
  * | Visit duration                               | `job.service`                      | |
  * | Travel cost matrix                           | `matrices.<profile>.durations`     | Keyed `"trip"`, not `"car"` — see request.ts |
@@ -50,6 +51,11 @@ export interface VroomJob {
   service?: number;
   time_windows?: VroomTimeWindow[];
   skills?: number[];
+  /** One integer per active capacity axis (ADR-0023 §4, #153) — how much of each this job draws
+   * from its Day's `vehicle.capacity`. Every job in a request built by this codebase carries the
+   * same arity as every vehicle's `capacity` (VROOM requires it — an arity mismatch is a request
+   * error, not a solve outcome). */
+  delivery?: number[];
 }
 
 export interface VroomVehicle {
@@ -59,6 +65,9 @@ export interface VroomVehicle {
   time_window?: VroomTimeWindow;
   max_tasks?: number;
   skills?: number[];
+  /** One integer per active capacity axis (ADR-0023 §4, #153) — a hard per-Day cap; VROOM never
+   * assigns jobs whose summed `delivery` on this axis would exceed it. */
+  capacity?: number[];
   /** Must match a key in `VroomRequest.matrices` when a matrix is supplied. Every vehicle in a
    * request built by this codebase carries the same value (`TRIP_PROFILE` in request.ts). */
   profile?: string;
@@ -164,6 +173,13 @@ export interface VroomPlanStep {
 export interface VroomPlanRoute {
   vehicle: number;
   steps: VroomPlanStep[];
+  /** A `load` violation (capacity exceeded, #153) reports here and on the `start` step, never on
+   * the job step that tipped it over — verified live against the running container: `load` is a
+   * fact about the whole route's carried delivery, not a moment in it, unlike `skills`/`max_tasks`
+   * which land on the specific job/step responsible. Route-level is read here rather than picking
+   * through `start`'s violations, since it's the more direct fact for what is fundamentally a
+   * Day-level, not a step-level, constraint. */
+  violations?: VroomViolation[];
 }
 
 export interface VroomPlanSolution {

@@ -35,6 +35,8 @@ import {
   updateTrip,
   LodgingValidationError,
   TransitValidationError,
+  applyEnrichment,
+  getLocation,
 } from "@/lib/db";
 import {
   isActivity,
@@ -307,6 +309,21 @@ try {
 // A distinct name is unaffected.
 const raceTrip2 = createTripWithLocations({ name: "Race trip (2)", sourceUrl: null, startDate: "2026-10-01", endDate: "2026-10-03", locations: [] });
 assert.equal(raceTrip2.name, "Race trip (2)");
+
+// ── #153: category derives from categories at both write paths, never settable directly ──
+{
+  // createLocation: a caller-supplied `categories` (e.g. Path B's inline-enriched add) derives
+  // `category` immediately, not only through the enrichment queue.
+  const withCategories = createLocation(trip.id, { name: "Sushi place", categories: ["restaurant", "point_of_interest"] });
+  assert.equal(withCategories.category, "food", "createLocation derives category from categories");
+
+  const noCategories = createLocation(trip.id, { name: "Not yet enriched" });
+  assert.equal(noCategories.category, null, "no categories yet -> category stays null, not 'other'");
+
+  // applyEnrichment: the queued path re-derives the same way once categories arrive.
+  applyEnrichment(noCategories.id, { categories: ["museum"] });
+  assert.equal(getLocation(noCategories.id)!.category, "sight", "applyEnrichment derives category too");
+}
 
 fs.rmSync(dir, { recursive: true, force: true });
 console.log("✓ model.test.ts passed");
