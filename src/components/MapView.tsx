@@ -41,10 +41,9 @@ import {
   pairsOfDay,
   dayChainEntries,
   pathShiftId,
-  journeyRoadKindFor,
 } from "@/lib/pathPairs";
 import { haversineMeters } from "@/lib/geo";
-import { usePathGeometryContext } from "@/lib/usePathGeometry";
+import { useJourneyGap, usePathGeometryContext } from "@/lib/usePathGeometry";
 import PathShiftRows from "./PathShiftRows";
 
 // #145: CARTO's keyless basemap endpoint is outside its published license (enterprise/grant-only,
@@ -880,54 +879,6 @@ function StopPanel({
   onToggle: (v: boolean) => void;
   onFocus: (target: FocusTarget) => void;
 }) {
-  const trip = useTripStore((s) => s.trip);
-  const { pathGeometry, roadProfile } = usePathGeometryContext();
-  const setHighlightedPathId = useTripStore((s) => s.setHighlightedPathId);
-  const setJourneyRoadKind = useTripStore((s) => s.setJourneyRoadKind);
-
-  // The row-per-Path shift list for one gap (ADR-0036) — the same component and cache DayCard's
-  // sidebar uses, so the two Location lists can't structurally disagree. `as="div"`: this panel has
-  // no `<ol>`/`<li>` list semantics at all, unlike the sidebar. Clicking a transfer station flies
-  // the camera to it (`onFocus`) rather than opening `InspectorPopover`, matching every other row
-  // in this panel already doing the same. Hovering a shift row highlights its span on the map —
-  // cheap and natural here, since this panel already sits directly over the canvas it's describing;
-  // `DayCard`'s sidebar has no canvas to highlight against, so it never wires this.
-  const gap = (from: Location, to: Location) => {
-    if (from.lat === null || to.lat === null || !trip) return null;
-    const key = pairKey(
-      roadProfile,
-      {
-        from: { lat: from.lat, lng: from.lng!, locationId: from.id },
-        to: { lat: to.lat, lng: to.lng!, locationId: to.id },
-      },
-      trip.journeyRoadKinds,
-    );
-    return (
-      <PathShiftRows
-        as="div"
-        chain={pathGeometry.get(key)}
-        tripId={trip.id}
-        pairKey={key}
-        onStationClick={(t) =>
-          onFocus({ tier: "point", lat: t.lat!, lng: t.lng! })
-        }
-        onHoverChange={setHighlightedPathId}
-        hasJrPass={trip.hasJrPass}
-        kindToggle={
-          from.id === to.id
-            ? undefined
-            : {
-                kind:
-                  journeyRoadKindFor(trip.journeyRoadKinds, from.id, to.id)
-                    ?.kind ?? roadProfile,
-                onKindChange: (kind) =>
-                  setJourneyRoadKind(from.id, to.id, kind),
-              }
-        }
-      />
-    );
-  };
-
   if (!open) {
     return (
       <button
@@ -997,8 +948,13 @@ function StopPanel({
                 onFocus={onFocus}
               />
             )}
-            {i < entries.length - 1 &&
-              gap(entry.location, entries[i + 1].location)}
+            {i < entries.length - 1 && (
+              <StopPanelGap
+                from={entry.location}
+                to={entries[i + 1].location}
+                onFocus={onFocus}
+              />
+            )}
           </Fragment>
         ))}
         {day.stops.length === 0 && !day.startAnchor && !day.endAnchor && (
@@ -1008,6 +964,46 @@ function StopPanel({
         )}
       </div>
     </div>
+  );
+}
+
+/** One gap's row-per-Path shift list (ADR-0036) — the same component and cache `DayCard`'s
+ *  sidebar uses, so the two Location lists can't structurally disagree. A component of its own
+ *  (not a closure inside `StopPanel`) because `useJourneyGap` is a hook: `StopPanel` renders a
+ *  variable number of gaps per Day, and a hook can't be called that way from inside a loop. `as=
+ *  "div"`: this panel has no `<ol>`/`<li>` list semantics at all, unlike the sidebar. Clicking a
+ *  transfer station flies the camera to it (`onFocus`) rather than opening `InspectorPopover`,
+ *  matching every other row in this panel already doing the same. Hovering a shift row highlights
+ *  its span on the map — cheap and natural here, since this panel already sits directly over the
+ *  canvas it's describing; `DayCard`'s sidebar has no canvas to highlight against, so it never
+ *  wires this. */
+function StopPanelGap({
+  from,
+  to,
+  onFocus,
+}: {
+  from: Location;
+  to: Location;
+  onFocus: (target: FocusTarget) => void;
+}) {
+  const trip = useTripStore((s) => s.trip);
+  const setHighlightedPathId = useTripStore((s) => s.setHighlightedPathId);
+  const gap = useJourneyGap(from, to);
+  if (!trip || !gap) return null;
+
+  return (
+    <PathShiftRows
+      as="div"
+      chain={gap.chain}
+      tripId={trip.id}
+      pairKey={gap.key}
+      onStationClick={(t) =>
+        onFocus({ tier: "point", lat: t.lat!, lng: t.lng! })
+      }
+      onHoverChange={setHighlightedPathId}
+      hasJrPass={trip.hasJrPass}
+      kindToggle={gap.kindToggle}
+    />
   );
 }
 

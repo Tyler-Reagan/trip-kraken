@@ -29,8 +29,8 @@ import {
   TrainFront,
 } from "lucide-react";
 import { dayDropId } from "./DayNavigator";
-import { usePathGeometryContext } from "@/lib/usePathGeometry";
-import { dayChainEntries, journeyRoadKindFor, pairKey } from "@/lib/pathPairs";
+import { useJourneyGap } from "@/lib/usePathGeometry";
+import { dayChainEntries } from "@/lib/pathPairs";
 import PathShiftRows from "./PathShiftRows";
 
 interface Props {
@@ -363,9 +363,8 @@ function RouteConnector({
   const setInspectedSurfacedTransit = useTripStore(
     (s) => s.setInspectedSurfacedTransit,
   );
-  const setJourneyRoadKind = useTripStore((s) => s.setJourneyRoadKind);
-  const { pathGeometry, roadProfile } = usePathGeometryContext();
-  if (from.lat === null || to.lat === null || !trip) return null;
+  const gap = useJourneyGap(from, to);
+  if (!trip || !gap) return null;
 
   const healed =
     healedPair &&
@@ -373,16 +372,6 @@ function RouteConnector({
     healedPair.toLocationId === to.id
       ? healedPair
       : null;
-
-  const key = pairKey(
-    roadProfile,
-    {
-      from: { lat: from.lat, lng: from.lng!, locationId: from.id },
-      to: { lat: to.lat, lng: to.lng!, locationId: to.id },
-    },
-    trip.journeyRoadKinds,
-  );
-  const chain = pathGeometry.get(key);
 
   const alongTheWay = (
     <span className="flex items-center gap-1.5 shrink-0">
@@ -415,22 +404,13 @@ function RouteConnector({
 
   return (
     <PathShiftRows
-      chain={chain}
+      chain={gap.chain}
       tripId={trip.id}
-      pairKey={key}
+      pairKey={gap.key}
       trailing={alongTheWay}
       onStationClick={setInspectedSurfacedTransit}
       hasJrPass={trip.hasJrPass}
-      kindToggle={
-        from.id === to.id
-          ? undefined
-          : {
-              kind:
-                journeyRoadKindFor(trip.journeyRoadKinds, from.id, to.id)
-                  ?.kind ?? roadProfile,
-              onKindChange: (kind) => setJourneyRoadKind(from.id, to.id, kind),
-            }
-      }
+      kindToggle={gap.kindToggle}
     />
   );
 }
