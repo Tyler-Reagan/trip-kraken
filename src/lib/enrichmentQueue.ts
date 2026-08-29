@@ -42,18 +42,18 @@ async function runConsumer(): Promise<void> {
     while (getQueue().length > 0) {
       const item = getQueue().shift()!;
 
-      const loc = getLocationForEnrichment(item.locationId);
+      const loc = await getLocationForEnrichment(item.locationId);
       // Location may have been deleted between enqueue and processing
       if (!loc) continue;
 
       try {
         // applyEnrichment writes only non-null fields (no overwrite with null) and marks
         // 'done'; an empty result marks the row 'failed'.
-        applyEnrichment(item.locationId, await enrichLocation(loc));
+        await applyEnrichment(item.locationId, await enrichLocation(loc));
       } catch (err) {
         // The thrown reason is the only account of *why* this row failed — the Retry affordance
         // has nothing else to show a user, so it's recorded rather than swallowed.
-        markEnrichmentFailed(item.locationId, err instanceof Error ? err.message : String(err));
+        await markEnrichmentFailed(item.locationId, err instanceof Error ? err.message : String(err));
       }
 
       // Enforce Google rate limit between calls
@@ -89,10 +89,10 @@ export function enqueueLocationEnrichment(locationId: string): void {
  * queue itself is, so a stray double-call in the same process (e.g. a dev-server re-init) doesn't
  * re-enqueue what the first call already picked up.
  */
-export function recoverPendingEnrichment(): void {
+export async function recoverPendingEnrichment(): Promise<void> {
   if (g._enrichRecovered) return;
   g._enrichRecovered = true;
-  for (const locationId of getPendingLocationIds()) {
+  for (const locationId of await getPendingLocationIds()) {
     enqueueLocationEnrichment(locationId);
   }
 }

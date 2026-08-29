@@ -78,11 +78,11 @@ export async function POST(req: NextRequest) {
   // two unrelated imports, or a blank-trip and an import, landing on the same name). Skipped once
   // the client has already chosen how to proceed (`onDuplicate` set).
   if (!onDuplicate) {
-    const collision = checkTripNameCollision(tripName);
+    const collision = await checkTripNameCollision(tripName);
     if (collision) return NextResponse.json(collision, { status: 409 });
   }
   if (onDuplicate === "overwrite" && replaceTripId) {
-    deleteTrip(replaceTripId);
+    await deleteTrip(replaceTripId);
   }
 
   // The pre-check above is skipped when the client already resolved a duplicate (onDuplicate set)
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
   // creates that both pass the pre-check (#121).
   let trip;
   try {
-    trip = createTripWithLocations({
+    trip = await createTripWithLocations({
       name: tripName,
       sourceUrl: url,
       startDate,

@@ -10,7 +10,7 @@ export default async function TripPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const trip = getTripWithDetails(id);
+  const trip = await getTripWithDetails(id);
   if (!trip) notFound();
   return <TripClient trip={trip} />;
 }
