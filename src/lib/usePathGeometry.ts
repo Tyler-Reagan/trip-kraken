@@ -28,7 +28,7 @@ export function usePathGeometry(
   tripId: string | null,
   days: DerivedDay[],
   roadProfile: RoadProfile,
-  journeyRoadKinds: JourneyRoadKind[]
+  journeyRoadKinds: JourneyRoadKind[],
 ): PathGeometryMap {
   const held = useRef<Map<string, Path[] | null>>(new Map());
   const inFlight = useRef<Set<string>>(new Set());
@@ -71,23 +71,33 @@ export function usePathGeometry(
         const res = await fetch(`/api/trips/${tripId}/path-geometry`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pairs: missing.map(({ from, to }) => ({ from, to })) }),
+          body: JSON.stringify({
+            pairs: missing.map(({ from, to }) => ({ from, to })),
+          }),
         });
         if (!res.ok) throw new Error(`path-geometry: HTTP ${res.status}`);
-        const { results } = (await res.json()) as { results: (Path[] | null)[] };
+        const { results } = (await res.json()) as {
+          results: (Path[] | null)[];
+        };
         if (!alive.current) return;
 
         // A fresh Map so the value's identity changes with its contents — consumers hold it in a
         // `useMemo` dependency list, which compares by identity.
         const next = new Map(held.current);
-        missing.forEach((pair, i) => next.set(pairKey(roadProfile, pair, journeyRoadKinds), results[i] ?? null));
+        missing.forEach((pair, i) =>
+          next.set(
+            pairKey(roadProfile, pair, journeyRoadKinds),
+            results[i] ?? null,
+          ),
+        );
         held.current = next;
         bump((n) => n + 1);
       } catch {
         // The canvas already drew every one of these pairs straight (§7), so a failed lookup costs
         // fidelity and never the map. Leaving the keys unheld lets a later render ask again.
       } finally {
-        for (const pair of missing) inFlight.current.delete(pairKey(roadProfile, pair, journeyRoadKinds));
+        for (const pair of missing)
+          inFlight.current.delete(pairKey(roadProfile, pair, journeyRoadKinds));
       }
     })();
   }, [tripId, days, roadProfile, journeyRoadKinds]);
@@ -107,7 +117,9 @@ export interface PathGeometryContextValue {
   roadProfile: RoadProfile;
 }
 
-const PathGeometryContext = createContext<PathGeometryContextValue | null>(null);
+const PathGeometryContext = createContext<PathGeometryContextValue | null>(
+  null,
+);
 
 export const PathGeometryProvider = PathGeometryContext.Provider;
 
@@ -115,6 +127,9 @@ export const PathGeometryProvider = PathGeometryContext.Provider;
  * silently-empty map would be a bug worth surfacing loudly rather than degrading quietly. */
 export function usePathGeometryContext(): PathGeometryContextValue {
   const ctx = useContext(PathGeometryContext);
-  if (!ctx) throw new Error("usePathGeometryContext: no PathGeometryProvider above this component");
+  if (!ctx)
+    throw new Error(
+      "usePathGeometryContext: no PathGeometryProvider above this component",
+    );
   return ctx;
 }

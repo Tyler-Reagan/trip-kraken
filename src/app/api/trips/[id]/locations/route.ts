@@ -5,11 +5,12 @@ import { enqueueLocationEnrichment } from "@/lib/enrichmentQueue";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: tripId } = await params;
   const body = await req.json();
-  const { name, address, lat, lng, placeId, rating, reviewCount, categories } = body;
+  const { name, address, lat, lng, placeId, rating, reviewCount, categories } =
+    body;
 
   if (!name) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
@@ -29,7 +30,10 @@ export async function POST(
   let inlinePhone: string | null = null;
   let inlineOpenTime: string | null = null;
   let inlineCloseTime: string | null = null;
-  let inlineHoursJson: Record<string, { open: string; close: string | null }> | null = null;
+  let inlineHoursJson: Record<
+    string,
+    { open: string; close: string | null }
+  > | null = null;
   let inlineRating: number | null = rating ?? null;
   let inlineReviewCount: number | null = reviewCount ?? null;
   let inlineCategories: string[] | null = categories ?? null;

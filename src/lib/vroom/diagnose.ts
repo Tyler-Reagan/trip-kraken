@@ -14,7 +14,12 @@
 
 import type { LocationInput, Unplaced, UnplacedDiagnosis } from "@/lib/solver";
 import { postVroomPlan } from "@/lib/vroom/client";
-import { buildVroomPlanRequest, diagnosisReason, parseVroomViolations, planProbeRounds } from "@/lib/vroom/plan";
+import {
+  buildVroomPlanRequest,
+  diagnosisReason,
+  parseVroomViolations,
+  planProbeRounds,
+} from "@/lib/vroom/plan";
 import type { VroomRequest, VroomSolution } from "@/lib/vroom/wire";
 
 /**
@@ -26,28 +31,42 @@ export async function diagnoseUnplaced(
   request: VroomRequest,
   solution: VroomSolution,
   unplaced: Unplaced[],
-  matrixPoints: LocationInput[]
+  matrixPoints: LocationInput[],
 ): Promise<Unplaced[]> {
   // job.id is the Location's index in matrixPoints — the single bijection request.ts built the
   // whole request over, read back the other way.
   const jobIdOf = new Map(matrixPoints.map((p, i) => [p.id, i]));
-  const probeable = unplaced.filter((u) => u.code === "solver" && jobIdOf.has(u.locationId));
+  const probeable = unplaced.filter(
+    (u) => u.code === "solver" && jobIdOf.has(u.locationId),
+  );
   if (probeable.length === 0) return unplaced;
 
-  const rounds = planProbeRounds(request, solution, probeable.map((u) => jobIdOf.get(u.locationId)!));
+  const rounds = planProbeRounds(
+    request,
+    solution,
+    probeable.map((u) => jobIdOf.get(u.locationId)!),
+  );
   const findings = new Map<number, UnplacedDiagnosis>();
 
   // Sequential, not parallel: rounds are one call for a real Trip, and a diagnostic has no claim
   // on concurrency against the service that just did the actual work.
   for (const round of rounds) {
-    const planSolution = await postVroomPlan(buildVroomPlanRequest(request, solution, round));
+    const planSolution = await postVroomPlan(
+      buildVroomPlanRequest(request, solution, round),
+    );
     if (!planSolution) break; // the pass is unavailable, not just unlucky — later rounds would fail too
-    for (const [jobId, diagnosis] of parseVroomViolations(planSolution, round)) findings.set(jobId, diagnosis);
+    for (const [jobId, diagnosis] of parseVroomViolations(planSolution, round))
+      findings.set(jobId, diagnosis);
   }
   if (findings.size === 0) return unplaced;
 
   return unplaced.map((u) => {
-    const diagnosis = u.code === "solver" ? findings.get(jobIdOf.get(u.locationId) ?? -1) : undefined;
-    return diagnosis ? { ...u, diagnosis, reason: diagnosisReason(diagnosis) } : u;
+    const diagnosis =
+      u.code === "solver"
+        ? findings.get(jobIdOf.get(u.locationId) ?? -1)
+        : undefined;
+    return diagnosis
+      ? { ...u, diagnosis, reason: diagnosisReason(diagnosis) }
+      : u;
   });
 }

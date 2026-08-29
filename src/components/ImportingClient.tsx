@@ -29,7 +29,9 @@ export default function ImportingClient({ tripId }: { tripId: string }) {
         const res = await fetch(`/api/trips/${tripId}`);
         if (res.ok) {
           const trip: TripWithDetails = await res.json();
-          const anyPending = trip.locations.some((l) => l.enrichmentStatus === "pending");
+          const anyPending = trip.locations.some(
+            (l) => l.enrichmentStatus === "pending",
+          );
           if (!anyPending) return done();
         }
       } catch {
@@ -53,7 +55,9 @@ export default function ImportingClient({ tripId }: { tripId: string }) {
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 text-center px-4">
       <Spinner />
-      <p className="text-body text-sub">Fetching details for your imported places…</p>
+      <p className="text-body text-sub">
+        Fetching details for your imported places…
+      </p>
       {phase === "stuck" && (
         <button
           onClick={() => router.replace(`/trips/${tripId}?imported=1`)}
@@ -74,8 +78,19 @@ function Spinner() {
       fill="none"
       viewBox="0 0 24 24"
     >
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v8H4z"
+      />
     </svg>
   );
 }

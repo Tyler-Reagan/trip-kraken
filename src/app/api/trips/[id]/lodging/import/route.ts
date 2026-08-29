@@ -9,14 +9,15 @@ import { parseBookingConfirmation } from "@/lib/bookingImport";
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: tripId } = await params;
   const body = await req.json();
   const text = typeof body?.text === "string" ? body.text : "";
 
   const parsed = parseBookingConfirmation(text);
-  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  if (!parsed.ok)
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
 
   try {
     const trip = await importBookingLodging(tripId, parsed.booking);

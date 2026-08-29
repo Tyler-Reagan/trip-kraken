@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getLocationCoords, getTripWithDetails } from "@/lib/db";
-import { getDiscoveryProvider, modeForScope, scoreAndSort } from "@/lib/discovery";
+import {
+  getDiscoveryProvider,
+  modeForScope,
+  scoreAndSort,
+} from "@/lib/discovery";
 import { computeRoutePolyline } from "@/lib/googleRoutesProvider";
 import { describeJourney } from "@/lib/travelCostRegistry";
 import { encodePolyline } from "@/lib/polyline";
@@ -41,9 +45,13 @@ function flattenPathGeometry(paths: Path[]): Point[] {
  * `osm-japan` with a single straight-line walking Path — no better a corridor than Google's own
  * fallback below, which at least follows real roads.
  */
-async function japanRailCorridorPolyline(from: Point, to: Point): Promise<string | null> {
+async function japanRailCorridorPolyline(
+  from: Point,
+  to: Point,
+): Promise<string | null> {
   const paths = await describeJourney(from, to, ["rail"]);
-  if (!paths?.length || paths[0].travelCost.answeredBy !== "osm-japan") return null;
+  if (!paths?.length || paths[0].travelCost.answeredBy !== "osm-japan")
+    return null;
   if (!paths.some((p) => p.kind === "rail" && p.geometry?.length)) return null;
   const coords = flattenPathGeometry(paths);
   return coords.length >= 2 ? encodePolyline(coords) : null;
@@ -60,7 +68,11 @@ async function japanRailCorridorPolyline(from: Point, to: Point): Promise<string
  * also for this corridor. ADR-0009 leaves polyline computation to the caller; this is that caller
  * policy. Returns null only when no kind yields a corridor.
  */
-async function corridorPolyline(from: Point, to: Point, primary: PathKind): Promise<string | null> {
+async function corridorPolyline(
+  from: Point,
+  to: Point,
+  primary: PathKind,
+): Promise<string | null> {
   const japan = await japanRailCorridorPolyline(from, to);
   if (japan) return japan;
 
@@ -83,7 +95,7 @@ async function corridorPolyline(from: Point, to: Point, primary: PathKind): Prom
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: tripId } = await params;
   const trip = await getTripWithDetails(tripId);
@@ -102,7 +114,10 @@ export async function GET(
     return NextResponse.json({ error: "q is required" }, { status: 400 });
   }
   if (!fromId || !toId) {
-    return NextResponse.json({ error: "from and to are required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "from and to are required" },
+      { status: 400 },
+    );
   }
 
   const from = await getLocationCoords(tripId, fromId);
@@ -110,13 +125,28 @@ export async function GET(
   if (!from || !to) {
     return NextResponse.json({ error: "Location not found" }, { status: 404 });
   }
-  if (from.lat === null || from.lng === null || to.lat === null || to.lng === null) {
-    return NextResponse.json({ error: "Both locations must have coordinates" }, { status: 400 });
+  if (
+    from.lat === null ||
+    from.lng === null ||
+    to.lat === null ||
+    to.lng === null
+  ) {
+    return NextResponse.json(
+      { error: "Both locations must have coordinates" },
+      { status: 400 },
+    );
   }
 
   const provider = getDiscoveryProvider("google");
-  if (!provider?.modes.includes(modeForScope({ kind: "route", polyline: "", origin: { lat: 0, lng: 0 } }))) {
-    return NextResponse.json({ error: "Along-route discovery unavailable" }, { status: 500 });
+  if (
+    !provider?.modes.includes(
+      modeForScope({ kind: "route", polyline: "", origin: { lat: 0, lng: 0 } }),
+    )
+  ) {
+    return NextResponse.json(
+      { error: "Along-route discovery unavailable" },
+      { status: 500 },
+    );
   }
 
   try {
@@ -126,14 +156,21 @@ export async function GET(
       // Was resolvePrimaryPathKind(trip.allowedPathKinds) — that column is deleted (ADR-0024) and
       // always resolved to "rail" in practice anyway (no UI ever set it), so this is
       // behaviour-identical.
-      "rail"
+      "rail",
     );
     if (!polyline) {
-      return NextResponse.json({ error: "No route between these stops" }, { status: 422 });
+      return NextResponse.json(
+        { error: "No route between these stops" },
+        { status: 422 },
+      );
     }
     const places = await provider.search({
       query: q,
-      scope: { kind: "route", polyline, origin: { lat: from.lat, lng: from.lng } },
+      scope: {
+        kind: "route",
+        polyline,
+        origin: { lat: from.lat, lng: from.lng },
+      },
       limit,
       openNow,
     });

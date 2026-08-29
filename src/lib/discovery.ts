@@ -50,9 +50,12 @@ export interface DiscoveryProvider {
 /** The mode a scope exercises — for gating a query against `provider.modes`. */
 export function modeForScope(scope: DiscoveryScope): DiscoveryMode {
   switch (scope.kind) {
-    case "anchor": return "anchored";
-    case "none":   return "unanchored";
-    case "route":  return "alongRoute";
+    case "anchor":
+      return "anchored";
+    case "none":
+      return "unanchored";
+    case "route":
+      return "alongRoute";
   }
 }
 
@@ -76,16 +79,29 @@ const googleProvider: DiscoveryProvider = {
         // is a pure in-process computation (no extra API calls).
         return places.map((p) =>
           p.lat !== null && p.lng !== null
-            ? { ...p, distanceMeters: Math.round(haversineMeters({ lat: scope.lat, lng: scope.lng }, { lat: p.lat, lng: p.lng })) }
-            : p
+            ? {
+                ...p,
+                distanceMeters: Math.round(
+                  haversineMeters(
+                    { lat: scope.lat, lng: scope.lng },
+                    { lat: p.lat, lng: p.lng },
+                  ),
+                ),
+              }
+            : p,
         );
       }
       case "none":
-        if (!q.query) throw new Error("query is required for unanchored discovery");
+        if (!q.query)
+          throw new Error("query is required for unanchored discovery");
         return searchText(q.query, { limit: q.limit, openNow: q.openNow });
       case "route":
-        if (!q.query) throw new Error("query is required for along-route discovery");
-        return searchAlongRoute(q.query, scope.polyline, scope.origin, { limit: q.limit, openNow: q.openNow });
+        if (!q.query)
+          throw new Error("query is required for along-route discovery");
+        return searchAlongRoute(q.query, scope.polyline, scope.origin, {
+          limit: q.limit,
+          openNow: q.openNow,
+        });
     }
   },
 };
@@ -99,7 +115,9 @@ export function inJapan(lat: number, lng: number): boolean {
 
 const PROVIDERS: readonly DiscoveryProvider[] = [googleProvider];
 
-export function getDiscoveryProvider(id: string): DiscoveryProvider | undefined {
+export function getDiscoveryProvider(
+  id: string,
+): DiscoveryProvider | undefined {
   return PROVIDERS.find((p) => p.id === id);
 }
 
@@ -123,16 +141,20 @@ export function listDiscoveryProviders(): readonly DiscoveryProvider[] {
  */
 export function scoreAndSort(
   places: NearbyPlace[],
-  dayCategories: Set<string> = new Set()
+  dayCategories: Set<string> = new Set(),
 ): NearbyPlace[] {
   function score(p: NearbyPlace): number {
     const ratingScore = p.rating !== null ? (p.rating / 5) * 60 : 0;
-    const reviewBonus = p.reviewCount !== null ? Math.min(p.reviewCount / 1000, 1) * 20 : 0;
+    const reviewBonus =
+      p.reviewCount !== null ? Math.min(p.reviewCount / 1000, 1) * 20 : 0;
     const diversityBonus =
-      dayCategories.size > 0 && p.categories.some((c) => !dayCategories.has(c)) ? 20 : 0;
+      dayCategories.size > 0 && p.categories.some((c) => !dayCategories.has(c))
+        ? 20
+        : 0;
     return ratingScore + reviewBonus + diversityBonus;
   }
-  const byScore = (list: NearbyPlace[]) => [...list].sort((a, b) => score(b) - score(a));
+  const byScore = (list: NearbyPlace[]) =>
+    [...list].sort((a, b) => score(b) - score(a));
 
   const withDetour = places.filter((p) => p.detourMeters !== null);
   if (withDetour.length === 0) return byScore(places);
@@ -141,7 +163,8 @@ export function scoreAndSort(
   const min = Math.min(...withDetour.map((p) => p.detourMeters!));
   const max = Math.max(...withDetour.map((p) => p.detourMeters!));
   const span = max - min;
-  const bucketOf = (d: number) => (span === 0 ? 0 : Math.min(2, Math.floor(((d - min) / span) * 3)));
+  const bucketOf = (d: number) =>
+    span === 0 ? 0 : Math.min(2, Math.floor(((d - min) / span) * 3));
   const raw: NearbyPlace[][] = [[], [], []];
   for (const p of withDetour) raw[bucketOf(p.detourMeters!)].push(p);
   const buckets = raw.map(byScore).filter((b) => b.length > 0);

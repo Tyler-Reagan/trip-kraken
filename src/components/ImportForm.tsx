@@ -14,14 +14,21 @@ export default function ImportForm() {
   const [error, setError] = useState<string | null>(null);
   // Set when the server recognizes `url`'s map ID from an earlier import (#119 follow-up) — the
   // form parks here instead of silently creating another near-duplicate trip.
-  const [duplicate, setDuplicate] = useState<{ existingTrips: DuplicateTrip[]; suggestedName: string } | null>(null);
+  const [duplicate, setDuplicate] = useState<{
+    existingTrips: DuplicateTrip[];
+    suggestedName: string;
+  } | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
   function clearDuplicate() {
     setDuplicate(null);
   }
 
-  async function submitImport(overrides?: { onDuplicate?: "rename" | "overwrite"; replaceTripId?: string; name?: string }) {
+  async function submitImport(overrides?: {
+    onDuplicate?: "rename" | "overwrite";
+    replaceTripId?: string;
+    name?: string;
+  }) {
     setError(null);
     setLoading(true);
     try {
@@ -33,14 +40,21 @@ export default function ImportForm() {
           name: (overrides?.name ?? name).trim() || undefined,
           startDate,
           endDate,
-          ...(overrides?.onDuplicate ? { onDuplicate: overrides.onDuplicate } : {}),
-          ...(overrides?.replaceTripId ? { replaceTripId: overrides.replaceTripId } : {}),
+          ...(overrides?.onDuplicate
+            ? { onDuplicate: overrides.onDuplicate }
+            : {}),
+          ...(overrides?.replaceTripId
+            ? { replaceTripId: overrides.replaceTripId }
+            : {}),
         }),
       });
       const data = await res.json();
 
       if (res.status === 409 && data.duplicate) {
-        setDuplicate({ existingTrips: data.existingTrips, suggestedName: data.suggestedName });
+        setDuplicate({
+          existingTrips: data.existingTrips,
+          suggestedName: data.suggestedName,
+        });
         setRenameValue(data.suggestedName);
         setLoading(false);
         return;
@@ -78,15 +92,22 @@ export default function ImportForm() {
   function handleOverwrite() {
     if (!duplicate) return;
     const mostRecent = duplicate.existingTrips[0];
-    submitImport({ onDuplicate: "overwrite", replaceTripId: mostRecent.id, name: name.trim() || mostRecent.name });
+    submitImport({
+      onDuplicate: "overwrite",
+      replaceTripId: mostRecent.id,
+      name: name.trim() || mostRecent.name,
+    });
   }
 
   return (
     <div className="card p-6 space-y-5 h-full">
       <div className="space-y-1">
-        <h2 className="text-lg font-semibold text-ink">Import from Google My Maps</h2>
+        <h2 className="text-lg font-semibold text-ink">
+          Import from Google My Maps
+        </h2>
         <p className="text-sm text-sub">
-          Already have a published map? Bring its places in with exact coordinates.
+          Already have a published map? Bring its places in with exact
+          coordinates.
         </p>
       </div>
 
@@ -101,38 +122,70 @@ export default function ImportForm() {
             required
             placeholder="https://www.google.com/maps/d/viewer?mid=..."
             value={url}
-            onChange={(e) => { setUrl(e.target.value); clearDuplicate(); }}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              clearDuplicate();
+            }}
             className="input"
           />
         </div>
 
         <div className="space-y-1.5">
           <label htmlFor="name" className="text-sm font-medium text-ink">
-            Trip name{" "}
-            <span className="text-faint font-normal">(optional)</span>
+            Trip name <span className="text-faint font-normal">(optional)</span>
           </label>
           <input
             id="name"
             type="text"
             placeholder="Tokyo week"
             value={name}
-            onChange={(e) => { setName(e.target.value); clearDuplicate(); }}
+            onChange={(e) => {
+              setName(e.target.value);
+              clearDuplicate();
+            }}
             className="input"
           />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label htmlFor="import-start" className="text-sm font-medium text-ink">
+            <label
+              htmlFor="import-start"
+              className="text-sm font-medium text-ink"
+            >
               Start date
             </label>
-            <input id="import-start" type="date" required value={startDate} onChange={(e) => { setStartDate(e.target.value); clearDuplicate(); }} className="input" />
+            <input
+              id="import-start"
+              type="date"
+              required
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                clearDuplicate();
+              }}
+              className="input"
+            />
           </div>
           <div className="space-y-1.5">
-            <label htmlFor="import-end" className="text-sm font-medium text-ink">
+            <label
+              htmlFor="import-end"
+              className="text-sm font-medium text-ink"
+            >
               End date
             </label>
-            <input id="import-end" type="date" required value={endDate} min={startDate || undefined} onChange={(e) => { setEndDate(e.target.value); clearDuplicate(); }} className="input" />
+            <input
+              id="import-end"
+              type="date"
+              required
+              value={endDate}
+              min={startDate || undefined}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                clearDuplicate();
+              }}
+              className="input"
+            />
           </div>
         </div>
 
@@ -148,8 +201,8 @@ export default function ImportForm() {
           </a>
           , add your places, then set it to{" "}
           <strong className="text-ink">Anyone with the link can view</strong>{" "}
-          and paste the URL here.
-          Coordinates are embedded in the map — no extra processing needed.
+          and paste the URL here. Coordinates are embedded in the map — no extra
+          processing needed.
         </p>
 
         {error && (
@@ -198,8 +251,19 @@ function Spinner() {
       fill="none"
       viewBox="0 0 24 24"
     >
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v8H4z"
+      />
     </svg>
   );
 }

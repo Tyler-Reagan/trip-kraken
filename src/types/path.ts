@@ -25,12 +25,20 @@ import type { Point } from "@/lib/geo";
  * model (a ferry, a funicular) — distinct from the absence of `kind` on `UnknownPath`, which
  * means no route was computed at all. The same vocabulary a Trip's Allowed kinds are drawn from:
  * chosen per Trip, reported per Path. */
-export type PathKind = "rail" | "bus" | "walking" | "driving" | "bicycle" | "other";
+export type PathKind =
+  "rail" | "bus" | "walking" | "driving" | "bicycle" | "other";
 
 /** Every `PathKind`, in one place — the terminal registry entry (ADR-0024 §4) declares this as
  * its competence, since a straight line can stand in for any kind's cost. Not an ordering or
  * precedence; keep in sync with the `PathKind` union above by construction, not by convention. */
-export const ALL_PATH_KINDS: readonly PathKind[] = ["rail", "bus", "walking", "driving", "bicycle", "other"];
+export const ALL_PATH_KINDS: readonly PathKind[] = [
+  "rail",
+  "bus",
+  "walking",
+  "driving",
+  "bicycle",
+  "other",
+];
 
 /** Which OSRM profile answers a Trip's road cells (ADR-0024, amended 2026-08-11) — a subtype of
  * `PathKind`, not a separate vocabulary, so folding it into a composition request
@@ -77,9 +85,15 @@ export function makeTravelCost(
   distanceMeters: number,
   durationSeconds: number,
   basisOfCost: BasisOfCost,
-  answeredBy: ProviderId
+  answeredBy: ProviderId,
 ): TravelCost {
-  return { distanceMeters, durationSeconds, basisOfCost, answeredBy, costAsMinutes: durationSeconds / 60 };
+  return {
+    distanceMeters,
+    durationSeconds,
+    basisOfCost,
+    answeredBy,
+    costAsMinutes: durationSeconds / 60,
+  };
 }
 
 /**
@@ -94,7 +108,9 @@ export function makeTravelCost(
  * (ADR-0018 §1) — this type governs *persistence*, not use. Do not widen it to allow caching
  * later: a matrix cache is legal only for the cells this type already excludes Google from.
  */
-export type PersistableTravelCost = TravelCost & { answeredBy: Exclude<ProviderId, "google"> };
+export type PersistableTravelCost = TravelCost & {
+  answeredBy: Exclude<ProviderId, "google">;
+};
 
 export function isPersistable(cost: TravelCost): cost is PersistableTravelCost {
   return cost.answeredBy !== "google";
@@ -160,17 +176,32 @@ export type RailPath = PathBase & {
   operator?: Operator;
   jrPassSupplementRequired?: boolean;
 };
-export type BusPath = PathBase & { kind: "bus"; lineName: string; operator?: Operator };
+export type BusPath = PathBase & {
+  kind: "bus";
+  lineName: string;
+  operator?: Operator;
+};
 /** `lineName` is optional here alone: `other` is travel we deliberately don't model, and a ferry
  * or funicular way in OSM routinely carries no name at all. The concept applies but the datum is
  * often unknown — the same distinction that keeps `operator` optional on `rail`/`bus`. On those
  * kinds a missing name is a data defect worth failing on; here it is normal (#149 grill). */
-export type OtherPath = PathBase & { kind: "other"; lineName?: string; operator?: Operator };
+export type OtherPath = PathBase & {
+  kind: "other";
+  lineName?: string;
+  operator?: Operator;
+};
 export type WalkingPath = PathBase & { kind: "walking" };
 export type DrivingPath = PathBase & { kind: "driving"; operator?: Operator };
 export type BicyclePath = PathBase & { kind: "bicycle"; operator?: Operator };
 
-export type Path = UnknownPath | RailPath | BusPath | OtherPath | WalkingPath | DrivingPath | BicyclePath;
+export type Path =
+  | UnknownPath
+  | RailPath
+  | BusPath
+  | OtherPath
+  | WalkingPath
+  | DrivingPath
+  | BicyclePath;
 
 export function kindOf(path: Path): PathKind | undefined {
   return path.kind;
@@ -179,10 +210,14 @@ export function kindOf(path: Path): PathKind | undefined {
 export const isRailPath = (p: Path): p is RailPath => p.kind === "rail";
 export const isBusPath = (p: Path): p is BusPath => p.kind === "bus";
 export const isOtherPath = (p: Path): p is OtherPath => p.kind === "other";
-export const isWalkingPath = (p: Path): p is WalkingPath => p.kind === "walking";
-export const isDrivingPath = (p: Path): p is DrivingPath => p.kind === "driving";
-export const isBicyclePath = (p: Path): p is BicyclePath => p.kind === "bicycle";
-export const isUnknownPath = (p: Path): p is UnknownPath => p.kind === undefined;
+export const isWalkingPath = (p: Path): p is WalkingPath =>
+  p.kind === "walking";
+export const isDrivingPath = (p: Path): p is DrivingPath =>
+  p.kind === "driving";
+export const isBicyclePath = (p: Path): p is BicyclePath =>
+  p.kind === "bicycle";
+export const isUnknownPath = (p: Path): p is UnknownPath =>
+  p.kind === undefined;
 
 /**
  * What a whole **Journey** costs: the sum of its Paths' costs (ADR-0032). Exact rather than
@@ -225,12 +260,23 @@ export function journeyCost(paths: Path[]): TravelCost | undefined {
     const cost = path.travelCost;
     distanceMeters += cost.distanceMeters;
     durationSeconds += cost.durationSeconds;
-    const routedness = BASIS_ROUTEDNESS[cost.basisOfCost] - BASIS_ROUTEDNESS[representative.basisOfCost];
-    if (routedness > 0 || (routedness === 0 && cost.durationSeconds > representative.durationSeconds)) {
+    const routedness =
+      BASIS_ROUTEDNESS[cost.basisOfCost] -
+      BASIS_ROUTEDNESS[representative.basisOfCost];
+    if (
+      routedness > 0 ||
+      (routedness === 0 &&
+        cost.durationSeconds > representative.durationSeconds)
+    ) {
       representative = cost;
     }
   }
-  return makeTravelCost(distanceMeters, durationSeconds, representative.basisOfCost, representative.answeredBy);
+  return makeTravelCost(
+    distanceMeters,
+    durationSeconds,
+    representative.basisOfCost,
+    representative.answeredBy,
+  );
 }
 
 /**

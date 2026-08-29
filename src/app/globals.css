@@ -17,7 +17,8 @@
     --sub: #52525b;
     --faint: #6b6b70; /* AA: ~4.8:1 on canvas, 5.3:1 on white — meta text is informational */
     --ghost: #c9c9cf; /* decorative only (drag handle, disabled) */
-    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 14px rgba(0, 0, 0, 0.05);
+    --card-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 14px rgba(0, 0, 0, 0.05);
   }
 
   .dark {
@@ -31,7 +32,8 @@
     --sub: #a8a8ad;
     --faint: #8a8a90; /* AA: ~4.6:1 on surface-2, 5:1 on surface — meta text is informational */
     --ghost: #4b4b52; /* decorative only (drag handle, disabled) */
-    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --card-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   }
 
   body {
@@ -69,8 +71,12 @@
     border: 1px solid var(--border-strong);
     --tw-ring-offset-color: var(--canvas);
   }
-  .btn-secondary:hover:not(:disabled) { background: var(--surface-3); }
-  .btn-secondary:active:not(:disabled) { background: var(--surface-2); }
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--surface-3);
+  }
+  .btn-secondary:active:not(:disabled) {
+    background: var(--surface-2);
+  }
 
   .btn-ghost {
     @apply rounded-lg px-3 py-1.5 transition-colors text-sm
@@ -79,8 +85,12 @@
     color: var(--sub);
     --tw-ring-offset-color: var(--canvas);
   }
-  .btn-ghost:hover { background: var(--surface-2); }
-  .btn-ghost:active { background: var(--surface-3); }
+  .btn-ghost:hover {
+    background: var(--surface-2);
+  }
+  .btn-ghost:active {
+    background: var(--surface-3);
+  }
 
   .input {
     @apply w-full rounded-lg px-3 py-2 text-sm
@@ -89,16 +99,25 @@
     color: var(--ink);
     border: 1px solid var(--border-strong);
   }
-  .input::placeholder { color: var(--faint); }
+  .input::placeholder {
+    color: var(--faint);
+  }
 
   /* Row-action affordances: visible by default (so touch has a path to them at all), faded
      until hover/focus only on devices that actually have a hovering pointer — a bare `sm:`
      breakpoint would wrongly hide them on touch tablets wide enough to hit that breakpoint. */
-  .hover-reveal { opacity: 1; }
+  .hover-reveal {
+    opacity: 1;
+  }
   @media (hover: hover) {
-    .hover-reveal { opacity: 0; transition: opacity 150ms; }
+    .hover-reveal {
+      opacity: 0;
+      transition: opacity 150ms;
+    }
     .group:hover .hover-reveal,
-    .hover-reveal:focus-within { opacity: 1; }
+    .hover-reveal:focus-within {
+      opacity: 1;
+    }
   }
 
   /* Type scale (design-roadmap.md Phase c, typography-handoff.md) — named roles, each a

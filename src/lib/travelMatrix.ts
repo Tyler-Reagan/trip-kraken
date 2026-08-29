@@ -54,12 +54,15 @@ export interface MatrixEntry {
 export async function composeTravelMatrix(
   entries: readonly MatrixEntry[],
   points: Point[],
-  request: TravelMatrixRequest
+  request: TravelMatrixRequest,
 ): Promise<TravelCost[][]> {
   const n = points.length;
-  const matrix: MatrixCell[][] = Array.from({ length: n }, () => new Array(n).fill(null));
+  const matrix: MatrixCell[][] = Array.from({ length: n }, () =>
+    new Array(n).fill(null),
+  );
 
-  const isComplete = () => matrix.every((row) => row.every((cell) => cell !== null));
+  const isComplete = () =>
+    matrix.every((row) => row.every((cell) => cell !== null));
 
   for (const entry of entries) {
     if (isComplete()) break;
@@ -95,9 +98,11 @@ export async function composeTravelMatrix(
   return matrix.map((row, i) =>
     row.map((cell, j) => {
       if (cell === null) {
-        throw new Error(`composeTravelMatrix: no terminal provider filled cell (${i},${j})`);
+        throw new Error(
+          `composeTravelMatrix: no terminal provider filled cell (${i},${j})`,
+        );
       }
       return cell;
-    })
+    }),
   );
 }

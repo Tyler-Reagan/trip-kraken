@@ -2,14 +2,32 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { DerivedDay, ScheduledStop, Lodging, Transit, Location } from "@/types";
+import type {
+  DerivedDay,
+  ScheduledStop,
+  Lodging,
+  Transit,
+  Location,
+} from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import { dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { metrosOf } from "@/lib/tripMetros";
 import { formatDuration, resolveVisitDuration } from "@/lib/visitDuration";
-import { Crosshair, GripVertical, MapPin, Route, Search, Trash2, TrainFront } from "lucide-react";
+import {
+  Crosshair,
+  GripVertical,
+  MapPin,
+  Route,
+  Search,
+  Trash2,
+  TrainFront,
+} from "lucide-react";
 import { dayDropId } from "./DayNavigator";
 import { usePathGeometryContext } from "@/lib/usePathGeometry";
 import { dayChainEntries, journeyRoadKindFor, pairKey } from "@/lib/pathPairs";
@@ -32,15 +50,23 @@ function formatHoursSubtext(loc: Location, dayOfWeek: number): string {
     return `${entry.open}–${entry.close ?? "?"}`;
   }
   if (!loc.openTime && !loc.closeTime) return "No hours";
-  if (loc.openTime === "00:00" && loc.closeTime === "23:59") return "Always open";
+  if (loc.openTime === "00:00" && loc.closeTime === "23:59")
+    return "Always open";
   return `${loc.openTime ?? "?"}–${loc.closeTime ?? "?"}`;
 }
 
-export default function DayCard({ day, draggingStop, draggingLocation, stopDragId }: Props) {
+export default function DayCard({
+  day,
+  draggingStop,
+  draggingLocation,
+  stopDragId,
+}: Props) {
   const trip = useTripStore((s) => s.trip);
   const setDayLabel = useTripStore((s) => s.setDayLabel);
   const focusMap = useTripStore((s) => s.focusMap);
-  const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
+  const setNearbySearchLocation = useTripStore(
+    (s) => s.setNearbySearchLocation,
+  );
   const [editingLabel, setEditingLabel] = useState(false);
   const [label, setLabel] = useState(day.label ?? "");
 
@@ -56,18 +82,30 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
   // Reflects what the Plan was actually built on (ADR-0023 §9, amended 2026-08-18): an unset
   // Activity still costs DEFAULT_VISIT_MINUTES in the solver, so the total must count it too, or
   // this figure would read lower than the Day the optimizer actually produced.
-  const totalMinutes = day.stops.reduce((sum, s) => sum + resolveVisitDuration(s.location.visitDuration), 0);
+  const totalMinutes = day.stops.reduce(
+    (sum, s) => sum + resolveVisitDuration(s.location.visitDuration),
+    0,
+  );
   // Unlike the total above, this stays a raw check on purpose — "Light day" is a signal about
   // durations someone actually chose, and a Day made entirely of invented defaults isn't evidence
   // of anything.
-  const anyHasDuration = day.stops.some((s) => s.location.visitDuration !== null);
-  const isLightDay = anyHasDuration && totalMinutes < LIGHT_DAY_THRESHOLD && day.stops.length > 0;
-  const nearbyAnchorLoc: Location | null = day.startAnchor ?? day.stops[0]?.location ?? null;
+  const anyHasDuration = day.stops.some(
+    (s) => s.location.visitDuration !== null,
+  );
+  const isLightDay =
+    anyHasDuration &&
+    totalMinutes < LIGHT_DAY_THRESHOLD &&
+    day.stops.length > 0;
+  const nearbyAnchorLoc: Location | null =
+    day.startAnchor ?? day.stops[0]?.location ?? null;
   // The metros this day touches, ordered by first appearance in the day's stops and uncapped
   // (#128 decision 6), read off the one shared cluster source — a badge click fits the metro
   // across the *whole* trip, not just this day's share of it (decision 2).
   const metros = (trip ? metrosOf(trip) : [])
-    .map((m) => ({ metro: m, at: day.stops.findIndex((s) => m.locationIds.has(s.location.id)) }))
+    .map((m) => ({
+      metro: m,
+      at: day.stops.findIndex((s) => m.locationIds.has(s.location.id)),
+    }))
     .filter((m) => m.at >= 0)
     .sort((a, b) => a.at - b.at)
     .map((m) => m.metro);
@@ -83,10 +121,13 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
     setDayLabel(day.date, label.trim() || null);
   }
 
-  const isDragTarget = (draggingStop !== null || draggingLocation !== null) && isOverEnd;
+  const isDragTarget =
+    (draggingStop !== null || draggingLocation !== null) && isOverEnd;
 
   return (
-    <div className={`card p-4 space-y-3 transition-all ${isDragTarget ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/20" : ""}`}>
+    <div
+      className={`card p-4 space-y-3 transition-all ${isDragTarget ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/20" : ""}`}
+    >
       {/* Day header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -96,7 +137,9 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
               style={{ backgroundColor: dayColorCss(day.dayNumber) }}
               aria-hidden
             />
-            <span className="text-base font-semibold text-ink">Day {day.dayNumber}</span>
+            <span className="text-base font-semibold text-ink">
+              Day {day.dayNumber}
+            </span>
           </span>
           <span className="text-meta text-faint shrink-0">{dateStr}</span>
           {metros.map((metro) => (
@@ -128,13 +171,23 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
               className="text-sm text-sub hover:text-ink truncate max-w-[160px] transition-colors"
               title="Click to add a label"
             >
-              {day.label || <span className="text-faint italic">Add label…</span>}
+              {day.label || (
+                <span className="text-faint italic">Add label…</span>
+              )}
             </button>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {anyHasDuration && <span className="text-numeral text-faint">{formatDuration(totalMinutes)}</span>}
-          {isLightDay && <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Light day</span>}
+          {anyHasDuration && (
+            <span className="text-numeral text-faint">
+              {formatDuration(totalMinutes)}
+            </span>
+          )}
+          {isLightDay && (
+            <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+              Light day
+            </span>
+          )}
           <span className="text-meta text-faint">
             {day.stops.length} stop{day.stops.length !== 1 ? "s" : ""}
           </span>
@@ -159,9 +212,18 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
           anchor-to-anchor connector, e.g. arrival -> check-in on a day with no scheduled stops
           yet, entirely). */}
       <ol className="space-y-1">
-        <SortableContext items={day.stops.map((s) => stopDragId(s.placement.id))} strategy={verticalListSortingStrategy}>
+        <SortableContext
+          items={day.stops.map((s) => stopDragId(s.placement.id))}
+          strategy={verticalListSortingStrategy}
+        >
           {dayChainEntries(day).map((entry, i, entries) => (
-            <Fragment key={entry.role === "stop" ? `stop-${entry.stop!.placement.id}` : entry.role}>
+            <Fragment
+              key={
+                entry.role === "stop"
+                  ? `stop-${entry.stop!.placement.id}`
+                  : entry.role
+              }
+            >
               {entry.role === "stop" ? (
                 <StopRow
                   id={stopDragId(entry.stop!.placement.id)}
@@ -172,10 +234,18 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
                   dayOfWeek={dayOfWeek}
                 />
               ) : (
-                <AnchorRow loc={entry.location as Lodging | Transit} role={entry.role} date={day.date} />
+                <AnchorRow
+                  loc={entry.location as Lodging | Transit}
+                  role={entry.role}
+                  date={day.date}
+                />
               )}
               {i < entries.length - 1 && (
-                <RouteConnector from={entry.location} to={entries[i + 1].location} date={day.date} />
+                <RouteConnector
+                  from={entry.location}
+                  to={entries[i + 1].location}
+                  date={day.date}
+                />
               )}
             </Fragment>
           ))}
@@ -189,7 +259,11 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
             : `min-h-6 ${isOverEnd ? "min-h-10" : ""}`
         } ${isOverEnd ? "bg-brand-50 dark:bg-brand-950/30 ring-1 ring-brand-300 dark:ring-brand-700" : ""}`}
       >
-        {day.stops.length === 0 && <p className="text-sm text-faint italic text-center">Drag stops here or re-optimize</p>}
+        {day.stops.length === 0 && (
+          <p className="text-sm text-faint italic text-center">
+            Drag stops here or re-optimize
+          </p>
+        )}
       </div>
     </div>
   );
@@ -198,14 +272,36 @@ export default function DayCard({ day, draggingStop, draggingLocation, stopDragI
 /** A day's projected bookend (ADR-0015, widened by ADR-0028): where you woke / sleep / dropped
  *  bags at a Lodging, or the trip's arrival/departure Transit Location. Both are derived from
  *  constraint fields, never a stored stop, so these rows are read-only anchors. */
-function AnchorRow({ loc, role, date }: { loc: Lodging | Transit; role: "start" | "end" | "checkin"; date: string }) {
-  const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
+function AnchorRow({
+  loc,
+  role,
+  date,
+}: {
+  loc: Lodging | Transit;
+  role: "start" | "end" | "checkin";
+  date: string;
+}) {
+  const setNearbySearchLocation = useTripStore(
+    (s) => s.setNearbySearchLocation,
+  );
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
   const isEdge = loc.kind === "transit";
   const subtext = isEdge
-    ? role === "start" ? "Arrive" : "Depart"
-    : role === "checkin" ? "Check-in · drop bags" : role === "start" ? "Start of day" : "Overnight";
-  const badge = isEdge ? (role === "start" ? "Arrival" : "Departure") : role === "checkin" ? "Check-in" : "Stay";
+    ? role === "start"
+      ? "Arrive"
+      : "Depart"
+    : role === "checkin"
+      ? "Check-in · drop bags"
+      : role === "start"
+        ? "Start of day"
+        : "Overnight";
+  const badge = isEdge
+    ? role === "start"
+      ? "Arrival"
+      : "Departure"
+    : role === "checkin"
+      ? "Check-in"
+      : "Stay";
 
   return (
     <li
@@ -224,10 +320,15 @@ function AnchorRow({ loc, role, date }: { loc: Lodging | Transit; role: "start" 
           {isEdge && <TrainFront className="w-3.5 h-3.5 shrink-0" />}
           {loc.name}
         </p>
-        <p className="text-meta mt-0.5 text-amber-600/80 dark:text-amber-400/80">{subtext}</p>
+        <p className="text-meta mt-0.5 text-amber-600/80 dark:text-amber-400/80">
+          {subtext}
+        </p>
       </div>
       <button
-        onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, date); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setNearbySearchLocation(loc, date);
+        }}
         disabled={loc.lat === null}
         title="Find nearby places"
         aria-label="Find nearby places"
@@ -247,16 +348,31 @@ function AnchorRow({ loc, role, date }: { loc: Lodging | Transit; role: "start" 
  *  Also where ADR-0026's self-heal (#171) surfaces: the one connector whose two ends match the
  *  last removal's healed pair shows what it costs to travel between them — the read-side half of
  *  "the gap closes" made visible, not just true underneath. */
-function RouteConnector({ from, to, date }: { from: Location; to: Location; date: string }) {
+function RouteConnector({
+  from,
+  to,
+  date,
+}: {
+  from: Location;
+  to: Location;
+  date: string;
+}) {
   const setRouteSearch = useTripStore((s) => s.setRouteSearch);
   const healedPair = useTripStore((s) => s.healedPair);
   const trip = useTripStore((s) => s.trip);
-  const setInspectedSurfacedTransit = useTripStore((s) => s.setInspectedSurfacedTransit);
+  const setInspectedSurfacedTransit = useTripStore(
+    (s) => s.setInspectedSurfacedTransit,
+  );
   const setJourneyRoadKind = useTripStore((s) => s.setJourneyRoadKind);
   const { pathGeometry, roadProfile } = usePathGeometryContext();
   if (from.lat === null || to.lat === null || !trip) return null;
 
-  const healed = healedPair && healedPair.fromLocationId === from.id && healedPair.toLocationId === to.id ? healedPair : null;
+  const healed =
+    healedPair &&
+    healedPair.fromLocationId === from.id &&
+    healedPair.toLocationId === to.id
+      ? healedPair
+      : null;
 
   const key = pairKey(
     roadProfile,
@@ -264,7 +380,7 @@ function RouteConnector({ from, to, date }: { from: Location; to: Location; date
       from: { lat: from.lat, lng: from.lng!, locationId: from.id },
       to: { lat: to.lat, lng: to.lng!, locationId: to.id },
     },
-    trip.journeyRoadKinds
+    trip.journeyRoadKinds,
   );
   const chain = pathGeometry.get(key);
 
@@ -281,7 +397,8 @@ function RouteConnector({ from, to, date }: { from: Location; to: Location; date
         >
           <Route className="w-3.5 h-3.5" />
           {formatDuration(Math.round(healed.travelCost.costAsMinutes))}
-          {healed.travelCost.basisOfCost === "straightLine" && " (straight-line)"}
+          {healed.travelCost.basisOfCost === "straightLine" &&
+            " (straight-line)"}
         </span>
       )}
       <button
@@ -308,7 +425,9 @@ function RouteConnector({ from, to, date }: { from: Location; to: Location; date
         from.id === to.id
           ? undefined
           : {
-              kind: journeyRoadKindFor(trip.journeyRoadKinds, from.id, to.id)?.kind ?? roadProfile,
+              kind:
+                journeyRoadKindFor(trip.journeyRoadKinds, from.id, to.id)
+                  ?.kind ?? roadProfile,
               onKindChange: (kind) => setJourneyRoadKind(from.id, to.id, kind),
             }
       }
@@ -325,13 +444,24 @@ interface StopRowProps {
   date: string;
 }
 
-function StopRow({ id, stop, index, dayNumber, dayOfWeek, date }: StopRowProps) {
+function StopRow({
+  id,
+  stop,
+  index,
+  dayNumber,
+  dayOfWeek,
+  date,
+}: StopRowProps) {
   const removePlacement = useTripStore((s) => s.removePlacement);
   const highlightedLocationId = useTripStore((s) => s.highlightedLocationId);
-  const setHighlightedLocationId = useTripStore((s) => s.setHighlightedLocationId);
+  const setHighlightedLocationId = useTripStore(
+    (s) => s.setHighlightedLocationId,
+  );
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
-  const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
+  const setNearbySearchLocation = useTripStore(
+    (s) => s.setNearbySearchLocation,
+  );
   const focusMap = useTripStore((s) => s.focusMap);
 
   const loc = stop.location;
@@ -339,7 +469,14 @@ function StopRow({ id, stop, index, dayNumber, dayOfWeek, date }: StopRowProps) 
   const isInspected = inspectedLocationId === loc.id;
   const highlightRef = useRef<HTMLLIElement | null>(null);
 
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
     id,
     data: { kind: "stop", stop, date, order: index },
   });
@@ -350,33 +487,50 @@ function StopRow({ id, stop, index, dayNumber, dayOfWeek, date }: StopRowProps) 
   const durText = formatDuration(resolveVisitDuration(loc.visitDuration));
 
   useEffect(() => {
-    if (isHighlighted && highlightRef.current) highlightRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (isHighlighted && highlightRef.current)
+      highlightRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
   }, [isHighlighted]);
 
   return (
     <li
-      ref={(el) => { setNodeRef(el); highlightRef.current = el; }}
+      ref={(el) => {
+        setNodeRef(el);
+        highlightRef.current = el;
+      }}
       data-inspect-anchor={loc.id}
-      style={{ transform: CSS.Transform.toString(transform), transition: transition ?? undefined }}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition: transition ?? undefined,
+      }}
       {...attributes}
       {...listeners}
       className={`group flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none touch-none
         ${isDragging ? "opacity-40" : ""}
-        ${isHighlighted
-          ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/30 border-brand-200 dark:border-brand-800"
-          : isInspected
-            ? "bg-surface-2 border-line border-line-strong"
-            : "border-transparent hover:bg-surface-2 hover:border-line-strong"
+        ${
+          isHighlighted
+            ? "ring-2 ring-brand-400 bg-brand-50 dark:bg-brand-950/30 border-brand-200 dark:border-brand-800"
+            : isInspected
+              ? "bg-surface-2 border-line border-line-strong"
+              : "border-transparent hover:bg-surface-2 hover:border-line-strong"
         }`}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("button")) return;
-        if (isHighlighted) { setHighlightedLocationId(null); return; }
+        if (isHighlighted) {
+          setHighlightedLocationId(null);
+          return;
+        }
         setInspectedLocationId(isInspected ? null : loc.id);
       }}
     >
       <span
         className="shrink-0 w-5 h-5 rounded-full text-xs flex items-center justify-center font-semibold mt-0.5"
-        style={{ backgroundColor: dayColorCss(dayNumber), color: dayTextColor(dayNumber) }}
+        style={{
+          backgroundColor: dayColorCss(dayNumber),
+          color: dayTextColor(dayNumber),
+        }}
       >
         {index + 1}
       </span>
@@ -388,31 +542,50 @@ function StopRow({ id, stop, index, dayNumber, dayOfWeek, date }: StopRowProps) 
       </span>
       <div className="flex-1 min-w-0">
         <p className="text-body truncate text-ink">{loc.name}</p>
-        <p className="text-numeral text-faint mt-0.5">{hoursText} · {durText}</p>
+        <p className="text-numeral text-faint mt-0.5">
+          {hoursText} · {durText}
+        </p>
       </div>
       <div className="shrink-0 flex items-center gap-0.5 hover-reveal transition-opacity">
         {/* Map link (#128 decision 7): flyTo this stop, opening the map if it's closed. Disabled
             without coordinates, same convention as Search beside it. */}
         <button
-          onClick={(e) => { e.stopPropagation(); focusMap({ tier: "stop", locationId: loc.id }); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            focusMap({ tier: "stop", locationId: loc.id });
+          }}
           disabled={loc.lat === null}
-          title={loc.lat === null ? "No coordinates — run Enrich first" : "Show this stop on the map"}
+          title={
+            loc.lat === null
+              ? "No coordinates — run Enrich first"
+              : "Show this stop on the map"
+          }
           aria-label="Show on map"
           className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         >
           <Crosshair className="w-4 h-4" />
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, date); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setNearbySearchLocation(loc, date);
+          }}
           disabled={loc.lat === null}
-          title={loc.lat === null ? "No coordinates — run Enrich first" : "Find nearby places anchored to this location"}
+          title={
+            loc.lat === null
+              ? "No coordinates — run Enrich first"
+              : "Find nearby places anchored to this location"
+          }
           aria-label="Find nearby places"
           className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         >
           <Search className="w-4 h-4" />
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); removePlacement(stop.placement.id); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            removePlacement(stop.placement.id);
+          }}
           title="Remove from this day (keeps the place)"
           aria-label="Remove from day"
           className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-danger-500 dark:hover:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-950/30 transition-colors"

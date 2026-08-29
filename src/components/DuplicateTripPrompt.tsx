@@ -34,17 +34,23 @@ export function DuplicateTripPrompt({
 }) {
   return (
     <div className="space-y-3 border border-line-strong rounded-lg p-3 bg-surface-2">
-      <p className="text-sm text-ink font-medium">A trip named this already exists</p>
+      <p className="text-sm text-ink font-medium">
+        A trip named this already exists
+      </p>
       <ul className="text-xs text-sub space-y-0.5">
         {existingTrips.map((t) => (
           <li key={t.id}>
-            <strong className="text-ink">{t.name}</strong> · {t.locationCount} location{t.locationCount !== 1 ? "s" : ""} · created {new Date(t.createdAt).toLocaleDateString()}
+            <strong className="text-ink">{t.name}</strong> · {t.locationCount}{" "}
+            location{t.locationCount !== 1 ? "s" : ""} · created{" "}
+            {new Date(t.createdAt).toLocaleDateString()}
           </li>
         ))}
       </ul>
 
       <div className="space-y-1.5">
-        <label htmlFor="dup-rename" className="text-xs text-faint">Create as a new trip named</label>
+        <label htmlFor="dup-rename" className="text-xs text-faint">
+          Create as a new trip named
+        </label>
         <div className="flex gap-2">
           <input
             id="dup-rename"
@@ -53,21 +59,37 @@ export function DuplicateTripPrompt({
             onChange={(e) => onRenameChange(e.target.value)}
             className="input text-sm flex-1"
           />
-          <button type="button" onClick={onConfirmRenamed} disabled={loading || !renameValue.trim()} className="btn-primary text-sm px-3 disabled:opacity-40">
+          <button
+            type="button"
+            onClick={onConfirmRenamed}
+            disabled={loading || !renameValue.trim()}
+            className="btn-primary text-sm px-3 disabled:opacity-40"
+          >
             {confirmLabel}
           </button>
         </div>
       </div>
 
       <div className="flex items-center gap-2 text-xs text-faint">
-        <span className="flex-1 border-t border-line-strong" />or<span className="flex-1 border-t border-line-strong" />
+        <span className="flex-1 border-t border-line-strong" />
+        or
+        <span className="flex-1 border-t border-line-strong" />
       </div>
 
-      <button type="button" onClick={onOverwrite} disabled={loading} className="btn-secondary text-sm w-full disabled:opacity-40">
+      <button
+        type="button"
+        onClick={onOverwrite}
+        disabled={loading}
+        className="btn-secondary text-sm w-full disabled:opacity-40"
+      >
         Replace &ldquo;{existingTrips[0].name}&rdquo; with this one
       </button>
 
-      <button type="button" onClick={onCancel} className="text-xs text-faint hover:text-ink underline underline-offset-2 w-full text-center">
+      <button
+        type="button"
+        onClick={onCancel}
+        className="text-xs text-faint hover:text-ink underline underline-offset-2 w-full text-center"
+      >
         Cancel
       </button>
     </div>

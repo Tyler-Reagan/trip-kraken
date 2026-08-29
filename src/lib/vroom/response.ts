@@ -5,7 +5,12 @@
  * commitment. Nothing downstream of this module ever sees a route, a job, or a vehicle.
  */
 
-import type { DayPlan, LocationInput, PlacementTiming, Unplaced } from "@/lib/solver";
+import type {
+  DayPlan,
+  LocationInput,
+  PlacementTiming,
+  Unplaced,
+} from "@/lib/solver";
 import type { VroomSolution } from "@/lib/vroom/wire";
 
 export interface ParsedSolution {
@@ -18,7 +23,10 @@ export interface ParsedSolution {
  * `location_index`/`job.id` bijection over — the only way to read a wire index back into a
  * `LocationInput`.
  */
-export function parseVroomSolution(solution: VroomSolution, matrixPoints: LocationInput[]): ParsedSolution {
+export function parseVroomSolution(
+  solution: VroomSolution,
+  matrixPoints: LocationInput[],
+): ParsedSolution {
   const days: DayPlan[] = solution.routes.map((route) => {
     const locationIds: string[] = [];
     const timing: PlacementTiming[] = [];
@@ -27,9 +35,16 @@ export function parseVroomSolution(solution: VroomSolution, matrixPoints: Locati
       const point = matrixPoints[step.location_index];
       if (!point) continue;
       locationIds.push(point.id);
-      timing.push({ arrival: step.arrival ?? 0, waitingSeconds: step.waiting_time ?? 0 });
+      timing.push({
+        arrival: step.arrival ?? 0,
+        waitingSeconds: step.waiting_time ?? 0,
+      });
     }
-    return { dayNumber: route.vehicle, locationIds, ...(timing.length > 0 ? { timing } : {}) };
+    return {
+      dayNumber: route.vehicle,
+      locationIds,
+      ...(timing.length > 0 ? { timing } : {}),
+    };
   });
 
   // VROOM's unassigned[] carries {id, type} and never says why — an honest "couldn't fit" rather

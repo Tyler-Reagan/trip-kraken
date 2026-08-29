@@ -20,8 +20,12 @@ export default function InspectorPopover() {
   // ADR-0036: a transfer row's station is `surfacedTransitOf`'s projection, not a database row —
   // it can't be found in `trip.locations`, so it carries its own inspected-object slot rather than
   // an id to look up. See `PathShiftRows.tsx`.
-  const inspectedSurfacedTransit = useTripStore((s) => s.inspectedSurfacedTransit);
-  const setInspectedSurfacedTransit = useTripStore((s) => s.setInspectedSurfacedTransit);
+  const inspectedSurfacedTransit = useTripStore(
+    (s) => s.inspectedSurfacedTransit,
+  );
+  const setInspectedSurfacedTransit = useTripStore(
+    (s) => s.setInspectedSurfacedTransit,
+  );
   const trip = useTripStore((s) => s.trip);
 
   const anchorId = inspectedLocationId ?? inspectedSurfacedTransit?.id ?? null;
@@ -32,12 +36,26 @@ export default function InspectorPopover() {
   // Measure the anchor after render (the focal-stack spring settles the row's final position a
   // beat later, but the anchor's neighborhood is right immediately — good enough to open at).
   useLayoutEffect(() => {
-    if (!anchorId) { setPos(null); return; }
-    const anchor = document.querySelector(`[data-inspect-anchor="${CSS.escape(anchorId)}"]`);
-    if (!anchor) { setPos(null); return; }
+    if (!anchorId) {
+      setPos(null);
+      return;
+    }
+    const anchor = document.querySelector(
+      `[data-inspect-anchor="${CSS.escape(anchorId)}"]`,
+    );
+    if (!anchor) {
+      setPos(null);
+      return;
+    }
     const rect = anchor.getBoundingClientRect();
-    const left = Math.max(MARGIN, Math.min(rect.right + 10, window.innerWidth - W - MARGIN));
-    const top = Math.max(MARGIN, Math.min(rect.top - 8, window.innerHeight - 320));
+    const left = Math.max(
+      MARGIN,
+      Math.min(rect.right + 10, window.innerWidth - W - MARGIN),
+    );
+    const top = Math.max(
+      MARGIN,
+      Math.min(rect.top - 8, window.innerHeight - 320),
+    );
     setPos({ left, top });
   }, [anchorId]);
 
@@ -46,8 +64,14 @@ export default function InspectorPopover() {
     function onDown(e: PointerEvent) {
       const target = e.target as Node;
       // Clicks on the anchor row itself already toggle the inspector — don't double-close.
-      const anchor = document.querySelector(`[data-inspect-anchor="${CSS.escape(anchorId!)}"]`);
-      if (ref.current && !ref.current.contains(target) && !(anchor && anchor.contains(target))) {
+      const anchor = document.querySelector(
+        `[data-inspect-anchor="${CSS.escape(anchorId!)}"]`,
+      );
+      if (
+        ref.current &&
+        !ref.current.contains(target) &&
+        !(anchor && anchor.contains(target))
+      ) {
         setInspectedLocationId(null);
         setInspectedSurfacedTransit(null);
       }
@@ -57,7 +81,9 @@ export default function InspectorPopover() {
   }, [anchorId, setInspectedLocationId, setInspectedSurfacedTransit]);
 
   if (!anchorId || !trip || !pos) return null;
-  const loc = inspectedSurfacedTransit ?? trip.locations.find((l) => l.id === inspectedLocationId);
+  const loc =
+    inspectedSurfacedTransit ??
+    trip.locations.find((l) => l.id === inspectedLocationId);
   if (!loc) return null;
 
   return (
@@ -69,9 +95,14 @@ export default function InspectorPopover() {
       aria-label={`Details for ${loc.name}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-semibold text-ink leading-snug">{loc.name}</p>
+        <p className="text-sm font-semibold text-ink leading-snug">
+          {loc.name}
+        </p>
         <button
-          onClick={() => { setInspectedLocationId(null); setInspectedSurfacedTransit(null); }}
+          onClick={() => {
+            setInspectedLocationId(null);
+            setInspectedSurfacedTransit(null);
+          }}
           className="text-faint hover:text-sub shrink-0 transition-colors"
           aria-label="Close inspector"
         >

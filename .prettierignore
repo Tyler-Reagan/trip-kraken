@@ -1,0 +1,12 @@
+node_modules
+.next
+out
+dist
+pnpm-lock.yaml
+db
+dev.log
+*.db
+
+# Hand-authored prose and saved artifacts — not app code
+*.md
+docs/visual-guides

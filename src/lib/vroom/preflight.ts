@@ -39,7 +39,7 @@ export function preflight(
   activities: LocationInput[],
   lodgings: LocationInput[],
   tripDates: IsoDate[],
-  edges?: { arrival?: LocationInput; departure?: LocationInput }
+  edges?: { arrival?: LocationInput; departure?: LocationInput },
 ): PreflightResult {
   const unplaced: Unplaced[] = [];
   const warnings: string[] = [];
@@ -59,13 +59,15 @@ export function preflight(
       unplaced.push({
         locationId: a.id,
         code: "ungeocoded-failed",
-        reason: "We couldn't find this place. Fix the name or set its location.",
+        reason:
+          "We couldn't find this place. Fix the name or set its location.",
       });
     } else {
       unplaced.push({
         locationId: a.id,
         code: "ungeocoded-pending",
-        reason: "Still looking this place up — try optimizing again in a moment.",
+        reason:
+          "Still looking this place up — try optimizing again in a moment.",
       });
     }
   }
@@ -74,7 +76,9 @@ export function preflight(
   // answer is to warn, not block: optimize still runs, the Day falls back to no anchor.
   for (const l of lodgings) {
     if (!hasValidCoords(l) && l.enrichmentStatus === "pending") {
-      warnings.push(`"${l.id}" is still being looked up — its days will have no anchor until it's found.`);
+      warnings.push(
+        `"${l.id}" is still being looked up — its days will have no anchor until it's found.`,
+      );
     }
   }
 
@@ -89,10 +93,14 @@ export function preflight(
   // coordinates) or "failed". Gating on "pending" left this warning dead code — a real ungeocoded
   // edge fell back silently, with nothing to tell the user why.
   if (edges?.arrival && !hasValidCoords(edges.arrival)) {
-    warnings.push(`"${edges.arrival.id}" has no coordinates — day 1 will start from lodging instead.`);
+    warnings.push(
+      `"${edges.arrival.id}" has no coordinates — day 1 will start from lodging instead.`,
+    );
   }
   if (edges?.departure && !hasValidCoords(edges.departure)) {
-    warnings.push(`"${edges.departure.id}" has no coordinates — the last day will end at lodging instead.`);
+    warnings.push(
+      `"${edges.departure.id}" has no coordinates — the last day will end at lodging instead.`,
+    );
   }
 
   // Reason: no lodging covers this area of the trip (ADR-0020's coverage detector, unchanged). No
@@ -114,7 +122,11 @@ export function preflight(
       }
       if (metro.lodgings.length === 0) {
         for (const a of metro.activities) {
-          unplaced.push({ locationId: a.id, code: "no-lodging-coverage", reason: "No lodging covers this area of the trip." });
+          unplaced.push({
+            locationId: a.id,
+            code: "no-lodging-coverage",
+            reason: "No lodging covers this area of the trip.",
+          });
         }
         return;
       }
@@ -131,7 +143,11 @@ export function preflight(
   for (const a of afterCoverage) {
     const windows = dayWindowsFor(a, tripDates);
     if (windows !== null && windows.length === 0) {
-      unplaced.push({ locationId: a.id, code: "closed-all-days", reason: "Closed on every day of the trip." });
+      unplaced.push({
+        locationId: a.id,
+        code: "closed-all-days",
+        reason: "Closed on every day of the trip.",
+      });
       continue;
     }
     placeable.push(a);

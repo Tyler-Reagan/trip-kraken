@@ -30,17 +30,26 @@ function timeToMins(hhmm: string): number {
 /** Minutes-since-midnight `[open, close|null]` for one date, or `null` if closed that day.
  * `hoursJson` (per-weekday) takes priority when present; `openTime`/`closeTime` is the fallback,
  * applied identically to every date. */
-function ruleFor(loc: LocationInput, date: IsoDate): [number, number | null] | null {
+function ruleFor(
+  loc: LocationInput,
+  date: IsoDate,
+): [number, number | null] | null {
   if (loc.hoursJson) {
     // hoursJson's keys are stringified weekday numbers, Sunday = 0 (places.ts's extractWeeklyHours)
     // — the same numbering getUTCDay() returns, so no offset is needed.
     const weekday = new Date(date + "T00:00:00Z").getUTCDay();
     const entry = loc.hoursJson[String(weekday)];
     if (!entry) return null; // absent weekday key → closed that day, emit no window
-    return [timeToMins(entry.open), entry.close == null ? null : timeToMins(entry.close)];
+    return [
+      timeToMins(entry.open),
+      entry.close == null ? null : timeToMins(entry.close),
+    ];
   }
   if (loc.openTime != null) {
-    return [timeToMins(loc.openTime), loc.closeTime == null ? null : timeToMins(loc.closeTime)];
+    return [
+      timeToMins(loc.openTime),
+      loc.closeTime == null ? null : timeToMins(loc.closeTime),
+    ];
   }
   return null;
 }
@@ -64,9 +73,13 @@ function ruleFor(loc: LocationInput, date: IsoDate): [number, number | null] | n
  *   `preflight.ts` turns this into the `closed-all-days` Unplaced reason before a job is ever built.
  * - Otherwise one window per open Trip date.
  */
-export function dayWindowsFor(loc: LocationInput, tripDates: IsoDate[]): AbsoluteWindow[] | null {
+export function dayWindowsFor(
+  loc: LocationInput,
+  tripDates: IsoDate[],
+): AbsoluteWindow[] | null {
   if (tripDates.length === 0) return null;
-  if (!loc.hoursJson && loc.openTime == null && loc.closeTime == null) return null;
+  if (!loc.hoursJson && loc.openTime == null && loc.closeTime == null)
+    return null;
 
   const windows: AbsoluteWindow[] = [];
   for (const date of tripDates) {
@@ -75,7 +88,10 @@ export function dayWindowsFor(loc: LocationInput, tripDates: IsoDate[]): Absolut
     const [openMins, closeMins] = rule;
     const dayStart = dayStartSeconds(date);
     const open = dayStart + openMins * 60;
-    const close = closeMins == null || closeMins <= openMins ? dayStart + SECONDS_PER_DAY : dayStart + closeMins * 60;
+    const close =
+      closeMins == null || closeMins <= openMins
+        ? dayStart + SECONDS_PER_DAY
+        : dayStart + closeMins * 60;
     windows.push([open, close]);
   }
   return windows;

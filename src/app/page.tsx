@@ -17,8 +17,9 @@ export default async function HomePage() {
           Turn a list into a trip
         </h1>
         <p className="text-sub max-w-xl mx-auto">
-          Start a blank trip and add places by searching Google, or import a Google
-          My Maps you already have. Trip Kraken clusters them into optimized days.
+          Start a blank trip and add places by searching Google, or import a
+          Google My Maps you already have. Trip Kraken clusters them into
+          optimized days.
         </p>
       </section>
 

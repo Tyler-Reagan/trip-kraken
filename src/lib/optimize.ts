@@ -7,7 +7,12 @@
  */
 
 import { getTripWithDetails, setPlacements } from "@/lib/db";
-import { solve, type LocationInput, type StayPlan, type Unplaced } from "@/lib/solver";
+import {
+  solve,
+  type LocationInput,
+  type StayPlan,
+  type Unplaced,
+} from "@/lib/solver";
 import type { PathKind } from "@/types/path";
 import {
   isActivity,
@@ -52,7 +57,10 @@ function toInput(l: Location): LocationInput {
   };
 }
 
-export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): Promise<OptimizeResult> {
+export async function optimizeTrip(
+  tripId: string,
+  opts: OptimizeOptions = {},
+): Promise<OptimizeResult> {
   const trip = await getTripWithDetails(tripId);
   if (!trip) throw new Error(`Trip ${tripId} not found`);
 
@@ -63,23 +71,43 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
   // The trip's two edges (ADR-0028) — at most one Location carries `arriveAt`, one `departAt`, by
   // construction (a partial unique index backs it). Both may be the same Location: a round trip
   // through one airport.
-  const arrival = trip.locations.find((l): l is Transit => isTransit(l) && l.arriveAt != null) ?? null;
-  const departure = trip.locations.find((l): l is Transit => isTransit(l) && l.departAt != null) ?? null;
-  const edgeLocations = [arrival, departure].filter((l): l is Transit => l != null);
-  const uniqueEdgeLocations = edgeLocations.filter((l, i, arr) => arr.findIndex((x) => x.id === l.id) === i);
+  const arrival =
+    trip.locations.find(
+      (l): l is Transit => isTransit(l) && l.arriveAt != null,
+    ) ?? null;
+  const departure =
+    trip.locations.find(
+      (l): l is Transit => isTransit(l) && l.departAt != null,
+    ) ?? null;
+  const edgeLocations = [arrival, departure].filter(
+    (l): l is Transit => l != null,
+  );
+  const uniqueEdgeLocations = edgeLocations.filter(
+    (l, i, arr) => arr.findIndex((x) => x.id === l.id) === i,
+  );
 
   // Lodging dates → integer night-ranges (ADR-0015): a booking checking in on day X and out on day
   // Y covers nights X..Y-1, clamped to the trip's [1, numDays]. Empty ranges (outside the trip) drop.
   const stays: StayPlan[] = [];
   for (const l of lodgings) {
     const startNight = Math.max(1, dayNumberOf(trip.startDate, l.checkInDate));
-    const endNight = Math.min(numDays, dayNumberOf(trip.startDate, l.checkOutDate) - 1);
-    if (startNight <= endNight) stays.push({ lodgingId: l.id, startNight, endNight });
+    const endNight = Math.min(
+      numDays,
+      dayNumberOf(trip.startDate, l.checkOutDate) - 1,
+    );
+    if (startNight <= endNight)
+      stays.push({ lodgingId: l.id, startNight, endNight });
   }
 
-  const inputLocations = [...activities, ...lodgings, ...uniqueEdgeLocations].map(toInput);
+  const inputLocations = [
+    ...activities,
+    ...lodgings,
+    ...uniqueEdgeLocations,
+  ].map(toInput);
   const dayBudgetMinutes =
-    typeof opts.dayBudgetHours === "number" && opts.dayBudgetHours > 0 ? opts.dayBudgetHours * 60 : undefined;
+    typeof opts.dayBudgetHours === "number" && opts.dayBudgetHours > 0
+      ? opts.dayBudgetHours * 60
+      : undefined;
 
   // The kinds this run sources cells for (ADR-0024 §3): rail and bus are always in play, and
   // exactly one road kind — the Trip's own traveler-facing selector (CONTEXT.md's "kind (Path)"
@@ -104,7 +132,7 @@ export async function optimizeTrip(tripId: string, opts: OptimizeOptions = {}): 
       locationId,
       date: addDaysIso(trip.startDate, p.dayNumber - 1),
       order,
-    }))
+    })),
   );
 
   return {

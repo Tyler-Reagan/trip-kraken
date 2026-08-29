@@ -10,7 +10,10 @@ function sitePassword(): string {
 }
 
 async function sha256Hex(message: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(message));
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(message),
+  );
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
@@ -27,7 +30,10 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 export async function verifyPassword(candidate: string): Promise<boolean> {
-  const [a, b] = await Promise.all([sha256Hex(candidate), sha256Hex(sitePassword())]);
+  const [a, b] = await Promise.all([
+    sha256Hex(candidate),
+    sha256Hex(sitePassword()),
+  ]);
   return timingSafeEqual(a, b);
 }
 
@@ -38,7 +44,9 @@ export async function sessionToken(): Promise<string> {
   return sha256Hex(`${sitePassword()}:trip-kraken-session`);
 }
 
-export async function isValidSession(token: string | undefined): Promise<boolean> {
+export async function isValidSession(
+  token: string | undefined,
+): Promise<boolean> {
   if (!token) return false;
   return timingSafeEqual(token, await sessionToken());
 }

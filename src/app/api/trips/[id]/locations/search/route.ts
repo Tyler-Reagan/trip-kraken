@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { tripExists } from "@/lib/db";
-import { getDiscoveryProvider, modeForScope, scoreAndSort } from "@/lib/discovery";
+import {
+  getDiscoveryProvider,
+  modeForScope,
+  scoreAndSort,
+} from "@/lib/discovery";
 
 /**
  * Unanchored Places text search (ADR-0009 / ADR-0010 blank-slate). Unlike the
@@ -9,7 +13,7 @@ import { getDiscoveryProvider, modeForScope, scoreAndSort } from "@/lib/discover
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: tripId } = await params;
 
@@ -30,7 +34,10 @@ export async function GET(
   // Google is the canonical unanchored provider (ADR-0009).
   const provider = getDiscoveryProvider("google");
   if (!provider?.modes.includes(modeForScope(scope))) {
-    return NextResponse.json({ error: "Unanchored discovery unavailable" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Unanchored discovery unavailable" },
+      { status: 500 },
+    );
   }
 
   try {

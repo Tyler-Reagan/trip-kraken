@@ -9,7 +9,12 @@
  * the API route already turns any thrown error into a structured 500 rather than swallowing it.
  */
 
-import type { VroomPlanRequest, VroomPlanSolution, VroomRequest, VroomSolution } from "@/lib/vroom/wire";
+import type {
+  VroomPlanRequest,
+  VroomPlanSolution,
+  VroomRequest,
+  VroomSolution,
+} from "@/lib/vroom/wire";
 
 export async function postVroom(request: VroomRequest): Promise<VroomSolution> {
   const url = process.env.VROOM_URL;
@@ -27,7 +32,9 @@ export async function postVroom(request: VroomRequest): Promise<VroomSolution> {
 
   const data = (await res.json()) as VroomSolution;
   if (data.code !== 0) {
-    throw new Error(`vroomClient: VROOM error ${data.code}${data.error ? ` — ${data.error}` : ""}`);
+    throw new Error(
+      `vroomClient: VROOM error ${data.code}${data.error ? ` — ${data.error}` : ""}`,
+    );
   }
   return data;
 }
@@ -43,7 +50,9 @@ export async function postVroom(request: VroomRequest): Promise<VroomSolution> {
  * compiler insists they handle. `postVroom` above keeps the opposite contract — the Plan itself
  * must fail loudly, never degrade silently.
  */
-export async function postVroomPlan(request: VroomPlanRequest): Promise<VroomPlanSolution | null> {
+export async function postVroomPlan(
+  request: VroomPlanRequest,
+): Promise<VroomPlanSolution | null> {
   const url = process.env.VROOM_URL;
   if (!url) return null;
 
@@ -54,12 +63,16 @@ export async function postVroomPlan(request: VroomPlanRequest): Promise<VroomPla
       body: JSON.stringify(request),
     });
     if (!res.ok) {
-      console.warn(`vroomClient: plan-mode diagnostic skipped — HTTP ${res.status}`);
+      console.warn(
+        `vroomClient: plan-mode diagnostic skipped — HTTP ${res.status}`,
+      );
       return null;
     }
     const data = (await res.json()) as VroomPlanSolution;
     if (data.code !== 0) {
-      console.warn(`vroomClient: plan-mode diagnostic skipped — VROOM error ${data.code}`);
+      console.warn(
+        `vroomClient: plan-mode diagnostic skipped — VROOM error ${data.code}`,
+      );
       return null;
     }
     return data;

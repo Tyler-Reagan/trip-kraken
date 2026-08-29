@@ -10,10 +10,10 @@ import { placeDragId } from "./DayNavigator";
 export const PRICE_LABELS = ["Free", "$", "$$", "$$$", "$$$$"];
 
 const RATING_OPTIONS = [
-  { label: "Any",  value: null },
-  { label: "3+",   value: 3    },
-  { label: "4+",   value: 4    },
-  { label: "4.5+", value: 4.5  },
+  { label: "Any", value: null },
+  { label: "3+", value: 3 },
+  { label: "4+", value: 4 },
+  { label: "4.5+", value: 4.5 },
 ] as const;
 
 // Query-text shortcuts, not API type filters — folded into the free-text query (#100).
@@ -69,7 +69,9 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
   const [radius, setRadius] = useState(1000);
   const [type, setType] = useState("");
   const [keyword, setKeyword] = useState("");
-  const [providers, setProviders] = useState<ProviderOption[]>([{ id: "google", label: "Google" }]);
+  const [providers, setProviders] = useState<ProviderOption[]>([
+    { id: "google", label: "Google" },
+  ]);
   const [source, setSource] = useState("google");
   const [openNow, setOpenNow] = useState(false);
   const [minRating, setMinRating] = useState<number | null>(null);
@@ -77,7 +79,10 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
-  const [inspected, setInspected] = useState<{ place: NearbyPlace; rect: DOMRect } | null>(null);
+  const [inspected, setInspected] = useState<{
+    place: NearbyPlace;
+    rect: DOMRect;
+  } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // The day the search places adds on: the date the scope was opened with, else (nearby) the
@@ -85,17 +90,22 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
   const days = trip ? deriveTripPlanDays(trip) : [];
   const anchorDate =
     mode === "route"
-      ? routeSearch?.date ?? null
-      : nearbyDate ??
+      ? (routeSearch?.date ?? null)
+      : (nearbyDate ??
         (nearbyLocation
-          ? days.find((d) => d.stops.some((s) => s.location.id === nearbyLocation.id))?.date ?? null
-          : null);
+          ? (days.find((d) =>
+              d.stops.some((s) => s.location.id === nearbyLocation.id),
+            )?.date ?? null)
+          : null));
 
   // An along-route add goes between the corridor's two anchor stops (#131). `from` may be a
   // lodging anchor with no placement (ADR-0015) — the formula then lands on 0, the day's first slot.
   const insertOrder =
     mode === "route" && routeSearch?.date && trip
-      ? (trip.placements.find((p) => p.locationId === routeSearch.from.id && p.date === routeSearch.date)?.order ?? -1) + 1
+      ? (trip.placements.find(
+          (p) =>
+            p.locationId === routeSearch.from.id && p.date === routeSearch.date,
+        )?.order ?? -1) + 1
       : undefined;
 
   // Anchored providers that apply at this location — drives the source toggle (ADR-0009).
@@ -108,12 +118,17 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
     }
     fetch(`/api/discovery/providers?${params}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((list: ProviderOption[] | null) => { if (list?.length) setProviders(list); })
-      .catch(() => { /* keep the default google-only toggle */ });
+      .then((list: ProviderOption[] | null) => {
+        if (list?.length) setProviders(list);
+      })
+      .catch(() => {
+        /* keep the default google-only toggle */
+      });
   }, [mode, nearbyLocation?.lat, nearbyLocation?.lng, nearbyLocation]);
 
   useEffect(() => {
-    if (!providers.some((p) => p.id === source)) setSource(providers[0]?.id ?? "google");
+    if (!providers.some((p) => p.id === source))
+      setSource(providers[0]?.id ?? "google");
   }, [providers, source]);
 
   const query = [type, keyword.trim()].filter(Boolean).join(" ");
@@ -126,15 +141,27 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
     setError(null);
     if (mode === "route") {
       if (!fromId || !toId) return;
-      if (!query.trim()) { setResults(null); return; }
+      if (!query.trim()) {
+        setResults(null);
+        return;
+      }
       setLoading(true);
       try {
-        const params = new URLSearchParams({ from: fromId, to: toId, q: query.trim(), limit: "20" });
+        const params = new URLSearchParams({
+          from: fromId,
+          to: toId,
+          q: query.trim(),
+          limit: "20",
+        });
         if (openNow) params.set("openNow", "true");
-        const res = await fetch(`/api/trips/${tripId}/locations/along-route?${params}`);
+        const res = await fetch(
+          `/api/trips/${tripId}/locations/along-route?${params}`,
+        );
         const data = await res.json();
-        if (!res.ok) { setError(data.error ?? "Failed to load places along the route"); setResults(null); }
-        else setResults(data as NearbyPlace[]);
+        if (!res.ok) {
+          setError(data.error ?? "Failed to load places along the route");
+          setResults(null);
+        } else setResults(data as NearbyPlace[]);
       } catch {
         setError("Network error. Check your connection.");
         setResults(null);
@@ -145,15 +172,22 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
       if (!anchorId) return;
       setLoading(true);
       try {
-        const params = new URLSearchParams({ radius: String(radius), limit: "20" });
+        const params = new URLSearchParams({
+          radius: String(radius),
+          limit: "20",
+        });
         if (query) params.set("keyword", query);
         if (openNow) params.set("openNow", "true");
         if (anchorDate) params.set("date", anchorDate);
         params.set("source", source);
-        const res = await fetch(`/api/trips/${tripId}/locations/${anchorId}/nearby?${params}`);
+        const res = await fetch(
+          `/api/trips/${tripId}/locations/${anchorId}/nearby?${params}`,
+        );
         const data = await res.json();
-        if (!res.ok) { setError(data.error ?? "Failed to load nearby places"); setResults(null); }
-        else setResults(data as NearbyPlace[]);
+        if (!res.ok) {
+          setError(data.error ?? "Failed to load nearby places");
+          setResults(null);
+        } else setResults(data as NearbyPlace[]);
       } catch {
         setError("Network error. Check your connection.");
         setResults(null);
@@ -161,7 +195,18 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
         setLoading(false);
       }
     }
-  }, [tripId, mode, fromId, toId, anchorId, query, openNow, radius, anchorDate, source]);
+  }, [
+    tripId,
+    mode,
+    fromId,
+    toId,
+    anchorId,
+    query,
+    openNow,
+    radius,
+    anchorDate,
+    source,
+  ]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -173,17 +218,26 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
 
   if (!tripId || !trip) return null;
 
-  const addedIds = new Set(trip.locations.map((l) => l.placeId).filter(Boolean) as string[]);
+  const addedIds = new Set(
+    trip.locations.map((l) => l.placeId).filter(Boolean) as string[],
+  );
 
   // Client-side post-filters (rating and price — not supported as Google API params)
   const filtered = (results ?? []).filter((p) => {
-    if (minRating !== null && (p.rating === null || p.rating < minRating)) return false;
-    if (priceLevels.size > 0 && (p.priceLevel === null || !priceLevels.has(p.priceLevel))) return false;
+    if (minRating !== null && (p.rating === null || p.rating < minRating))
+      return false;
+    if (
+      priceLevels.size > 0 &&
+      (p.priceLevel === null || !priceLevels.has(p.priceLevel))
+    )
+      return false;
     return true;
   });
 
   const activeMoreFiltersCount =
-    (openNow ? 1 : 0) + (minRating !== null ? 1 : 0) + (priceLevels.size > 0 ? 1 : 0);
+    (openNow ? 1 : 0) +
+    (minRating !== null ? 1 : 0) +
+    (priceLevels.size > 0 ? 1 : 0);
 
   async function handleAdd(place: NearbyPlace) {
     setAddingId(place.placeId);
@@ -235,9 +289,15 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
             <button
               onClick={() => nearbyLocation && setDiscoveryMode("nearby")}
               disabled={!nearbyLocation}
-              title={nearbyLocation ? undefined : "Use the search icon on a stop to pick an anchor"}
+              title={
+                nearbyLocation
+                  ? undefined
+                  : "Use the search icon on a stop to pick an anchor"
+              }
               className={`px-2.5 py-1 font-medium transition-colors disabled:opacity-40 ${
-                mode === "nearby" ? "bg-ink text-canvas" : "bg-surface-2 text-sub hover:bg-surface-3"
+                mode === "nearby"
+                  ? "bg-ink text-canvas"
+                  : "bg-surface-2 text-sub hover:bg-surface-3"
               }`}
             >
               Nearby
@@ -245,16 +305,26 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
             <button
               onClick={() => routeSearch && setDiscoveryMode("route")}
               disabled={!routeSearch}
-              title={routeSearch ? undefined : "Use “Along the way” between two stops to pick a path"}
+              title={
+                routeSearch
+                  ? undefined
+                  : "Use “Along the way” between two stops to pick a path"
+              }
               className={`px-2.5 py-1 font-medium transition-colors disabled:opacity-40 ${
-                mode === "route" ? "bg-ink text-canvas" : "bg-surface-2 text-sub hover:bg-surface-3"
+                mode === "route"
+                  ? "bg-ink text-canvas"
+                  : "bg-surface-2 text-sub hover:bg-surface-3"
               }`}
             >
               Along the way
             </button>
           </div>
           <div className="text-xs text-sub min-w-0">{scope}</div>
-          <button onClick={closeDiscovery} className="ml-auto text-faint hover:text-sub shrink-0" aria-label="Close discovery">
+          <button
+            onClick={closeDiscovery}
+            className="ml-auto text-faint hover:text-sub shrink-0"
+            aria-label="Close discovery"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -264,7 +334,9 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
           {(mode === "nearby" && source !== "google" ? [] : types).map((pt) => (
             <button
               key={pt.label}
-              onClick={() => setType(mode === "route" && type === pt.value ? "" : pt.value)}
+              onClick={() =>
+                setType(mode === "route" && type === pt.value ? "" : pt.value)
+              }
               className={chipCls(type === pt.value)}
             >
               {pt.label}
@@ -274,12 +346,18 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
             type="text"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            placeholder={mode === "nearby" ? "Search by keyword…" : "Search along the way…"}
+            placeholder={
+              mode === "nearby" ? "Search by keyword…" : "Search along the way…"
+            }
             className="input py-0.5 px-2 text-xs flex-1 min-w-[120px] max-w-[220px]"
           />
           {mode === "nearby" && (
             <label className="flex items-center gap-1.5 text-[11px] text-sub shrink-0">
-              <span className="text-numeral">{radius >= 1000 ? `${(radius / 1000).toFixed(1)}km` : `${radius}m`}</span>
+              <span className="text-numeral">
+                {radius >= 1000
+                  ? `${(radius / 1000).toFixed(1)}km`
+                  : `${radius}m`}
+              </span>
               <input
                 type="range"
                 min={500}
@@ -299,7 +377,9 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
                   key={p.id}
                   onClick={() => setSource(p.id)}
                   className={`px-2 py-0.5 font-medium transition-colors ${
-                    source === p.id ? "bg-brand-600 dark:bg-brand-500 text-white" : "bg-surface-2 text-sub hover:bg-surface-3"
+                    source === p.id
+                      ? "bg-brand-600 dark:bg-brand-500 text-white"
+                      : "bg-surface-2 text-sub hover:bg-surface-3"
                   }`}
                 >
                   {p.label}
@@ -311,9 +391,15 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
             onClick={() => setShowMoreFilters((v) => !v)}
             className="flex items-center gap-1 text-[11px] font-medium text-sub hover:text-ink transition-colors shrink-0"
           >
-            {showMoreFilters ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {showMoreFilters ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
             More filters
-            {!showMoreFilters && activeMoreFiltersCount > 0 ? ` (${activeMoreFiltersCount})` : ""}
+            {!showMoreFilters && activeMoreFiltersCount > 0
+              ? ` (${activeMoreFiltersCount})`
+              : ""}
           </button>
         </div>
 
@@ -333,7 +419,11 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
             <div className="flex items-center gap-1">
               <span className="text-[11px] text-sub mr-1">Rating</span>
               {RATING_OPTIONS.map((opt) => (
-                <button key={String(opt.value)} onClick={() => setMinRating(opt.value)} className={chipCls(minRating === opt.value)}>
+                <button
+                  key={String(opt.value)}
+                  onClick={() => setMinRating(opt.value)}
+                  className={chipCls(minRating === opt.value)}
+                >
                   {opt.label}
                 </button>
               ))}
@@ -341,7 +431,11 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
             <div className="flex items-center gap-1">
               <span className="text-[11px] text-sub mr-1">Price</span>
               {PRICE_LABELS.map((label, level) => (
-                <button key={level} onClick={() => togglePriceLevel(level)} className={chipCls(priceLevels.has(level))}>
+                <button
+                  key={level}
+                  onClick={() => togglePriceLevel(level)}
+                  className={chipCls(priceLevels.has(level))}
+                >
                   {label}
                 </button>
               ))}
@@ -350,15 +444,23 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
         )}
 
         {/* Result rail */}
-        {addError && <p className="text-xs text-danger-600 dark:text-danger-400">{addError}</p>}
+        {addError && (
+          <p className="text-xs text-danger-600 dark:text-danger-400">
+            {addError}
+          </p>
+        )}
         {mode === "route" && !query.trim() ? (
           <div className="flex items-center justify-center h-24 text-sm text-faint text-center">
             Pick a category or type a search to find places along the way.
           </div>
         ) : loading ? (
-          <div className="flex items-center justify-center h-24 text-sm text-faint">Loading…</div>
+          <div className="flex items-center justify-center h-24 text-sm text-faint">
+            Loading…
+          </div>
         ) : error ? (
-          <div className="flex items-center justify-center h-24 text-sm text-danger-600 dark:text-danger-400">{error}</div>
+          <div className="flex items-center justify-center h-24 text-sm text-danger-600 dark:text-danger-400">
+            {error}
+          </div>
         ) : results !== null && filtered.length === 0 ? (
           <div className="flex items-center justify-center h-24 text-sm text-faint text-center">
             {mode === "nearby"
@@ -397,13 +499,19 @@ function TrayInner({ mode }: { mode: DiscoveryMode }) {
 
 function distLabel(place: NearbyPlace): string | null {
   if (place.distanceMeters === null) return null;
-  return place.distanceMeters >= 1000 ? `~${(place.distanceMeters / 1000).toFixed(1)}km` : `~${place.distanceMeters}m`;
+  return place.distanceMeters >= 1000
+    ? `~${(place.distanceMeters / 1000).toFixed(1)}km`
+    : `~${place.distanceMeters}m`;
 }
 
 /** One rail card. Drags onto day cards; clicking opens the fuller result popover (#134 —
  *  name + rating alone was ruled insufficient). */
 function ResultCard({
-  place, isAdded, isAdding, onAdd, onInspect,
+  place,
+  isAdded,
+  isAdding,
+  onAdd,
+  onInspect,
 }: {
   place: NearbyPlace;
   isAdded: boolean;
@@ -435,10 +543,14 @@ function ResultCard({
           <span className="inline-flex items-center gap-0.5 text-sub">
             <Star className="w-3 h-3 text-amber-500 fill-current" />
             {place.rating}
-            {place.reviewCount !== null ? ` (${place.reviewCount.toLocaleString()})` : ""}
+            {place.reviewCount !== null
+              ? ` (${place.reviewCount.toLocaleString()})`
+              : ""}
           </span>
         )}
-        {place.priceLevel !== null && <span>· {PRICE_LABELS[place.priceLevel]}</span>}
+        {place.priceLevel !== null && (
+          <span>· {PRICE_LABELS[place.priceLevel]}</span>
+        )}
         {dist && <span>· {dist}</span>}
       </div>
       <div className="flex items-center justify-between gap-1">
@@ -463,7 +575,12 @@ function ResultCard({
 
 /** Full result detail, anchored above the clicked rail card (interaction locality, #134). */
 function ResultPopover({
-  place, rect, isAdded, isAdding, onAdd, onClose,
+  place,
+  rect,
+  isAdded,
+  isAdding,
+  onAdd,
+  onClose,
 }: {
   place: NearbyPlace;
   rect: DOMRect;
@@ -497,8 +614,14 @@ function ResultPopover({
       aria-label={`Details for ${place.name}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-semibold text-ink leading-snug">{place.name}</p>
-        <button onClick={onClose} className="text-faint hover:text-sub shrink-0" aria-label="Close">
+        <p className="text-sm font-semibold text-ink leading-snug">
+          {place.name}
+        </p>
+        <button
+          onClick={onClose}
+          className="text-faint hover:text-sub shrink-0"
+          aria-label="Close"
+        >
           <X className="w-4 h-4" />
         </button>
       </div>
@@ -507,17 +630,30 @@ function ResultPopover({
           <span className="inline-flex items-center gap-0.5 text-sub">
             <Star className="w-3.5 h-3.5 text-amber-500 fill-current" />
             <span className="font-medium text-ink">{place.rating}</span>
-            {place.reviewCount !== null && <span className="text-faint">({place.reviewCount.toLocaleString()})</span>}
+            {place.reviewCount !== null && (
+              <span className="text-faint">
+                ({place.reviewCount.toLocaleString()})
+              </span>
+            )}
           </span>
         )}
-        {place.priceLevel !== null && <span className="text-sub">· {PRICE_LABELS[place.priceLevel]}</span>}
-        {dist && <span className="text-brand-500 dark:text-brand-400 font-medium">· {dist}</span>}
+        {place.priceLevel !== null && (
+          <span className="text-sub">· {PRICE_LABELS[place.priceLevel]}</span>
+        )}
+        {dist && (
+          <span className="text-brand-500 dark:text-brand-400 font-medium">
+            · {dist}
+          </span>
+        )}
       </div>
       <p className="text-[11px] text-sub leading-relaxed">{place.address}</p>
       {place.categories.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {place.categories.slice(0, 4).map((c) => (
-            <span key={c} className="text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-sub capitalize">
+            <span
+              key={c}
+              className="text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-sub capitalize"
+            >
               {c.replace(/_/g, " ")}
             </span>
           ))}

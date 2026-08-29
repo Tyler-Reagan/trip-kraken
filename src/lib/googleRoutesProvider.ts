@@ -39,12 +39,19 @@
  * refactor, not this slice.
  */
 
-import { makeTravelCost, type Path, type PathEndpoint, type PathKind, type TravelCost } from "@/types/path";
+import {
+  makeTravelCost,
+  type Path,
+  type PathEndpoint,
+  type PathKind,
+  type TravelCost,
+} from "@/types/path";
 import type { Point } from "@/lib/geo";
 import type { MatrixCell, PathProvider } from "@/lib/pathProvider";
 import { resolvePrimaryPathKind } from "@/lib/pathKind";
 
-const MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
+const MATRIX_URL =
+  "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
 const ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
 
 /** Maps one `PathKind` to Google's `travelMode` enum. `rail`/`bus`/`other` all fold onto
@@ -82,7 +89,8 @@ function toWaypoint(p: Point) {
 /** "160s" -> 160. Google always returns duration as a seconds-suffixed string. */
 function toSeconds(duration: string): number {
   const n = Number(duration.replace(/s$/, ""));
-  if (Number.isNaN(n)) throw new Error(`googleRoutesProvider: unparseable duration "${duration}"`);
+  if (Number.isNaN(n))
+    throw new Error(`googleRoutesProvider: unparseable duration "${duration}"`);
   return n;
 }
 
@@ -99,7 +107,7 @@ async function fetchMatrixChunk(
   origins: Point[],
   destinations: Point[],
   googleMode: string,
-  departureTime?: Date
+  departureTime?: Date,
 ): Promise<MatrixElement[]> {
   const body: Record<string, unknown> = {
     origins: origins.map((p) => ({ waypoint: toWaypoint(p) })),
@@ -114,7 +122,8 @@ async function fetchMatrixChunk(
       "Content-Type": "application/json",
       "X-Goog-Api-Key": apiKey(),
       // `status` must be in the mask or every element silently reports OK (Google's own warning).
-      "X-Goog-FieldMask": "originIndex,destinationIndex,status,condition,distanceMeters,duration",
+      "X-Goog-FieldMask":
+        "originIndex,destinationIndex,status,condition,distanceMeters,duration",
     },
     body: JSON.stringify(body),
   });
@@ -135,17 +144,21 @@ async function fetchMatrixChunk(
 async function computeFullMatrix(
   points: Point[],
   googleMode: string,
-  departureTime?: Date
+  departureTime?: Date,
 ): Promise<MatrixCell[][]> {
   const n = points.length;
-  const matrix: MatrixCell[][] = Array.from({ length: n }, () => new Array(n).fill(null));
+  const matrix: MatrixCell[][] = Array.from({ length: n }, () =>
+    new Array(n).fill(null),
+  );
 
   const maxElements = MAX_ELEMENTS[googleMode] ?? 625;
   const batchSize = Math.max(1, Math.floor(Math.sqrt(maxElements)));
 
   const batches: number[][] = [];
   for (let i = 0; i < n; i += batchSize) {
-    batches.push(Array.from({ length: Math.min(batchSize, n - i) }, (_, k) => i + k));
+    batches.push(
+      Array.from({ length: Math.min(batchSize, n - i) }, (_, k) => i + k),
+    );
   }
 
   for (const originBatch of batches) {
@@ -154,11 +167,13 @@ async function computeFullMatrix(
         originBatch.map((i) => points[i]),
         destBatch.map((i) => points[i]),
         googleMode,
-        departureTime
+        departureTime,
       );
       for (const el of elements) {
         if (el.status?.code) {
-          throw new Error(`Google Routes API element error: ${el.status.message ?? el.status.code}`);
+          throw new Error(
+            `Google Routes API element error: ${el.status.message ?? el.status.code}`,
+          );
         }
         const i = originBatch[el.originIndex];
         const j = destBatch[el.destinationIndex];
@@ -169,7 +184,12 @@ async function computeFullMatrix(
           matrix[i][j] = null;
           continue;
         }
-        matrix[i][j] = makeTravelCost(el.distanceMeters ?? 0, el.duration ? toSeconds(el.duration) : 0, "routingService", "google");
+        matrix[i][j] = makeTravelCost(
+          el.distanceMeters ?? 0,
+          el.duration ? toSeconds(el.duration) : 0,
+          "routingService",
+          "google",
+        );
       }
     }
   }
@@ -184,7 +204,9 @@ type ComputeRoutesResponse = {
   }>;
 };
 
-type PolylineResponse = { routes?: Array<{ polyline?: { encodedPolyline?: string } }> };
+type PolylineResponse = {
+  routes?: Array<{ polyline?: { encodedPolyline?: string } }>;
+};
 
 /**
  * Encoded polyline for one Journey (discovery route scope, #102) — a separate call from
@@ -197,7 +219,11 @@ type PolylineResponse = { routes?: Array<{ polyline?: { encodedPolyline?: string
  * discovery corridor is an ordinary outcome: the caller falls back to another kind (e.g. a
  * short urban Path has no transit route but is a walk). Genuine API/HTTP errors still throw.
  */
-export async function computeRoutePolyline(from: Point, to: Point, kind: PathKind): Promise<string | null> {
+export async function computeRoutePolyline(
+  from: Point,
+  to: Point,
+  kind: PathKind,
+): Promise<string | null> {
   const googleMode = GOOGLE_MODE_FOR_KIND[kind];
   const res = await fetch(ROUTES_URL, {
     method: "POST",
@@ -232,14 +258,21 @@ export const googleRoutesProvider: PathProvider = {
     if (points.length === 0) return [];
     const primary = resolvePrimaryPathKind(kinds);
     const googleMode = GOOGLE_MODE_FOR_KIND[primary];
-    const departureTime = googleMode === "TRANSIT" ? opts?.departureTime : undefined;
+    const departureTime =
+      googleMode === "TRANSIT" ? opts?.departureTime : undefined;
     return computeFullMatrix(points, googleMode, departureTime);
   },
 
-  async describeJourney(from: PathEndpoint, to: PathEndpoint, kinds, opts): Promise<Path[] | null> {
+  async describeJourney(
+    from: PathEndpoint,
+    to: PathEndpoint,
+    kinds,
+    opts,
+  ): Promise<Path[] | null> {
     const primary = resolvePrimaryPathKind(kinds);
     const googleMode = GOOGLE_MODE_FOR_KIND[primary];
-    const departureTime = googleMode === "TRANSIT" ? opts?.departureTime : undefined;
+    const departureTime =
+      googleMode === "TRANSIT" ? opts?.departureTime : undefined;
 
     const body: Record<string, unknown> = {
       origin: toWaypoint(from),
@@ -271,11 +304,15 @@ export const googleRoutesProvider: PathProvider = {
       route.distanceMeters ?? 0,
       route.duration ? toSeconds(route.duration) : 0,
       "routingService",
-      "google"
+      "google",
     );
 
     // A transit-bucket kind was requested but not derivable from the response yet (see module
     // doc) — the resolved kind is otherwise exactly what was asked for and got.
-    return [isTransitBucketKind(primary) ? { from, to, travelCost } : { kind: primary, from, to, travelCost }];
+    return [
+      isTransitBucketKind(primary)
+        ? { from, to, travelCost }
+        : { kind: primary, from, to, travelCost },
+    ];
   },
 };

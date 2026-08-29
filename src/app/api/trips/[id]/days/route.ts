@@ -7,16 +7,23 @@ import { setDayLabel } from "@/lib/db";
  */
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: tripId } = await params;
   const body = await req.json();
   const { date, label } = body;
 
   if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return NextResponse.json({ error: "date (YYYY-MM-DD) is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "date (YYYY-MM-DD) is required" },
+      { status: 400 },
+    );
   }
 
-  const trip = await setDayLabel(tripId, date, typeof label === "string" ? label : null);
+  const trip = await setDayLabel(
+    tripId,
+    date,
+    typeof label === "string" ? label : null,
+  );
   return NextResponse.json(trip);
 }

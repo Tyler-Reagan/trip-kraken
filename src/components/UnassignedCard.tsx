@@ -4,7 +4,17 @@ import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { ScheduledStop, Location } from "@/types";
 import type { Unplaced } from "@/lib/solver";
 import { useTripStore } from "@/store/tripStore";
-import { CalendarOff, Clock, GripVertical, HelpCircle, MapPinOff, PackageX, Search, Trash2, type LucideIcon } from "lucide-react";
+import {
+  CalendarOff,
+  Clock,
+  GripVertical,
+  HelpCircle,
+  MapPinOff,
+  PackageX,
+  Search,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 import { dayColorCss, dayTextColor } from "@/lib/dayColors";
 import { formatDuration, resolveVisitDuration } from "@/lib/visitDuration";
 import { UNASSIGNED_DROP_ID } from "./DayNavigator";
@@ -23,7 +33,8 @@ interface Props {
 
 function formatHoursSubtext(loc: Location): string {
   if (!loc.openTime && !loc.closeTime) return "No hours";
-  if (loc.openTime === "00:00" && loc.closeTime === "23:59") return "Always open";
+  if (loc.openTime === "00:00" && loc.closeTime === "23:59")
+    return "Always open";
   return `${loc.openTime ?? "?"}–${loc.closeTime ?? "?"}`;
 }
 
@@ -87,7 +98,13 @@ function UnplacedSummary({ items }: { items: Unplaced[] }) {
   );
 }
 
-export default function UnassignedCard({ locations, unplacedByLocationId, draggingStop, dragId, schedulable = true }: Props) {
+export default function UnassignedCard({
+  locations,
+  unplacedByLocationId,
+  draggingStop,
+  dragId,
+  schedulable = true,
+}: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: UNASSIGNED_DROP_ID });
   const isDragTarget = isOver && draggingStop !== null;
 
@@ -106,7 +123,9 @@ export default function UnassignedCard({ locations, unplacedByLocationId, draggi
         </span>
       </div>
 
-      <UnplacedSummary items={locations.flatMap((l) => unplacedByLocationId.get(l.id) ?? [])} />
+      <UnplacedSummary
+        items={locations.flatMap((l) => unplacedByLocationId.get(l.id) ?? [])}
+      />
 
       {locations.length === 0 ? (
         <p className="text-sm text-faint italic py-1 text-center">
@@ -144,7 +163,10 @@ function UnplacedReason({ unplaced }: { unplaced: Unplaced }) {
         {unplaced.diagnosis && (
           <span
             className="inline-block w-3.5 h-3.5 rounded-full text-center mr-1 align-text-bottom text-[9px] font-bold leading-[14px]"
-            style={{ backgroundColor: dayColorCss(unplaced.diagnosis.dayNumber), color: dayTextColor(unplaced.diagnosis.dayNumber) }}
+            style={{
+              backgroundColor: dayColorCss(unplaced.diagnosis.dayNumber),
+              color: dayTextColor(unplaced.diagnosis.dayNumber),
+            }}
             title={`Day ${unplaced.diagnosis.dayNumber}`}
           >
             {unplaced.diagnosis.dayNumber}
@@ -169,7 +191,9 @@ function UnassignedRow({
 }) {
   const tripId = useTripStore((s) => s.tripId);
   const reload = useTripStore((s) => s.reload);
-  const setNearbySearchLocation = useTripStore((s) => s.setNearbySearchLocation);
+  const setNearbySearchLocation = useTripStore(
+    (s) => s.setNearbySearchLocation,
+  );
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
 
@@ -184,7 +208,9 @@ function UnassignedRow({
   const durText = formatDuration(resolveVisitDuration(loc.visitDuration));
 
   async function doRemoveLocation() {
-    await fetch(`/api/trips/${tripId}/locations/${loc.id}`, { method: "DELETE" });
+    await fetch(`/api/trips/${tripId}/locations/${loc.id}`, {
+      method: "DELETE",
+    });
     reload();
   }
 
@@ -196,9 +222,10 @@ function UnassignedRow({
       className={`group flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-all select-none
         ${schedulable ? "touch-none" : ""}
         ${isDragging ? "opacity-40" : ""}
-        ${isInspected
-          ? "bg-surface-2 border-line border-line-strong"
-          : "border-transparent hover:bg-surface-2 hover:border-line-strong"
+        ${
+          isInspected
+            ? "bg-surface-2 border-line border-line-strong"
+            : "border-transparent hover:bg-surface-2 hover:border-line-strong"
         }`}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("button")) return;
@@ -220,16 +247,25 @@ function UnassignedRow({
         <div className="flex items-center gap-1.5 min-w-0">
           <p className="text-sm font-medium text-ink truncate">{loc.name}</p>
           {loc.enrichmentStatus === "pending" && (
-            <span className="text-[10px] text-faint animate-pulse shrink-0">···</span>
+            <span className="text-[10px] text-faint animate-pulse shrink-0">
+              ···
+            </span>
           )}
           {loc.enrichmentStatus === "failed" && (
-            <span className="text-[10px] text-amber-500 shrink-0 font-bold" title="Enrichment failed">!</span>
+            <span
+              className="text-[10px] text-amber-500 shrink-0 font-bold"
+              title="Enrichment failed"
+            >
+              !
+            </span>
           )}
         </div>
         {/* #120: an Excluded location (the user's own choice) and an Unplaced one (the optimizer
             tried and failed) read as different problems — never the same generic gap. */}
         {loc.excluded ? (
-          <p className="text-xs text-faint italic mt-0.5">Excluded — won&apos;t be scheduled</p>
+          <p className="text-xs text-faint italic mt-0.5">
+            Excluded — won&apos;t be scheduled
+          </p>
         ) : unplaced ? (
           <UnplacedReason unplaced={unplaced} />
         ) : (
@@ -242,16 +278,26 @@ function UnassignedRow({
       {/* Action buttons */}
       <div className="shrink-0 flex items-center gap-0.5 hover-reveal transition-opacity">
         <button
-          onClick={(e) => { e.stopPropagation(); setNearbySearchLocation(loc, null); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setNearbySearchLocation(loc, null);
+          }}
           disabled={loc.lat === null}
-          title={loc.lat === null ? "No coordinates — run Enrich first" : "Find nearby places anchored to this location"}
+          title={
+            loc.lat === null
+              ? "No coordinates — run Enrich first"
+              : "Find nearby places anchored to this location"
+          }
           aria-label="Find nearby places"
           className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         >
           <Search className="w-4 h-4" />
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); doRemoveLocation(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            doRemoveLocation();
+          }}
           title="Remove location from trip"
           aria-label="Remove location"
           className="w-7 h-7 flex items-center justify-center rounded text-faint hover:text-danger-500 dark:hover:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-950/30 transition-colors"

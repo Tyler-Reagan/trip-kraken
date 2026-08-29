@@ -20,8 +20,12 @@ import { deriveTripPlanDays, isLodging, type TripWithDetails } from "@/types";
 export type Bounds = [[number, number], [number, number]];
 
 /** The box containing every geocoded point given, or null when none are. */
-export function boundsOf(points: { lat: number | null; lng: number | null }[]): Bounds | null {
-  const valid = points.filter((p): p is { lat: number; lng: number } => p.lat != null && p.lng != null);
+export function boundsOf(
+  points: { lat: number | null; lng: number | null }[],
+): Bounds | null {
+  const valid = points.filter(
+    (p): p is { lat: number; lng: number } => p.lat != null && p.lng != null,
+  );
   if (valid.length === 0) return null;
   const lngs = valid.map((p) => p.lng);
   const lats = valid.map((p) => p.lat);
@@ -77,9 +81,14 @@ export function metroLabel(metro: {
     address.match(REGION_THEN_JP_POSTAL)?.[1] ??
     address.match(REGION_THEN_US_ZIP)?.[1];
   if (postalAnchored) return postalAnchored.trim();
-  const segments = address.split(",").map((s) => s.trim()).filter(Boolean);
+  const segments = address
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   if (segments.length < 2) return fallback;
-  const last = segments[segments.length - 1].replace(/〒?\s*\d{3}[-−]\d{4}$|\d{5}(-\d{4})?$/, "").trim();
+  const last = segments[segments.length - 1]
+    .replace(/〒?\s*\d{3}[-−]\d{4}$|\d{5}(-\d{4})?$/, "")
+    .trim();
   return last || fallback;
 }
 
@@ -96,12 +105,17 @@ export function metroLabel(metro: {
  * that survives to be the *only* segment is a street address, not a locality, so it returns null
  * rather than printing a house number as if it were a district.
  */
-export function localityOf(address: string | null, metro: string): string | null {
+export function localityOf(
+  address: string | null,
+  metro: string,
+): string | null {
   if (!address) return null;
   const segments = address
     .split(",")
     .slice(0, -1) // the country
-    .map((s) => s.replace(/〒?\s*\d{3}[-−]\d{4}|\b\d{5}(-\d{4})?\b/g, "").trim())
+    .map((s) =>
+      s.replace(/〒?\s*\d{3}[-−]\d{4}|\b\d{5}(-\d{4})?\b/g, "").trim(),
+    )
     .filter(Boolean)
     .filter((s) => s !== metro);
   return segments.length > 1 ? segments[segments.length - 1] : null;
@@ -111,7 +125,9 @@ export function localityOf(address: string | null, metro: string): string | null
 // doesn't move — which enrichment (address/name backfill) never does. Coarse enough (~1km) to
 // survive a cluster losing/gaining one member (e.g. a place promoted to lodging), well under the
 // 75km radius that separates distinct metros, so no collision risk between them.
-export function metroKey(metro: { centroid: { lat: number; lng: number } }): string {
+export function metroKey(metro: {
+  centroid: { lat: number; lng: number };
+}): string {
   return `${metro.centroid.lat.toFixed(2)},${metro.centroid.lng.toFixed(2)}`;
 }
 
@@ -133,8 +149,9 @@ export function metrosOf(trip: TripWithDetails): TripMetro[] {
   const daysByLocationId = new Map<string, number[]>();
   const touches = (locationId: string, dayNumber: number) => {
     const seen = daysByLocationId.get(locationId);
-    if (seen) { if (!seen.includes(dayNumber)) seen.push(dayNumber); }
-    else daysByLocationId.set(locationId, [dayNumber]);
+    if (seen) {
+      if (!seen.includes(dayNumber)) seen.push(dayNumber);
+    } else daysByLocationId.set(locationId, [dayNumber]);
   };
   for (const day of days) {
     for (const stop of day.stops) touches(stop.location.id, day.dayNumber);
@@ -154,7 +171,9 @@ export function metrosOf(trip: TripWithDetails): TripMetro[] {
       // comes first in trip order, which is the one the traveller woke in.
       dayNumbers: [
         ...new Set([
-          ...cluster.activities.flatMap((a) => daysByLocationId.get(a.id) ?? []),
+          ...cluster.activities.flatMap(
+            (a) => daysByLocationId.get(a.id) ?? [],
+          ),
           ...cluster.lodgings.flatMap((l) => daysByLocationId.get(l.id) ?? []),
         ]),
       ].sort((a, b) => a - b),
@@ -163,14 +182,21 @@ export function metrosOf(trip: TripWithDetails): TripMetro[] {
       stopCount: cluster.activities.length,
       // Non-null holds for both founding passes: an activity-founded metro has activities, and a
       // lodging-founded one has lodgings — each already filtered to real coordinates upstream.
-      bounds: boundsOf(cluster.activities.length > 0 ? cluster.activities : cluster.lodgings)!,
+      bounds: boundsOf(
+        cluster.activities.length > 0 ? cluster.activities : cluster.lodgings,
+      )!,
     }))
-    .sort((a, b) => (a.dayNumbers[0] ?? Infinity) - (b.dayNumbers[0] ?? Infinity));
+    .sort(
+      (a, b) => (a.dayNumbers[0] ?? Infinity) - (b.dayNumbers[0] ?? Infinity),
+    );
 
   cache.set(trip, metros);
   return metros;
 }
 
-export function metroOfDay(metros: TripMetro[], dayNumber: number): TripMetro | null {
+export function metroOfDay(
+  metros: TripMetro[],
+  dayNumber: number,
+): TripMetro | null {
   return metros.find((m) => m.dayNumbers.includes(dayNumber)) ?? null;
 }

@@ -13,7 +13,7 @@ import type { RoadProfile } from "@/types/path";
  */
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: tripId } = await params;
   const body = await req.json();
@@ -22,16 +22,21 @@ export async function PATCH(
   if (typeof fromLocationId !== "string" || typeof toLocationId !== "string") {
     return NextResponse.json(
       { error: "fromLocationId and toLocationId are required" },
-      { status: 400 }
+      { status: 400 },
     );
   }
   if (kind !== null && kind !== "walking" && kind !== "driving") {
     return NextResponse.json(
-      { error: "kind must be \"walking\", \"driving\", or null" },
-      { status: 400 }
+      { error: 'kind must be "walking", "driving", or null' },
+      { status: 400 },
     );
   }
 
-  const trip = await setJourneyRoadKind(tripId, fromLocationId, toLocationId, kind as RoadProfile | null);
+  const trip = await setJourneyRoadKind(
+    tripId,
+    fromLocationId,
+    toLocationId,
+    kind as RoadProfile | null,
+  );
   return NextResponse.json(trip);
 }

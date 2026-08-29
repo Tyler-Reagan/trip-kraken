@@ -19,7 +19,9 @@ import { save, DEFAULT_GRAPH_PATH } from "@/lib/transitGraphStore";
 function main() {
   const [inputPath, outputPath = DEFAULT_GRAPH_PATH] = process.argv.slice(2);
   if (!inputPath) {
-    console.error("Usage: tsx scripts/ingest-transit-graph.ts <filtered.osm> [outputDbPath]");
+    console.error(
+      "Usage: tsx scripts/ingest-transit-graph.ts <filtered.osm> [outputDbPath]",
+    );
     process.exit(1);
   }
 
@@ -37,12 +39,12 @@ function main() {
   const traced = graph.rideEdges.filter((e) => e.geometry).length;
   console.log(
     `Ingested ${graph.stopNodes.size} stop nodes, ${graph.clusters.size} clusters, ` +
-      `${graph.rideEdges.length} ride edges, ${graph.transferEdges.length} transfer edges → ${outputPath}`
+      `${graph.rideEdges.length} ride edges, ${graph.transferEdges.length} transfer edges → ${outputPath}`,
   );
   console.log(
     `Traced geometry for ${traced}/${graph.rideEdges.length} ride edges ` +
       `(${((traced / Math.max(1, graph.rideEdges.length)) * 100).toFixed(1)}%); ` +
-      `${graph.rideEdges.length - traced} draw dashed (ADR-0030 §1/§3).`
+      `${graph.rideEdges.length - traced} draw dashed (ADR-0030 §1/§3).`,
   );
 }
 

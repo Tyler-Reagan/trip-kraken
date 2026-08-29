@@ -40,7 +40,11 @@ import { createOsmTransitProvider } from "@/lib/osmTransitProvider";
 import { getTransitGraph, DEFAULT_GRAPH_PATH } from "@/lib/transitGraphStore";
 import { inJapan } from "@/lib/discovery";
 import { osrmProvider } from "@/lib/osrmProvider";
-import { composeTravelMatrix, type MatrixEntry, type TravelMatrixRequest } from "@/lib/travelMatrix";
+import {
+  composeTravelMatrix,
+  type MatrixEntry,
+  type TravelMatrixRequest,
+} from "@/lib/travelMatrix";
 
 interface RegistryEntry extends Omit<MatrixEntry, "provider"> {
   /** The full `PathProvider`, not `MatrixEntry`'s `Pick<PathProvider, "costMatrix">` — narration
@@ -56,11 +60,20 @@ interface RegistryEntry extends Omit<MatrixEntry, "provider"> {
 const osmJapanProvider: PathProvider = {
   async costMatrix(points, kinds, opts) {
     const { graph, spatialIndex } = getTransitGraph();
-    return createOsmTransitProvider(graph, spatialIndex).costMatrix(points, kinds, opts);
+    return createOsmTransitProvider(graph, spatialIndex).costMatrix(
+      points,
+      kinds,
+      opts,
+    );
   },
   async describeJourney(from, to, kinds, opts) {
     const { graph, spatialIndex } = getTransitGraph();
-    return createOsmTransitProvider(graph, spatialIndex).describeJourney(from, to, kinds, opts);
+    return createOsmTransitProvider(graph, spatialIndex).describeJourney(
+      from,
+      to,
+      kinds,
+      opts,
+    );
   },
 };
 
@@ -74,7 +87,9 @@ export const REGISTRY: readonly RegistryEntry[] = [
     provider: osmJapanProvider,
     kinds: ["rail"],
     isAvailable: (points) =>
-      points.length > 0 && inJapan(points[0].lat, points[0].lng) && fs.existsSync(DEFAULT_GRAPH_PATH),
+      points.length > 0 &&
+      inJapan(points[0].lat, points[0].lng) &&
+      fs.existsSync(DEFAULT_GRAPH_PATH),
   },
   {
     id: "osrm",
@@ -83,7 +98,8 @@ export const REGISTRY: readonly RegistryEntry[] = [
     // Region availability (inside the built Extract or not) is a per-cell concern handled inside
     // osrmProvider via snap-distance decline, not an isAvailable gate — the same reason osm-japan
     // above only gates on graph presence, not on whether any particular point is near a station.
-    isAvailable: () => !!process.env.OSRM_FOOT_URL && !!process.env.OSRM_CAR_URL,
+    isAvailable: () =>
+      !!process.env.OSRM_FOOT_URL && !!process.env.OSRM_CAR_URL,
   },
   {
     id: "google",
@@ -109,7 +125,10 @@ function availableEntries(points: Point[]): RegistryEntry[] {
 /** Composes a full travel-cost matrix over the real four-row registry (ADR-0024 §4). Thin over
  * `composeTravelMatrix` — this function's only job is binding the registry's entries and
  * availability gates to that pure composer. */
-export async function buildTravelMatrix(points: Point[], request: TravelMatrixRequest): Promise<TravelCost[][]> {
+export async function buildTravelMatrix(
+  points: Point[],
+  request: TravelMatrixRequest,
+): Promise<TravelCost[][]> {
   return composeTravelMatrix(availableEntries(points), points, request);
 }
 
@@ -124,12 +143,17 @@ export async function describeJourney(
   from: Parameters<PathProvider["describeJourney"]>[0],
   to: Parameters<PathProvider["describeJourney"]>[1],
   kinds: Parameters<PathProvider["describeJourney"]>[2],
-  opts?: Parameters<PathProvider["describeJourney"]>[3]
+  opts?: Parameters<PathProvider["describeJourney"]>[3],
 ): ReturnType<PathProvider["describeJourney"]> {
   for (const entry of availableEntries([from])) {
     const kindsForEntry = entry.kinds.filter((k) => kinds.includes(k));
     if (kindsForEntry.length === 0) continue;
-    const result = await entry.provider.describeJourney(from, to, kindsForEntry, opts);
+    const result = await entry.provider.describeJourney(
+      from,
+      to,
+      kindsForEntry,
+      opts,
+    );
     if (result) return result;
   }
   // Unreachable in practice: haversine is terminal, always available, and never declines.

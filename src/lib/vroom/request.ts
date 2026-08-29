@@ -37,7 +37,12 @@ export interface BuildVroomRequestInput {
   /** The trip's edges (ADR-0028), resolved and geocoding-checked by `solver.ts` — `arriveAt`/
    * `departAt` are the raw stored values (bare date or date-and-time), used only to compute Day
    * 1 / the last Day's window honestly. */
-  edges?: { arrivalId?: string; departureId?: string; arriveAt?: string | null; departAt?: string | null };
+  edges?: {
+    arrivalId?: string;
+    departureId?: string;
+    arriveAt?: string | null;
+    departAt?: string | null;
+  };
 }
 
 /** A Day, entirely in our vocabulary — derived once, then read by `vehicleForDay`. */
@@ -64,7 +69,10 @@ function dayStartSeconds(tripDates: IsoDate[], dayIndex: number): number {
 /** The lodging covering night `night`, per its `StayPlan` — the one part of the old optimizer's
  * anchor derivation that survives (ADR-0023 §1/§9), lifted near-verbatim. */
 function lodgingIdOnNight(stays: StayPlan[], night: number): string | null {
-  return stays.find((s) => night >= s.startNight && night <= s.endNight)?.lodgingId ?? null;
+  return (
+    stays.find((s) => night >= s.startNight && night <= s.endNight)
+      ?.lodgingId ?? null
+  );
 }
 
 /** Absolute Unix seconds for a stored edge value's time component, or `null` for a bare date (no
@@ -78,9 +86,17 @@ function edgeTimeSeconds(value: string | null | undefined): number | null {
 function buildSolverInputDays(
   input: BuildVroomRequestInput,
   indexOf: Map<string, number>,
-  allMetroOrdinals: number[]
+  allMetroOrdinals: number[],
 ): SolverInputDay[] {
-  const { stays, tripDates, numDays, dayStartMins, dayBudgetMinutes, lodgingMetros, edges } = input;
+  const {
+    stays,
+    tripDates,
+    numDays,
+    dayStartMins,
+    dayBudgetMinutes,
+    lodgingMetros,
+    edges,
+  } = input;
   const metroActive = lodgingMetros.size > 0;
   const arrivalId = edges?.arrivalId ?? null;
   const departureId = edges?.departureId ?? null;
@@ -95,7 +111,14 @@ function buildSolverInputDays(
     // The shared rule (ADR-0028): the arrival wins Day 1's start, the departure wins the last
     // Day's end, otherwise today's lodging-only behaviour — the same call `deriveTripPlanDays`
     // makes for the Timeline, so the two can never disagree on which Location anchors a Day.
-    const { startId, endId } = anchorsOnDate({ dayNumber, numDays, wokeLodgingId, sleepLodgingId, arrivalId, departureId });
+    const { startId, endId } = anchorsOnDate({
+      dayNumber,
+      numDays,
+      wokeLodgingId,
+      sleepLodgingId,
+      arrivalId,
+      departureId,
+    });
     const wakeAt = startId != null ? indexOf.get(startId) : undefined;
     const sleepAt = endId != null ? indexOf.get(endId) : undefined;
 
@@ -106,14 +129,18 @@ function buildSolverInputDays(
     // landing makes Day 1 shorter, not later; the last Day must close by departure. Clamp rather
     // than emit a backwards window on a very late arrival — the same defence `dayWindowsFor`
     // already applies to overnight opening hours.
-    if (dayNumber === 1 && arriveAtSeconds != null) opensAt = Math.max(opensAt, arriveAtSeconds);
-    if (dayNumber === numDays && departAtSeconds != null) closesAt = Math.min(closesAt, departAtSeconds);
+    if (dayNumber === 1 && arriveAtSeconds != null)
+      opensAt = Math.max(opensAt, arriveAtSeconds);
+    if (dayNumber === numDays && departAtSeconds != null)
+      closesAt = Math.min(closesAt, departAtSeconds);
     if (opensAt > closesAt) closesAt = opensAt;
 
     let reachableMetros: number[] = [];
     if (metroActive) {
-      const wakeMetros = wokeLodgingId != null ? (lodgingMetros.get(wokeLodgingId) ?? []) : [];
-      const sleepMetros = sleepLodgingId != null ? (lodgingMetros.get(sleepLodgingId) ?? []) : [];
+      const wakeMetros =
+        wokeLodgingId != null ? (lodgingMetros.get(wokeLodgingId) ?? []) : [];
+      const sleepMetros =
+        sleepLodgingId != null ? (lodgingMetros.get(sleepLodgingId) ?? []) : [];
       const union = new Set([...wakeMetros, ...sleepMetros]);
       // Neither Anchor resolved to a known metro (e.g. both ungeocoded) — don't leave the Day
       // artificially unable to serve anyone; fall back to every known metro rather than none.
@@ -141,7 +168,7 @@ function jobForActivity(
   activity: LocationInput,
   index: number,
   tripDates: IsoDate[],
-  metroOf: Map<string, number>
+  metroOf: Map<string, number>,
 ): VroomJob {
   // service resolves an unset visitDuration to DEFAULT_VISIT_MINUTES (ADR-0023 §9, amended
   // 2026-08-18) — reverses the deleted DEFAULT_VISIT_MINS = 60, now that the default is visible
@@ -159,20 +186,27 @@ function jobForActivity(
 }
 
 export function buildVroomRequest(input: BuildVroomRequestInput): VroomRequest {
-  const { placeable, matrixPoints, matrix, tripDates, metroOf, lodgingMetros } = input;
+  const { placeable, matrixPoints, matrix, tripDates, metroOf, lodgingMetros } =
+    input;
 
   const indexOf = new Map(matrixPoints.map((p, i) => [p.id, i]));
-  const allMetroOrdinals = [...new Set([...metroOf.values(), ...[...lodgingMetros.values()].flat()])];
+  const allMetroOrdinals = [
+    ...new Set([...metroOf.values(), ...[...lodgingMetros.values()].flat()]),
+  ];
 
   // No costs.fixed anywhere in this module — §6 forbids it by name, since it biases toward
   // *fewer* used vehicles, the wrong direction for a holiday.
 
   const tripDaysArr = buildSolverInputDays(input, indexOf, allMetroOrdinals);
 
-  const jobs: VroomJob[] = placeable.map((a) => jobForActivity(a, indexOf.get(a.id)!, tripDates, metroOf));
+  const jobs: VroomJob[] = placeable.map((a) =>
+    jobForActivity(a, indexOf.get(a.id)!, tripDates, metroOf),
+  );
   const vehicles: VroomVehicle[] = tripDaysArr.map(vehicleForDay);
 
-  const durations = matrix.map((row) => row.map((cell) => Math.round(cell.durationSeconds)));
+  const durations = matrix.map((row) =>
+    row.map((cell) => Math.round(cell.durationSeconds)),
+  );
 
   return { jobs, vehicles, matrices: { [TRIP_PROFILE]: { durations } } };
 }

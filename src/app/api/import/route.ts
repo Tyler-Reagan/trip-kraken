@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createTripWithLocations, deleteTrip, checkTripNameCollision, TripNameCollisionError } from "@/lib/db";
+import {
+  createTripWithLocations,
+  deleteTrip,
+  checkTripNameCollision,
+  TripNameCollisionError,
+} from "@/lib/db";
 import { extractMid, fetchKml, extractKmlDocumentName } from "@/lib/myMaps";
 import { parseKml } from "@/lib/parsers/kml";
 import { enqueueLocationEnrichment } from "@/lib/enrichmentQueue";
@@ -25,9 +30,14 @@ export async function POST(req: NextRequest) {
   }
   // Per ADR-0015 §3 every trip has a required date range; the import dialog forces it (D4).
   const isIsoDate = (s: unknown): s is string =>
-    typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+    typeof s === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(s) &&
+    !Number.isNaN(Date.parse(s));
   if (!isIsoDate(startDate) || !isIsoDate(endDate) || startDate > endDate) {
-    return NextResponse.json({ error: "A valid startDate/endDate range (YYYY-MM-DD) is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "A valid startDate/endDate range (YYYY-MM-DD) is required" },
+      { status: 400 },
+    );
   }
 
   const mid = extractMid(url);
@@ -37,7 +47,7 @@ export async function POST(req: NextRequest) {
         error:
           "This doesn't look like a Google My Maps link. Open your map at mymaps.google.com, then copy the URL from the address bar.",
       },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -45,7 +55,10 @@ export async function POST(req: NextRequest) {
   try {
     kmlText = await fetchKml(mid);
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 422 });
+    return NextResponse.json(
+      { error: (err as Error).message },
+      { status: 422 },
+    );
   }
 
   let places;
@@ -54,7 +67,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return NextResponse.json(
       { error: `Could not parse the map data: ${(err as Error).message}` },
-      { status: 422 }
+      { status: 422 },
     );
   }
 
@@ -64,7 +77,7 @@ export async function POST(req: NextRequest) {
         error:
           "No locations found in this map. Make sure your map has at least one placemark and is set to public.",
       },
-      { status: 422 }
+      { status: 422 },
     );
   }
 
@@ -104,7 +117,8 @@ export async function POST(req: NextRequest) {
       })),
     });
   } catch (e) {
-    if (e instanceof TripNameCollisionError) return NextResponse.json(e.collision, { status: 409 });
+    if (e instanceof TripNameCollisionError)
+      return NextResponse.json(e.collision, { status: 409 });
     throw e;
   }
 

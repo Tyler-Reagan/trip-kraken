@@ -18,7 +18,9 @@ export function surfacedTransitIdOf(lat: number, lng: number): string {
  *  egress one. Exported (ADR-0036): the itinerary's shift-row list needs the same check, to decide
  *  which rows are clickable into a surfaced station. */
 export function isTransferWalk(path: Path): boolean {
-  return path.kind === "walking" && !!path.from.stationName && !!path.to.stationName;
+  return (
+    path.kind === "walking" && !!path.from.stationName && !!path.to.stationName
+  );
 }
 
 /**

@@ -15,7 +15,14 @@ import {
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { animated, to, useTransition, Globals } from "@react-spring/web";
-import { deriveTripPlanDays, isActivity, type DerivedDay, type NearbyPlace, type ScheduledStop, type Location } from "@/types";
+import {
+  deriveTripPlanDays,
+  isActivity,
+  type DerivedDay,
+  type NearbyPlace,
+  type ScheduledStop,
+  type Location,
+} from "@/types";
 import { useTripStore } from "@/store/tripStore";
 import { dayColorCss } from "@/lib/dayColors";
 import DayCard from "./DayCard";
@@ -39,7 +46,10 @@ export const UNASSIGNED_DROP_ID = "unassigned";
 // The focal-stack geometry (#134): the active day centered, exactly one neighbor peeking each
 // side, nothing further mounted. Only transform/opacity are springed — never layout properties.
 type StackRole = "prev" | "active" | "next";
-const ROLE_TARGET: Record<StackRole, { x: number; y: number; scale: number; opacity: number }> = {
+const ROLE_TARGET: Record<
+  StackRole,
+  { x: number; y: number; scale: number; opacity: number }
+> = {
   prev: { x: -330, y: 16, scale: 0.82, opacity: 0.6 },
   active: { x: 0, y: 0, scale: 1, opacity: 1 },
   next: { x: 330, y: 16, scale: 0.82, opacity: 0.6 },
@@ -69,12 +79,17 @@ export default function DayNavigator() {
   const [dwellSide, setDwellSide] = useState<"left" | "right" | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const directionRef = useRef<1 | -1>(1);
-  const dwellTimerRef = useRef<{ side: "left" | "right"; id: ReturnType<typeof setTimeout> } | null>(null);
+  const dwellTimerRef = useRef<{
+    side: "left" | "right";
+    id: ReturnType<typeof setTimeout>;
+  } | null>(null);
   const cooldownRef = useRef(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
 
   // Respect reduced-motion: the dwell/cooldown logic still runs, paging just resolves instantly.
@@ -84,7 +99,13 @@ export default function DayNavigator() {
   }, []);
 
   const days = trip ? deriveTripPlanDays(trip) : [];
-  const activeIdx = Math.max(0, Math.min(days.length - 1, days.findIndex((d) => d.dayNumber === activeDayNumber)));
+  const activeIdx = Math.max(
+    0,
+    Math.min(
+      days.length - 1,
+      days.findIndex((d) => d.dayNumber === activeDayNumber),
+    ),
+  );
 
   function go(nextIdx: number) {
     const clamped = Math.max(0, Math.min(days.length - 1, nextIdx));
@@ -104,7 +125,10 @@ export default function DayNavigator() {
   // when it dwells in an edge zone, so an item can cross several days without releasing.
   const isDragging = dragging !== null;
   useEffect(() => {
-    if (!isDragging) { clearDwell(); return; }
+    if (!isDragging) {
+      clearDwell();
+      return;
+    }
 
     function armDwell(side: "left" | "right") {
       if (cooldownRef.current) return;
@@ -116,7 +140,9 @@ export default function DayNavigator() {
         setDwellSide(null);
         go(activeIdx + (side === "left" ? -1 : 1));
         cooldownRef.current = true;
-        setTimeout(() => { cooldownRef.current = false; }, COOLDOWN_MS);
+        setTimeout(() => {
+          cooldownRef.current = false;
+        }, COOLDOWN_MS);
       }, DWELL_MS);
       dwellTimerRef.current = { side, id };
     }
@@ -127,9 +153,17 @@ export default function DayNavigator() {
       const rect = el.getBoundingClientRect();
       // Only page while the pointer is vertically within the stack — dragging along the
       // discovery tray's own edge shouldn't flip days.
-      if (e.clientY < rect.top || e.clientY > rect.bottom) { clearDwell(); return; }
-      if (e.clientX < rect.left + EDGE_ZONE_PX && activeIdx > 0) armDwell("left");
-      else if (e.clientX > rect.right - EDGE_ZONE_PX && activeIdx < days.length - 1) armDwell("right");
+      if (e.clientY < rect.top || e.clientY > rect.bottom) {
+        clearDwell();
+        return;
+      }
+      if (e.clientX < rect.left + EDGE_ZONE_PX && activeIdx > 0)
+        armDwell("left");
+      else if (
+        e.clientX > rect.right - EDGE_ZONE_PX &&
+        activeIdx < days.length - 1
+      )
+        armDwell("right");
       else clearDwell();
     }
 
@@ -152,10 +186,20 @@ export default function DayNavigator() {
 
   const transitions = useTransition(visible, {
     keys: (d) => d.date,
-    from: () => ({ x: directionRef.current * 660, y: 24, scale: 0.7, opacity: 0 }),
+    from: () => ({
+      x: directionRef.current * 660,
+      y: 24,
+      scale: 0.7,
+      opacity: 0,
+    }),
     enter: (d) => ROLE_TARGET[roleOf(d)],
     update: (d) => ROLE_TARGET[roleOf(d)],
-    leave: () => ({ x: -directionRef.current * 660, y: 24, scale: 0.7, opacity: 0 }),
+    leave: () => ({
+      x: -directionRef.current * 660,
+      y: 24,
+      scale: 0.7,
+      opacity: 0,
+    }),
     config: { tension: 300, friction: 30 },
   });
 
@@ -163,7 +207,9 @@ export default function DayNavigator() {
 
   const placedIds = new Set(trip.placements.map((p) => p.locationId));
   // Only activities are placed; lodging/transit are projected, never in the unscheduled pool.
-  const unscheduledLocations = trip.locations.filter((l) => isActivity(l) && !placedIds.has(l.id));
+  const unscheduledLocations = trip.locations.filter(
+    (l) => isActivity(l) && !placedIds.has(l.id),
+  );
   // Reasons from the last optimize run (#120) — keyed by locationId so UnassignedCard can render
   // one per row without a lookup of its own. A location can appear here without being unscheduled
   // right now (a prior run's reason, since replaced by a manual placement) — Map.get simply misses.
@@ -190,22 +236,33 @@ export default function DayNavigator() {
 
     // Dropped on a day (empty space, or past the last stop) → append to the end. Dropped on
     // another stop → take that stop's slot, pushing it (and everything after) down.
-    const overData = event.over?.data.current as { date: string; order: number } | undefined;
+    const overData = event.over?.data.current as
+      { date: string; order: number } | undefined;
     if (!overData) return;
 
-    if (active.kind === "stop") movePlacement(active.stop.placement.id, overData.date, overData.order);
-    else if (active.kind === "location") addPlacement(active.location.id, overData.date, overData.order);
+    if (active.kind === "stop")
+      movePlacement(active.stop.placement.id, overData.date, overData.order);
+    else if (active.kind === "location")
+      addPlacement(active.location.id, overData.date, overData.order);
     else addDiscoveredPlace(active.place, overData.date, overData.order);
   }
 
   const dragLabel =
-    dragging?.kind === "stop" ? dragging.stop.location.name
-    : dragging?.kind === "location" ? dragging.location.name
-    : dragging?.kind === "place" ? dragging.place.name
-    : null;
+    dragging?.kind === "stop"
+      ? dragging.stop.location.name
+      : dragging?.kind === "location"
+        ? dragging.location.name
+        : dragging?.kind === "place"
+          ? dragging.place.name
+          : null;
 
   return (
-    <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={pointerWithin}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
       <div className="space-y-4">
         {/* Index strip: jump straight to any day without paging through the ones between. */}
         <div className="flex gap-1.5 flex-wrap justify-center">
@@ -216,9 +273,18 @@ export default function DayNavigator() {
               <button
                 key={day.date}
                 onClick={() => go(i)}
-                style={isActive ? { backgroundColor: `color-mix(in oklab, ${color} 25%, transparent)`, borderColor: color } : undefined}
+                style={
+                  isActive
+                    ? {
+                        backgroundColor: `color-mix(in oklab, ${color} 25%, transparent)`,
+                        borderColor: color,
+                      }
+                    : undefined
+                }
                 className={`w-8 h-8 rounded-full text-xs font-semibold border flex items-center justify-center transition-colors ${
-                  isActive ? "text-ink" : "bg-surface-2 text-sub border-line-strong hover:bg-surface-3"
+                  isActive
+                    ? "text-ink"
+                    : "bg-surface-2 text-sub border-line-strong hover:bg-surface-3"
                 }`}
                 title={`Day ${day.dayNumber}${day.label ? " – " + day.label : ""} · ${day.stops.length} stop${day.stops.length !== 1 ? "s" : ""}`}
               >
@@ -229,11 +295,18 @@ export default function DayNavigator() {
         </div>
 
         {/* Focal stack: only prev/active/next are ever mounted. */}
-        <div ref={containerRef} className="relative flex items-start justify-center h-[520px]">
+        <div
+          ref={containerRef}
+          className="relative flex items-start justify-center h-[520px]"
+        >
           {isDragging && (
             <>
-              <div className={`absolute left-0 top-0 bottom-0 w-[70px] rounded-l-lg transition-colors pointer-events-none z-20 ${dwellSide === "left" ? "bg-brand-400/20" : ""}`} />
-              <div className={`absolute right-0 top-0 bottom-0 w-[70px] rounded-r-lg transition-colors pointer-events-none z-20 ${dwellSide === "right" ? "bg-brand-400/20" : ""}`} />
+              <div
+                className={`absolute left-0 top-0 bottom-0 w-[70px] rounded-l-lg transition-colors pointer-events-none z-20 ${dwellSide === "left" ? "bg-brand-400/20" : ""}`}
+              />
+              <div
+                className={`absolute right-0 top-0 bottom-0 w-[70px] rounded-r-lg transition-colors pointer-events-none z-20 ${dwellSide === "right" ? "bg-brand-400/20" : ""}`}
+              />
             </>
           )}
 
@@ -255,10 +328,23 @@ export default function DayNavigator() {
                 style={{
                   zIndex: role === "active" ? 10 : 5,
                   opacity: style.opacity,
-                  transform: to([style.x, style.y, style.scale], (x, y, scale) => `translate(${x}px, ${y}px) scale(${scale})`),
+                  transform: to(
+                    [style.x, style.y, style.scale],
+                    (x, y, scale) =>
+                      `translate(${x}px, ${y}px) scale(${scale})`,
+                  ),
                 }}
               >
-                <DayCard day={day} draggingStop={dragging?.kind === "stop" ? dragging.stop : null} draggingLocation={dragging?.kind === "location" ? dragging.location : null} stopDragId={stopDragId} />
+                <DayCard
+                  day={day}
+                  draggingStop={
+                    dragging?.kind === "stop" ? dragging.stop : null
+                  }
+                  draggingLocation={
+                    dragging?.kind === "location" ? dragging.location : null
+                  }
+                  stopDragId={stopDragId}
+                />
               </animated.div>
             );
           })}
@@ -285,7 +371,9 @@ export default function DayNavigator() {
 
       <DragOverlay dropAnimation={null}>
         {dragLabel && (
-          <div className="card px-3 py-2 shadow-lg text-sm font-medium text-ink rotate-1">{dragLabel}</div>
+          <div className="card px-3 py-2 shadow-lg text-sm font-medium text-ink rotate-1">
+            {dragLabel}
+          </div>
         )}
       </DragOverlay>
     </DndContext>

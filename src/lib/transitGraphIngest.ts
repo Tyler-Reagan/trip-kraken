@@ -63,7 +63,12 @@ export interface OsmRelation {
 
 // Route values that are rail (per ADR-0019's coverage decision) — everything else (bus,
 // trolleybus, ferry, ...) is excluded by simply never being in this list.
-const RAIL_ROUTE_VALUES = new Set(["train", "subway", "light_rail", "monorail"]);
+const RAIL_ROUTE_VALUES = new Set([
+  "train",
+  "subway",
+  "light_rail",
+  "monorail",
+]);
 
 // ADR-0019's own fix, thresholded as it suggested: real Japanese `route=train` relations do not
 // reliably carry the `service` sub-tag (issue #192 measured zero of 1,419 lines classified via it
@@ -77,7 +82,12 @@ const LIMITED_EXPRESS_SPEED_THRESHOLD_KMH = 80;
 function parseDurationSeconds(duration: string | undefined): number | null {
   if (!duration) return null;
   const parts = duration.split(":").map(Number);
-  if (parts.length < 2 || parts.length > 3 || parts.some((p) => !Number.isFinite(p))) return null;
+  if (
+    parts.length < 2 ||
+    parts.length > 3 ||
+    parts.some((p) => !Number.isFinite(p))
+  )
+    return null;
   const [h, m, s = 0] = parts;
   return h * 3600 + m * 60 + s;
 }
@@ -86,7 +96,10 @@ function parseDurationSeconds(duration: string | undefined): number | null {
  * independently of ride-edge construction because classification has to happen before any edge
  * exists to read it from — this walks the same stop members the same way, so it is the same
  * distance those edges end up carrying. */
-function lineDistanceMeters(stopMembers: OsmMember[], nodesById: Map<string, OsmNode>): number {
+function lineDistanceMeters(
+  stopMembers: OsmMember[],
+  nodesById: Map<string, OsmNode>,
+): number {
   let total = 0;
   let previous: OsmNode | null = null;
   for (const member of stopMembers) {
@@ -95,7 +108,7 @@ function lineDistanceMeters(stopMembers: OsmMember[], nodesById: Map<string, Osm
     if (previous) {
       total += haversineMeters(
         { lat: previous.lat, lng: previous.lon },
-        { lat: osmNode.lat, lng: osmNode.lon }
+        { lat: osmNode.lat, lng: osmNode.lon },
       );
     }
     previous = osmNode;
@@ -115,7 +128,8 @@ function lineTypeOf(relation: OsmRelation, distanceMeters: number): LineType {
   if (durationSeconds) {
     const impliedSpeedKmh = distanceMeters / 1000 / (durationSeconds / 3600);
     if (impliedSpeedKmh > SHINKANSEN_SPEED_THRESHOLD_KMH) return "shinkansen";
-    if (impliedSpeedKmh > LIMITED_EXPRESS_SPEED_THRESHOLD_KMH) return "limitedExpress";
+    if (impliedSpeedKmh > LIMITED_EXPRESS_SPEED_THRESHOLD_KMH)
+      return "limitedExpress";
   }
   return "commuter";
 }
@@ -182,10 +196,17 @@ const UNTAGGED_JR_PREMIUM_LINE_NAMES = new Set([
 /** One operator value per line/relation (issue #210) — the same granularity `lineType` already
  * uses. Where a through-service actually changes operator partway along one line stays unmodeled
  * (ADR-0021's fog item, carried on #140). */
-function operatorOf(relation: OsmRelation, lineType: LineType, lineName: string): string | undefined {
+function operatorOf(
+  relation: OsmRelation,
+  lineType: LineType,
+  lineName: string,
+): string | undefined {
   const raw = relation.tags.operator;
   if (raw) return canonicalOperatorOf(raw);
-  if (PREMIUM_LINE_TYPES.has(lineType) && UNTAGGED_JR_PREMIUM_LINE_NAMES.has(lineName)) {
+  if (
+    PREMIUM_LINE_TYPES.has(lineType) &&
+    UNTAGGED_JR_PREMIUM_LINE_NAMES.has(lineName)
+  ) {
     // Company-level identity isn't recoverable without the tag; group membership is all #211 needs.
     return "JR";
   }
@@ -233,7 +254,7 @@ function buildLines(
   graph: TransitGraph,
   nodesById: Map<string, OsmNode>,
   waysById: Map<string, OsmWay>,
-  relations: OsmRelation[]
+  relations: OsmRelation[],
 ): Map<string, string[]> {
   // Maps a raw OSM node id to every stop node id created from it (one per line through that
   // physical location) — cluster derivation below needs this to translate stop_area membership
@@ -245,9 +266,12 @@ function buildLines(
 
     const lineName = lineNameOf(relation);
     const stopMembers = relation.members.filter(
-      (m) => m.type === "node" && m.role.startsWith("stop")
+      (m) => m.type === "node" && m.role.startsWith("stop"),
     );
-    const lineType = lineTypeOf(relation, lineDistanceMeters(stopMembers, nodesById));
+    const lineType = lineTypeOf(
+      relation,
+      lineDistanceMeters(stopMembers, nodesById),
+    );
     const operator = operatorOf(relation, lineType, lineName);
 
     let sequence = 0;
@@ -291,7 +315,7 @@ function buildLines(
           toStopId: id,
           distanceMeters: haversineMeters(
             { lat: previous.node.lat, lng: previous.node.lon },
-            { lat: osmNode.lat, lng: osmNode.lon }
+            { lat: osmNode.lat, lng: osmNode.lon },
           ),
         };
         graph.rideEdges.push(edge);
@@ -303,18 +327,25 @@ function buildLines(
     // The line's real track, cut per ride edge (ADR-0030). A refused segment leaves the edge
     // without geometry, which is what makes the map draw that stretch dashed rather than claim a
     // shape we do not have.
-    traceLineGeometry(relation, stopOsmIds, waysById, nodesById).forEach((segment, i) => {
-      const edge = edgesOfLine[i];
-      if (!segment || !edge) return;
-      edge.geometry = segment.geometry;
-      edge.tracedLengthMeters = segment.tracedLengthMeters;
-    });
+    traceLineGeometry(relation, stopOsmIds, waysById, nodesById).forEach(
+      (segment, i) => {
+        const edge = edgesOfLine[i];
+        if (!segment || !edge) return;
+        edge.geometry = segment.geometry;
+        edge.tracedLengthMeters = segment.tracedLengthMeters;
+      },
+    );
   }
 
   return rawNodeToStopNodes;
 }
 
-function addCluster(graph: TransitGraph, id: string, name: string, stopNodeIds: string[]): void {
+function addCluster(
+  graph: TransitGraph,
+  id: string,
+  name: string,
+  stopNodeIds: string[],
+): void {
   if (stopNodeIds.length < 2) return; // a lone stop node has no transfer to represent.
   graph.clusters.set(id, { id, name, stopNodeIds });
   for (let i = 0; i < stopNodeIds.length; i++) {
@@ -325,7 +356,10 @@ function addCluster(graph: TransitGraph, id: string, name: string, stopNodeIds: 
       // never a real interchange. No transfer edge here: `buildAdjacency` already makes riding
       // between two stop nodes at one `osmNodeId` free, via the ride-adjacency union, so a costed
       // edge here would only be dead weight a shortest path never prefers.
-      if (graph.stopNodes.get(a)?.osmNodeId === graph.stopNodes.get(b)?.osmNodeId) continue;
+      if (
+        graph.stopNodes.get(a)?.osmNodeId === graph.stopNodes.get(b)?.osmNodeId
+      )
+        continue;
       graph.transferEdges.push({ fromStopId: a, toStopId: b, clusterId: id });
     }
   }
@@ -338,10 +372,14 @@ function addCluster(graph: TransitGraph, id: string, name: string, stopNodeIds: 
 function buildClusters(
   graph: TransitGraph,
   relations: OsmRelation[],
-  rawNodeToStopNodes: Map<string, string[]>
+  rawNodeToStopNodes: Map<string, string[]>,
 ): void {
-  const stopAreas = relations.filter((r) => r.tags.public_transport === "stop_area");
-  const stopAreaGroups = relations.filter((r) => r.tags.public_transport === "stop_area_group");
+  const stopAreas = relations.filter(
+    (r) => r.tags.public_transport === "stop_area",
+  );
+  const stopAreaGroups = relations.filter(
+    (r) => r.tags.public_transport === "stop_area_group",
+  );
 
   const stopNodeIdsOfArea = (area: OsmRelation): string[] =>
     area.members
@@ -350,26 +388,35 @@ function buildClusters(
 
   const absorbedAreaIds = new Set<string>();
   for (const group of stopAreaGroups) {
-    const memberAreaIds = group.members.filter((m) => m.type === "relation").map((m) => m.ref);
-    const stopIds = memberAreaIds
-      .flatMap((areaId) => {
-        const area = stopAreas.find((a) => a.id === areaId);
-        if (!area) return [];
-        absorbedAreaIds.add(areaId);
-        return stopNodeIdsOfArea(area);
-      });
-    addCluster(graph, group.id, englishNameOf(group.tags, group.id), [...new Set(stopIds)]);
+    const memberAreaIds = group.members
+      .filter((m) => m.type === "relation")
+      .map((m) => m.ref);
+    const stopIds = memberAreaIds.flatMap((areaId) => {
+      const area = stopAreas.find((a) => a.id === areaId);
+      if (!area) return [];
+      absorbedAreaIds.add(areaId);
+      return stopNodeIdsOfArea(area);
+    });
+    addCluster(graph, group.id, englishNameOf(group.tags, group.id), [
+      ...new Set(stopIds),
+    ]);
   }
 
   for (const area of stopAreas) {
     if (absorbedAreaIds.has(area.id)) continue;
-    addCluster(graph, area.id, englishNameOf(area.tags, area.id), [...new Set(stopNodeIdsOfArea(area))]);
+    addCluster(graph, area.id, englishNameOf(area.tags, area.id), [
+      ...new Set(stopNodeIdsOfArea(area)),
+    ]);
   }
 
   // Fallback: any stop node not already placed in a cluster above, grouped by normalized name +
   // proximity with other still-unclustered stop nodes.
-  const clustered = new Set([...graph.clusters.values()].flatMap((c) => c.stopNodeIds));
-  const unclustered = [...graph.stopNodes.values()].filter((s) => !clustered.has(s.id));
+  const clustered = new Set(
+    [...graph.clusters.values()].flatMap((c) => c.stopNodeIds),
+  );
+  const unclustered = [...graph.stopNodes.values()].filter(
+    (s) => !clustered.has(s.id),
+  );
 
   const byName = new Map<string, StopNode[]>();
   for (const stop of unclustered) {
@@ -393,13 +440,24 @@ function buildClusters(
       while (grew) {
         grew = false;
         for (let i = remaining.length - 1; i >= 0; i--) {
-          if (bucket.some((b) => haversineMeters(b, remaining[i]) <= FALLBACK_CLUSTER_RADIUS_METERS)) {
+          if (
+            bucket.some(
+              (b) =>
+                haversineMeters(b, remaining[i]) <=
+                FALLBACK_CLUSTER_RADIUS_METERS,
+            )
+          ) {
             bucket.push(...remaining.splice(i, 1));
             grew = true;
           }
         }
       }
-      addCluster(graph, `fallback:${name}:${clusterIndex++}`, seed.stationName, bucket.map((s) => s.id));
+      addCluster(
+        graph,
+        `fallback:${name}:${clusterIndex++}`,
+        seed.stationName,
+        bucket.map((s) => s.id),
+      );
     }
   }
 }
@@ -407,7 +465,11 @@ function buildClusters(
 /** The pure transform (Seam 2): parsed OSM nodes + ways + relations → a complete `TransitGraph`.
  * Ways joined the signature with ADR-0030 — they carry the geometry each ride edge is traced from,
  * and tracing belongs behind this seam, where ADR-0019's ticket #87 drew the unit-test line. */
-export function buildTransitGraph(nodes: OsmNode[], ways: OsmWay[], relations: OsmRelation[]): TransitGraph {
+export function buildTransitGraph(
+  nodes: OsmNode[],
+  ways: OsmWay[],
+  relations: OsmRelation[],
+): TransitGraph {
   const graph = createGraph();
   const nodesById = new Map(nodes.map((n) => [n.id, n]));
   const waysById = new Map(ways.map((w) => [w.id, w]));

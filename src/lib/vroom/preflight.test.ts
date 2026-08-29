@@ -7,11 +7,17 @@ import assert from "node:assert/strict";
 import { preflight } from "./preflight";
 import type { LocationInput } from "@/lib/solver";
 
-const loc = (fields: Partial<LocationInput> & { id: string }): LocationInput => ({ lat: 0, lng: 0, kind: "activity", ...fields });
+const loc = (
+  fields: Partial<LocationInput> & { id: string },
+): LocationInput => ({ lat: 0, lng: 0, kind: "activity", ...fields });
 
 // ── #152: ungeocoded + pending → "still looking this place up", not excluded from the reason set ──
 {
-  const { placeable, unplaced } = preflight([loc({ id: "a", enrichmentStatus: "pending" })], [], []);
+  const { placeable, unplaced } = preflight(
+    [loc({ id: "a", enrichmentStatus: "pending" })],
+    [],
+    [],
+  );
   assert.equal(placeable.length, 0);
   assert.equal(unplaced.length, 1);
   assert.equal(unplaced[0].code, "ungeocoded-pending");
@@ -20,7 +26,11 @@ const loc = (fields: Partial<LocationInput> & { id: string }): LocationInput => 
 
 // ── #152: ungeocoded + failed → an actionable reason, distinct from pending ──
 {
-  const { unplaced } = preflight([loc({ id: "a", enrichmentStatus: "failed" })], [], []);
+  const { unplaced } = preflight(
+    [loc({ id: "a", enrichmentStatus: "failed" })],
+    [],
+    [],
+  );
   assert.equal(unplaced[0].code, "ungeocoded-failed");
   assert.match(unplaced[0].reason, /couldn't find this place/);
 }
@@ -32,9 +42,13 @@ const loc = (fields: Partial<LocationInput> & { id: string }): LocationInput => 
   const { placeable, unplaced } = preflight(
     [loc({ id: "a", lat: 35, lng: 139, enrichmentStatus: "failed" })],
     [],
-    []
+    [],
   );
-  assert.equal(unplaced.length, 0, "a geocoded row is never dropped just because enrichment failed");
+  assert.equal(
+    unplaced.length,
+    0,
+    "a geocoded row is never dropped just because enrichment failed",
+  );
   assert.equal(placeable.length, 1);
   assert.equal(placeable[0].id, "a");
 }
@@ -45,9 +59,13 @@ const loc = (fields: Partial<LocationInput> & { id: string }): LocationInput => 
   const { placeable, unplaced, metroOf, lodgingMetros } = preflight(
     [loc({ id: "a", lat: 35.0, lng: 139.0 })],
     [loc({ id: "lodge", lat: 0, lng: 0, enrichmentStatus: "pending" })], // lodging present but ungeocoded
-    []
+    [],
   );
-  assert.deepEqual(unplaced, [], "no coverage reason fires when no lodging is geocoded");
+  assert.deepEqual(
+    unplaced,
+    [],
+    "no coverage reason fires when no lodging is geocoded",
+  );
   assert.equal(placeable.length, 1);
   assert.equal(metroOf.size, 0, "metroOf is empty — clustering never ran");
   assert.equal(lodgingMetros.size, 0);
@@ -68,30 +86,63 @@ const loc = (fields: Partial<LocationInput> & { id: string }): LocationInput => 
   assert.deepEqual(
     unplaced.map((u) => u.locationId).sort(),
     ["tokyo1", "tokyo2"],
-    "the Tokyo activities are unplaced — no lodging covers that metro"
+    "the Tokyo activities are unplaced — no lodging covers that metro",
   );
   assert.ok(unplaced.every((u) => u.code === "no-lodging-coverage"));
-  assert.ok(unplaced.every((u) => u.reason === "No lodging covers this area of the trip."), "the ADR-0020 string is unchanged");
-  assert.deepEqual(placeable.map((p) => p.id).sort(), ["osaka1", "osaka2"], "the covered metro's activities are placed as usual");
-  assert.equal(metroOf.get("osaka1"), metroOf.get("osaka2"), "both Osaka activities share a metro ordinal");
+  assert.ok(
+    unplaced.every(
+      (u) => u.reason === "No lodging covers this area of the trip.",
+    ),
+    "the ADR-0020 string is unchanged",
+  );
+  assert.deepEqual(
+    placeable.map((p) => p.id).sort(),
+    ["osaka1", "osaka2"],
+    "the covered metro's activities are placed as usual",
+  );
+  assert.equal(
+    metroOf.get("osaka1"),
+    metroOf.get("osaka2"),
+    "both Osaka activities share a metro ordinal",
+  );
 }
 
 // ── Closed on every Trip date → excluded with the third reason, distinct from the other two ──
 {
   const MON = "2026-06-01";
   const activities = [
-    loc({ id: "closed", lat: 35.0, lng: 139.0, hoursJson: { "2": { open: "09:00", close: "17:00" } } }), // Tuesday only
-    loc({ id: "open", lat: 35.0, lng: 139.0, hoursJson: { "1": { open: "09:00", close: "17:00" } } }), // Monday
+    loc({
+      id: "closed",
+      lat: 35.0,
+      lng: 139.0,
+      hoursJson: { "2": { open: "09:00", close: "17:00" } },
+    }), // Tuesday only
+    loc({
+      id: "open",
+      lat: 35.0,
+      lng: 139.0,
+      hoursJson: { "1": { open: "09:00", close: "17:00" } },
+    }), // Monday
   ];
   const { placeable, unplaced } = preflight(activities, [], [MON]); // MON is a Monday
-  assert.deepEqual(unplaced.map((u) => u.locationId), ["closed"]);
+  assert.deepEqual(
+    unplaced.map((u) => u.locationId),
+    ["closed"],
+  );
   assert.equal(unplaced[0].code, "closed-all-days");
-  assert.deepEqual(placeable.map((p) => p.id), ["open"]);
+  assert.deepEqual(
+    placeable.map((p) => p.id),
+    ["open"],
+  );
 }
 
 // ── No hours data at all is unconstrained, not "closed every day" ──
 {
-  const { placeable, unplaced } = preflight([loc({ id: "a", lat: 35, lng: 139 })], [], ["2026-06-01"]);
+  const { placeable, unplaced } = preflight(
+    [loc({ id: "a", lat: 35, lng: 139 })],
+    [],
+    ["2026-06-01"],
+  );
   assert.deepEqual(unplaced, []);
   assert.equal(placeable.length, 1);
 }
@@ -131,7 +182,12 @@ const loc = (fields: Partial<LocationInput> & { id: string }): LocationInput => 
 
 // ── A geocoded edge never warns, regardless of enrichment status. ──
 {
-  const arrival = loc({ id: "airport3", lat: 35, lng: 139, enrichmentStatus: "pending" });
+  const arrival = loc({
+    id: "airport3",
+    lat: 35,
+    lng: 139,
+    enrichmentStatus: "pending",
+  });
   const { warnings } = preflight([], [], [], { arrival });
   assert.equal(warnings.length, 0);
 }

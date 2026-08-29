@@ -15,7 +15,10 @@ interface TripSummary {
 }
 
 const shortDate = (date: string) =>
-  new Date(date.slice(0, 10) + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  new Date(date.slice(0, 10) + "T00:00:00").toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 
 export default function TripList({ trips }: { trips: TripSummary[] }) {
   const router = useRouter();

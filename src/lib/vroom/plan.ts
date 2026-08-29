@@ -37,7 +37,15 @@
  */
 
 import type { UnplacedDiagnosis } from "@/lib/solver";
-import type { VroomJob, VroomPlanRequest, VroomPlanSolution, VroomPlanStepInput, VroomRequest, VroomSolution, VroomVehicle } from "@/lib/vroom/wire";
+import type {
+  VroomJob,
+  VroomPlanRequest,
+  VroomPlanSolution,
+  VroomPlanStepInput,
+  VroomRequest,
+  VroomSolution,
+  VroomVehicle,
+} from "@/lib/vroom/wire";
 
 /** Bounds the diagnostic's cost on a pathological Trip (many more dropped Activities than Days).
  * Past this the remaining Unplaced entries keep their honest reasonless message rather than
@@ -83,15 +91,17 @@ function pickVehicle(
   jobs: Map<number, VroomJob>,
   vehicles: VroomVehicle[],
   placements: Map<number, number[]>,
-  taken: Set<number>
+  taken: Set<number>,
 ): number | undefined {
   const jobSkills = jobs.get(jobId)?.skills ?? [];
   const candidates = vehicles.filter((v) => !taken.has(v.id));
   if (candidates.length === 0) return undefined;
 
-  const serves = (v: VroomVehicle) => jobSkills.every((s) => (v.skills ?? []).includes(s));
+  const serves = (v: VroomVehicle) =>
+    jobSkills.every((s) => (v.skills ?? []).includes(s));
   const load = (v: VroomVehicle) => placements.get(v.id)?.length ?? 0;
-  const hasRoom = (v: VroomVehicle) => v.max_tasks == null || load(v) < v.max_tasks;
+  const hasRoom = (v: VroomVehicle) =>
+    v.max_tasks == null || load(v) < v.max_tasks;
 
   const tiers = [
     candidates.filter((v) => serves(v) && hasRoom(v)),
@@ -110,7 +120,11 @@ function pickVehicle(
  * VROOM itself dropped without a reason — pre-flight exclusions already know why they were
  * excluded and are never probed.
  */
-export function planProbeRounds(request: VroomRequest, solution: VroomSolution, jobIds: number[]): PlanProbe[][] {
+export function planProbeRounds(
+  request: VroomRequest,
+  solution: VroomSolution,
+  jobIds: number[],
+): PlanProbe[][] {
   const jobs = jobsById(request);
   const placements = placementsByVehicle(solution);
   const rounds: PlanProbe[][] = [];
@@ -120,7 +134,13 @@ export function planProbeRounds(request: VroomRequest, solution: VroomSolution, 
     const taken = new Set<number>();
     const round: PlanProbe[] = [];
     for (const jobId of remaining) {
-      const vehicleId = pickVehicle(jobId, jobs, request.vehicles, placements, taken);
+      const vehicleId = pickVehicle(
+        jobId,
+        jobs,
+        request.vehicles,
+        placements,
+        taken,
+      );
       if (vehicleId == null) break; // every Day already carries a probe this round
       taken.add(vehicleId);
       round.push({ jobId, vehicleId });
@@ -139,7 +159,11 @@ export function planProbeRounds(request: VroomRequest, solution: VroomSolution, 
  * every vehicle's `steps` is reported unassigned rather than rejected, so the untouched Days cost
  * nothing to leave out and their absence keeps each round's answer about the probes alone.
  */
-export function buildVroomPlanRequest(request: VroomRequest, solution: VroomSolution, round: PlanProbe[]): VroomPlanRequest {
+export function buildVroomPlanRequest(
+  request: VroomRequest,
+  solution: VroomSolution,
+  round: PlanProbe[],
+): VroomPlanRequest {
   const placements = placementsByVehicle(solution);
   const byVehicle = new Map(request.vehicles.map((v) => [v.id, v]));
 
@@ -157,7 +181,12 @@ export function buildVroomPlanRequest(request: VroomRequest, solution: VroomSolu
     return [{ ...vehicle, steps }];
   });
 
-  return { jobs: request.jobs, vehicles, matrices: request.matrices, options: { c: true } };
+  return {
+    jobs: request.jobs,
+    vehicles,
+    matrices: request.matrices,
+    options: { c: true },
+  };
 }
 
 /**
@@ -175,7 +204,10 @@ export function buildVroomPlanRequest(request: VroomRequest, solution: VroomSolu
  *
  * The Day-level reading is only attributable because the round put exactly one probe on the Day.
  */
-export function parseVroomViolations(solution: VroomPlanSolution, round: PlanProbe[]): Map<number, UnplacedDiagnosis> {
+export function parseVroomViolations(
+  solution: VroomPlanSolution,
+  round: PlanProbe[],
+): Map<number, UnplacedDiagnosis> {
   const found = new Map<number, UnplacedDiagnosis>();
   const probeByVehicle = new Map(round.map((p) => [p.vehicleId, p]));
 
@@ -183,13 +215,23 @@ export function parseVroomViolations(solution: VroomPlanSolution, round: PlanPro
     const probe = probeByVehicle.get(route.vehicle);
     if (!probe) continue;
 
-    const ownStep = route.steps.find((s) => s.type === "job" && s.id === probe.jobId);
+    const ownStep = route.steps.find(
+      (s) => s.type === "job" && s.id === probe.jobId,
+    );
 
     // The Activity's own conflicts outrank the Day's: "this closes before you'd arrive" is a fact
     // about the place and survives rearranging the Day, where a shortfall may not.
     const own = (ownStep?.violations ?? []).flatMap((v) => {
       const cause = ownCause(v.cause);
-      return cause ? [{ cause, dayNumber: route.vehicle, ...(v.duration != null ? { seconds: v.duration } : {}) }] : [];
+      return cause
+        ? [
+            {
+              cause,
+              dayNumber: route.vehicle,
+              ...(v.duration != null ? { seconds: v.duration } : {}),
+            },
+          ]
+        : [];
     })[0];
     if (own) {
       found.set(probe.jobId, own);
@@ -197,9 +239,16 @@ export function parseVroomViolations(solution: VroomPlanSolution, round: PlanPro
     }
 
     const spillAt = (type: "start" | "end", cause: string) =>
-      route.steps.find((s) => s.type === type)?.violations?.find((v) => v.cause === cause)?.duration ?? 0;
+      route.steps
+        .find((s) => s.type === type)
+        ?.violations?.find((v) => v.cause === cause)?.duration ?? 0;
     const shortfall = spillAt("start", "lead_time") + spillAt("end", "delay");
-    if (shortfall > 0) found.set(probe.jobId, { cause: "day-too-short", dayNumber: route.vehicle, seconds: shortfall });
+    if (shortfall > 0)
+      found.set(probe.jobId, {
+        cause: "day-too-short",
+        dayNumber: route.vehicle,
+        seconds: shortfall,
+      });
   }
 
   return found;
@@ -227,7 +276,8 @@ function ownCause(cause: string): UnplacedDiagnosis["cause"] | null {
  * day." Magnitude is rendered in minutes because that is the unit a traveller acts on, and rounded
  * up — "arrives 1 minute late" understates a 90-second miss less honestly than "2 minutes" does. */
 export function diagnosisReason(d: UnplacedDiagnosis): string {
-  const mins = d.seconds != null ? Math.max(1, Math.ceil(d.seconds / 60)) : null;
+  const mins =
+    d.seconds != null ? Math.max(1, Math.ceil(d.seconds / 60)) : null;
   switch (d.cause) {
     case "day-full":
       return `Every day that reaches this is already full — day ${d.dayNumber} has no room left.`;

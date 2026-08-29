@@ -11,7 +11,9 @@ import { makeTravelCost } from "@/types/path";
 import type { LocationInput, StayPlan } from "@/lib/solver";
 import type { VroomRequest } from "./wire";
 
-const loc = (fields: Partial<LocationInput> & { id: string }): LocationInput => ({ lat: 0, lng: 0, kind: "activity", ...fields });
+const loc = (
+  fields: Partial<LocationInput> & { id: string },
+): LocationInput => ({ lat: 0, lng: 0, kind: "activity", ...fields });
 
 /** A dense fake matrix, cell (i,j) = 100 + i*10 + j seconds, with a fractional cell injected at
  * (0, n-1) to exercise integer rounding. */
@@ -20,7 +22,7 @@ function fakeMatrix(n: number) {
     Array.from({ length: n }, (_, j) => {
       const seconds = i === 0 && j === n - 1 ? 100.6 : 100 + i * 10 + j;
       return makeTravelCost(1000, seconds, "straightLine", "haversine");
-    })
+    }),
   );
 }
 
@@ -49,7 +51,8 @@ function vehicleById(req: VroomRequest, id: number) {
     lodgingMetros: new Map(),
   });
   assert.equal(req.vehicles.length, 2);
-  for (const v of req.vehicles) assert.equal(v.max_tasks, undefined, "no per-day task cap is ever sent");
+  for (const v of req.vehicles)
+    assert.equal(v.max_tasks, undefined, "no per-day task cap is ever sent");
 }
 
 // ── Per-day start_index/end_index, differing on a travel day; same-lodging days omit end_index ──
@@ -77,10 +80,22 @@ function vehicleById(req: VroomRequest, id: number) {
 
   const day1 = vehicleById(req, 1);
   const day2 = vehicleById(req, 2);
-  assert.equal(day1.start_index, undefined, "day 1 has no prior-night lodging to wake at");
+  assert.equal(
+    day1.start_index,
+    undefined,
+    "day 1 has no prior-night lodging to wake at",
+  );
   assert.equal(day1.end_index, 1, "day 1 sleeps at la (matrix index 1)");
-  assert.equal(day2.start_index, 1, "day 2 wakes at la — the travel day's start anchor");
-  assert.equal(day2.end_index, 2, "day 2 sleeps at lb — differs from start_index on a travel day");
+  assert.equal(
+    day2.start_index,
+    1,
+    "day 2 wakes at la — the travel day's start anchor",
+  );
+  assert.equal(
+    day2.end_index,
+    2,
+    "day 2 sleeps at lb — differs from start_index on a travel day",
+  );
 }
 
 // ── A round-trip day (wake and sleep at the same lodging) omits end_index — no forced return ──
@@ -103,7 +118,11 @@ function vehicleById(req: VroomRequest, id: number) {
   });
   const day2 = vehicleById(req, 2);
   assert.equal(day2.start_index, 1, "day 2 wakes at L");
-  assert.equal(day2.end_index, undefined, "day 2 sleeps at the same L — no forced return");
+  assert.equal(
+    day2.end_index,
+    undefined,
+    "day 2 sleeps at the same L — no forced return",
+  );
 }
 
 // ── Metro skills: jobs carry their metro ordinal, vehicles carry the union reachable from their
@@ -118,8 +137,16 @@ function vehicleById(req: VroomRequest, id: number) {
   const hotelTokyo = loc({ id: "hotelTokyo", lat: 35.6762, lng: 139.6503 });
   const hotelOsaka = loc({ id: "hotelOsaka", lat: 34.6937, lng: 135.5023 });
   const lodgings = [hotelTokyo, hotelOsaka];
-  const { placeable, metroOf, lodgingMetros } = preflight(activities, lodgings, []);
-  assert.equal(placeable.length, 4, "both metros are covered — nothing dropped in pre-flight");
+  const { placeable, metroOf, lodgingMetros } = preflight(
+    activities,
+    lodgings,
+    [],
+  );
+  assert.equal(
+    placeable.length,
+    4,
+    "both metros are covered — nothing dropped in pre-flight",
+  );
 
   const tokyoOrd = metroOf.get("t1")!;
   const osakaOrd = metroOf.get("o1")!;
@@ -143,17 +170,41 @@ function vehicleById(req: VroomRequest, id: number) {
     lodgingMetros,
   });
 
-  assert.deepEqual(jobById(req, matrixPoints.findIndex((p) => p.id === "t1")).skills, [tokyoOrd]);
-  assert.deepEqual(jobById(req, matrixPoints.findIndex((p) => p.id === "o1")).skills, [osakaOrd]);
+  assert.deepEqual(
+    jobById(
+      req,
+      matrixPoints.findIndex((p) => p.id === "t1"),
+    ).skills,
+    [tokyoOrd],
+  );
+  assert.deepEqual(
+    jobById(
+      req,
+      matrixPoints.findIndex((p) => p.id === "o1"),
+    ).skills,
+    [osakaOrd],
+  );
 
-  assert.deepEqual(vehicleById(req, 1).skills, [tokyoOrd], "day 1 (pure Tokyo) reaches only Tokyo");
-  assert.deepEqual(vehicleById(req, 3).skills, [tokyoOrd], "day 3 (still Tokyo, wake=sleep) reaches only Tokyo");
+  assert.deepEqual(
+    vehicleById(req, 1).skills,
+    [tokyoOrd],
+    "day 1 (pure Tokyo) reaches only Tokyo",
+  );
+  assert.deepEqual(
+    vehicleById(req, 3).skills,
+    [tokyoOrd],
+    "day 3 (still Tokyo, wake=sleep) reaches only Tokyo",
+  );
   assert.deepEqual(
     [...vehicleById(req, 4).skills!].sort(),
     [tokyoOrd, osakaOrd].sort(),
-    "day 4 (the travel day, wake Tokyo / sleep Osaka) reaches both"
+    "day 4 (the travel day, wake Tokyo / sleep Osaka) reaches both",
   );
-  assert.deepEqual(vehicleById(req, 6).skills, [osakaOrd], "day 6 (pure Osaka) reaches only Osaka");
+  assert.deepEqual(
+    vehicleById(req, 6).skills,
+    [osakaOrd],
+    "day 6 (pure Osaka) reaches only Osaka",
+  );
 }
 
 // ── No metro clustering active (no geocoded lodging) → skills omitted everywhere ──
@@ -191,8 +242,16 @@ function vehicleById(req: VroomRequest, id: number) {
     metroOf: new Map(),
     lodgingMetros: new Map(),
   });
-  assert.equal(jobById(req, 0).service, 90 * 60, "visitDuration converts to seconds");
-  assert.equal(jobById(req, 1).service, 30 * 60, "an unset visitDuration resolves to DEFAULT_VISIT_MINUTES (ADR-0023 §9, amended 2026-08-18)");
+  assert.equal(
+    jobById(req, 0).service,
+    90 * 60,
+    "visitDuration converts to seconds",
+  );
+  assert.equal(
+    jobById(req, 1).service,
+    30 * 60,
+    "an unset visitDuration resolves to DEFAULT_VISIT_MINUTES (ADR-0023 §9, amended 2026-08-18)",
+  );
 }
 
 // ── The matrix profile key is "trip", matching every vehicle's profile, and durations are integers ──
@@ -210,9 +269,16 @@ function vehicleById(req: VroomRequest, id: number) {
     metroOf: new Map(),
     lodgingMetros: new Map(),
   });
-  assert.ok("trip" in req.matrices, 'the matrix is keyed "trip", not "car" — our matrix is not a claim about mode');
+  assert.ok(
+    "trip" in req.matrices,
+    'the matrix is keyed "trip", not "car" — our matrix is not a claim about mode',
+  );
   assert.equal(vehicleById(req, 1).profile, "trip");
-  assert.equal(req.matrices.trip.durations[0][1], 101, "100.6 seconds rounds to 101, an integer");
+  assert.equal(
+    req.matrices.trip.durations[0][1],
+    101,
+    "100.6 seconds rounds to 101, an integer",
+  );
   assert.ok(Number.isInteger(req.matrices.trip.durations[0][0]));
 }
 
@@ -240,9 +306,16 @@ function vehicleById(req: VroomRequest, id: number) {
 {
   const a1 = loc({ id: "a1" });
   const hotel = loc({ id: "hotel", lat: 35, lng: 139 });
-  const airport = loc({ id: "airport", lat: 35.5, lng: 139.5, kind: "transit" });
+  const airport = loc({
+    id: "airport",
+    lat: 35.5,
+    lng: 139.5,
+    kind: "transit",
+  });
   const matrixPoints = [a1, hotel, airport];
-  const stays: StayPlan[] = [{ lodgingId: "hotel", startNight: 1, endNight: 1 }];
+  const stays: StayPlan[] = [
+    { lodgingId: "hotel", startNight: 1, endNight: 1 },
+  ];
   const req = buildVroomRequest({
     placeable: [a1],
     stays,
@@ -259,14 +332,27 @@ function vehicleById(req: VroomRequest, id: number) {
   const day1 = vehicleById(req, 1);
   const airportIndex = matrixPoints.findIndex((p) => p.id === "airport");
   const hotelIndex = matrixPoints.findIndex((p) => p.id === "hotel");
-  assert.equal(day1.start_index, airportIndex, "day 1 starts at the designated arrival");
-  assert.notEqual(day1.start_index, hotelIndex, "not at the day 1 lodging — the issue's own acceptance criterion");
+  assert.equal(
+    day1.start_index,
+    airportIndex,
+    "day 1 starts at the designated arrival",
+  );
+  assert.notEqual(
+    day1.start_index,
+    hotelIndex,
+    "not at the day 1 lodging — the issue's own acceptance criterion",
+  );
 }
 
 // ── A dated-but-timeless edge still anchors the geography without constraining the clock ──
 {
   const a1 = loc({ id: "a1" });
-  const airport = loc({ id: "airport", lat: 35.5, lng: 139.5, kind: "transit" });
+  const airport = loc({
+    id: "airport",
+    lat: 35.5,
+    lng: 139.5,
+    kind: "transit",
+  });
   const req = buildVroomRequest({
     placeable: [a1],
     stays: [],
@@ -282,8 +368,16 @@ function vehicleById(req: VroomRequest, id: number) {
   });
   const day1 = vehicleById(req, 1);
   const defaultOpen = Date.parse("2026-06-01T00:00:00Z") / 1000 + 9 * 3600;
-  assert.equal(day1.start_index, 1, "the edge still anchors the route with no time known");
-  assert.equal(day1.time_window![0], defaultOpen, "but a bare date does not move the window's open time");
+  assert.equal(
+    day1.start_index,
+    1,
+    "the edge still anchors the route with no time known",
+  );
+  assert.equal(
+    day1.time_window![0],
+    defaultOpen,
+    "but a bare date does not move the window's open time",
+  );
 }
 
 // ── A known arrival time makes day 1's window open later, honestly shorter rather than shifted
@@ -291,7 +385,12 @@ function vehicleById(req: VroomRequest, id: number) {
 // budget starting late ──
 {
   const a1 = loc({ id: "a1" });
-  const airport = loc({ id: "airport", lat: 35.5, lng: 139.5, kind: "transit" });
+  const airport = loc({
+    id: "airport",
+    lat: 35.5,
+    lng: 139.5,
+    kind: "transit",
+  });
   const req = buildVroomRequest({
     placeable: [a1],
     stays: [],
@@ -307,14 +406,27 @@ function vehicleById(req: VroomRequest, id: number) {
   });
   const [opensAt, closesAt] = vehicleById(req, 1).time_window!;
   const dayStart = Date.parse("2026-06-01T00:00:00Z") / 1000;
-  assert.equal(opensAt, dayStart + 14 * 3600, "opens at the arrival time, not the default 09:00");
-  assert.equal(closesAt, dayStart + 17 * 3600, "closes at the untouched default — the day got shorter, not later");
+  assert.equal(
+    opensAt,
+    dayStart + 14 * 3600,
+    "opens at the arrival time, not the default 09:00",
+  );
+  assert.equal(
+    closesAt,
+    dayStart + 17 * 3600,
+    "closes at the untouched default — the day got shorter, not later",
+  );
 }
 
 // ── A known departure time makes the last day's window close earlier, symmetric to arrival ──
 {
   const a1 = loc({ id: "a1" });
-  const airport = loc({ id: "airport", lat: 35.5, lng: 139.5, kind: "transit" });
+  const airport = loc({
+    id: "airport",
+    lat: 35.5,
+    lng: 139.5,
+    kind: "transit",
+  });
   const req = buildVroomRequest({
     placeable: [a1],
     stays: [],
@@ -330,15 +442,28 @@ function vehicleById(req: VroomRequest, id: number) {
   });
   const [opensAt, closesAt] = vehicleById(req, 1).time_window!;
   const dayStart = Date.parse("2026-06-01T00:00:00Z") / 1000;
-  assert.equal(opensAt, dayStart + 9 * 3600, "the open time is untouched by a departure constraint");
-  assert.equal(closesAt, dayStart + 11.5 * 3600, "closes at the departure — must reach the airport by then");
+  assert.equal(
+    opensAt,
+    dayStart + 9 * 3600,
+    "the open time is untouched by a departure constraint",
+  );
+  assert.equal(
+    closesAt,
+    dayStart + 11.5 * 3600,
+    "closes at the departure — must reach the airport by then",
+  );
 }
 
 // ── A very late arrival that would fall after the default close clamps rather than emits a
 // backwards window (the same defence dayWindowsFor applies to overnight opening hours) ──
 {
   const a1 = loc({ id: "a1" });
-  const airport = loc({ id: "airport", lat: 35.5, lng: 139.5, kind: "transit" });
+  const airport = loc({
+    id: "airport",
+    lat: 35.5,
+    lng: 139.5,
+    kind: "transit",
+  });
   const req = buildVroomRequest({
     placeable: [a1],
     stays: [],
@@ -354,7 +479,11 @@ function vehicleById(req: VroomRequest, id: number) {
   });
   const [opensAt, closesAt] = vehicleById(req, 1).time_window!;
   assert.ok(opensAt <= closesAt, "the window is never backwards");
-  assert.equal(opensAt, closesAt, "a 22:00 landing past the default close clamps to a zero-length window, not negative");
+  assert.equal(
+    opensAt,
+    closesAt,
+    "a 22:00 landing past the default close clamps to a zero-length window, not negative",
+  );
 }
 
 // ── No edges at all: today's behaviour is bit-for-bit unchanged ──
@@ -375,7 +504,10 @@ function vehicleById(req: VroomRequest, id: number) {
   const day1 = vehicleById(req, 1);
   const dayStart = Date.parse("2026-06-01T00:00:00Z") / 1000;
   assert.equal(day1.start_index, undefined);
-  assert.deepEqual(day1.time_window, [dayStart + 9 * 3600, dayStart + 9 * 3600 + 480 * 60]);
+  assert.deepEqual(day1.time_window, [
+    dayStart + 9 * 3600,
+    dayStart + 9 * 3600 + 480 * 60,
+  ]);
 }
 
 console.log("✓ request.test.ts passed");

@@ -95,7 +95,8 @@ export default function VisitDurationEditor({ loc }: { loc: Location }) {
     pendingRef.current = null;
     setDraft(null);
     setOpen(false);
-    if (loc.visitDuration !== null) updateLocation(loc.id, { visitDuration: null });
+    if (loc.visitDuration !== null)
+      updateLocation(loc.id, { visitDuration: null });
   }
 
   // A pending edit outlives this component — closing the Inspector mid-debounce must still save.
@@ -129,7 +130,13 @@ export default function VisitDurationEditor({ loc }: { loc: Location }) {
   function handleScroll() {
     const el = listRef.current;
     if (!el || !touchedRef.current) return;
-    const i = Math.max(0, Math.min(VISIT_DURATION_OPTIONS.length - 1, Math.round(el.scrollTop / ROLLER_ROW_H)));
+    const i = Math.max(
+      0,
+      Math.min(
+        VISIT_DURATION_OPTIONS.length - 1,
+        Math.round(el.scrollTop / ROLLER_ROW_H),
+      ),
+    );
     schedule(VISIT_DURATION_OPTIONS[i]);
   }
 
@@ -159,7 +166,10 @@ export default function VisitDurationEditor({ loc }: { loc: Location }) {
     // block-level flex container would stretch to the full panel width (and drag `min-w-full` on
     // the popover with it). As a flex item in the Manifest row, inline-flex blockifies to the same
     // content-sized box, so both mounts get one shrink-wrapped control.
-    <div ref={rootRef} className="relative inline-flex items-center shrink-0 h-7 rounded-lg border border-line-strong bg-surface-2">
+    <div
+      ref={rootRef}
+      className="relative inline-flex items-center shrink-0 h-7 rounded-lg border border-line-strong bg-surface-2"
+    >
       <button
         type="button"
         onClick={() => schedule(nextVisitDuration(value, -1))}

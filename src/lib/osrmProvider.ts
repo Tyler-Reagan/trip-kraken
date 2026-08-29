@@ -30,9 +30,19 @@
  * degrades one cell rather than failing the whole request.
  */
 
-import { makeTravelCost, type Path, type PathEndpoint, type PathGeometry, type PathKind } from "@/types/path";
+import {
+  makeTravelCost,
+  type Path,
+  type PathEndpoint,
+  type PathGeometry,
+  type PathKind,
+} from "@/types/path";
 import type { Point } from "@/lib/geo";
-import type { MatrixCell, PathProvider, PathProviderOptions } from "@/lib/pathProvider";
+import type {
+  MatrixCell,
+  PathProvider,
+  PathProviderOptions,
+} from "@/lib/pathProvider";
 
 /** Above this snap distance, a coordinate is not plausibly "at" the point that was requested —
  * the out-of-Extract signal (ADR-0024, amended 2026-08-10). Sized from a live check against the
@@ -52,19 +62,28 @@ type Profile = "foot" | "car";
  * against this provider's declared `kinds: ["walking", "driving"]` (ADR-0024 §4), so exactly one
  * of these is ever present in a real request; the loop exists only so an unexpected shape fails
  * with a clear message instead of silently picking nothing. */
-const PROFILE_FOR_KIND: Partial<Record<PathKind, Profile>> = { walking: "foot", driving: "car" };
+const PROFILE_FOR_KIND: Partial<Record<PathKind, Profile>> = {
+  walking: "foot",
+  driving: "car",
+};
 
 function resolveProfile(kinds: PathKind[]): Profile {
   for (const kind of kinds) {
     const profile = PROFILE_FOR_KIND[kind];
     if (profile) return profile;
   }
-  throw new Error(`osrmProvider: no walking/driving kind in ${JSON.stringify(kinds)}`);
+  throw new Error(
+    `osrmProvider: no walking/driving kind in ${JSON.stringify(kinds)}`,
+  );
 }
 
 function baseUrlFor(profile: Profile): string {
-  const url = profile === "foot" ? process.env.OSRM_FOOT_URL : process.env.OSRM_CAR_URL;
-  if (!url) throw new Error(`osrmProvider: OSRM_${profile.toUpperCase()}_URL is not set`);
+  const url =
+    profile === "foot" ? process.env.OSRM_FOOT_URL : process.env.OSRM_CAR_URL;
+  if (!url)
+    throw new Error(
+      `osrmProvider: OSRM_${profile.toUpperCase()}_URL is not set`,
+    );
   return url;
 }
 
@@ -96,19 +115,26 @@ interface OsrmTableResponse {
 const OSRM_TIMEOUT_MS = 5000;
 
 async function fetchOsrmJson<T>(url: string, profile: Profile): Promise<T> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(OSRM_TIMEOUT_MS) });
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(OSRM_TIMEOUT_MS),
+  });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`osrmProvider (${profile}): HTTP ${res.status} ${text}`);
   }
   const data = (await res.json()) as T & { code: string; message?: string };
   if (data.code !== "Ok") {
-    throw new Error(`osrmProvider (${profile}): ${data.code}${data.message ? ` — ${data.message}` : ""}`);
+    throw new Error(
+      `osrmProvider (${profile}): ${data.code}${data.message ? ` — ${data.message}` : ""}`,
+    );
   }
   return data;
 }
 
-async function costMatrix(points: Point[], kinds: PathKind[]): Promise<MatrixCell[][]> {
+async function costMatrix(
+  points: Point[],
+  kinds: PathKind[],
+): Promise<MatrixCell[][]> {
   const n = points.length;
   if (n === 0) return [];
   // The `table` service requires at least two coordinates. A composer subset can only shrink to
@@ -123,10 +149,16 @@ async function costMatrix(points: Point[], kinds: PathKind[]): Promise<MatrixCel
   const data = await fetchOsrmJson<OsrmTableResponse>(url, profile);
   const durations = data.durations ?? [];
   const distances = data.distances ?? [];
-  const sourceOk = (data.sources ?? []).map((w) => isSnapAcceptable(w.distance));
-  const destOk = (data.destinations ?? []).map((w) => isSnapAcceptable(w.distance));
+  const sourceOk = (data.sources ?? []).map((w) =>
+    isSnapAcceptable(w.distance),
+  );
+  const destOk = (data.destinations ?? []).map((w) =>
+    isSnapAcceptable(w.distance),
+  );
 
-  const matrix: MatrixCell[][] = Array.from({ length: n }, () => new Array(n).fill(null));
+  const matrix: MatrixCell[][] = Array.from({ length: n }, () =>
+    new Array(n).fill(null),
+  );
   for (let i = 0; i < n; i++) {
     if (!sourceOk[i]) continue; // out-of-Extract source declines its whole row
     for (let j = 0; j < n; j++) {
@@ -134,7 +166,12 @@ async function costMatrix(points: Point[], kinds: PathKind[]): Promise<MatrixCel
       const duration = durations[i]?.[j];
       const distance = distances[i]?.[j];
       if (duration == null || distance == null) continue; // OSRM's own "no route" decline
-      matrix[i][j] = makeTravelCost(distance, duration, "routingService", "osrm");
+      matrix[i][j] = makeTravelCost(
+        distance,
+        duration,
+        "routingService",
+        "osrm",
+      );
     }
   }
   return matrix;
@@ -232,19 +269,31 @@ function groupSteps(steps: OsrmStep[]): Run[] {
  * span or none; the several-span case belongs to a provider whose coverage is partial. */
 function mergeGeometry(geometries: PathGeometry[]): PathGeometry[] | undefined {
   if (geometries.length === 0) return undefined;
-  return [{ type: "LineString", coordinates: geometries.flatMap((g) => g.coordinates) }];
+  return [
+    {
+      type: "LineString",
+      coordinates: geometries.flatMap((g) => g.coordinates),
+    },
+  ];
 }
 
 /** The coordinate at a run boundary, derived from the routed geometry rather than the original
  * request — an interchange endpoint created by decomposing a Journey is ephemeral
  * (`PathEndpoint`'s doc in `types/path.ts`), not a real Location. Falls back to the adjacent run's
  * far endpoint if geometry is unexpectedly absent, so a boundary is never simply missing. */
-function endpointAt(coord: GeoJSON.Position | undefined): PathEndpoint | undefined {
+function endpointAt(
+  coord: GeoJSON.Position | undefined,
+): PathEndpoint | undefined {
   return coord ? { lng: coord[0], lat: coord[1] } : undefined;
 }
 
 function pathForRun(run: Run, from: PathEndpoint, to: PathEndpoint): Path {
-  const travelCost = makeTravelCost(run.distanceMeters, run.durationSeconds, "routingService", "osrm");
+  const travelCost = makeTravelCost(
+    run.distanceMeters,
+    run.durationSeconds,
+    "routingService",
+    "osrm",
+  );
   const geometry = mergeGeometry(run.geometries);
   switch (run.kind) {
     case "walking":
@@ -254,7 +303,14 @@ function pathForRun(run: Run, from: PathEndpoint, to: PathEndpoint): Path {
     case "bicycle":
       return { kind: "bicycle", from, to, travelCost, geometry };
     case "other":
-      return { kind: "other", from, to, travelCost, geometry, lineName: run.name };
+      return {
+        kind: "other",
+        from,
+        to,
+        travelCost,
+        geometry,
+        lineName: run.name,
+      };
   }
 }
 
@@ -262,7 +318,7 @@ async function describeJourney(
   from: PathEndpoint,
   to: PathEndpoint,
   kinds: PathKind[],
-  _opts?: PathProviderOptions
+  _opts?: PathProviderOptions,
 ): Promise<Path[] | null> {
   const profile = resolveProfile(kinds);
   const coords = `${coordOf(from)};${coordOf(to)}`;
@@ -270,22 +326,31 @@ async function describeJourney(
 
   const data = await fetchOsrmJson<OsrmRouteResponse>(url, profile);
   const waypoints = data.waypoints ?? [];
-  if (waypoints.length < 2 || !isSnapAcceptable(waypoints[0].distance) || !isSnapAcceptable(waypoints[1].distance)) {
+  if (
+    waypoints.length < 2 ||
+    !isSnapAcceptable(waypoints[0].distance) ||
+    !isSnapAcceptable(waypoints[1].distance)
+  ) {
     return null;
   }
 
   const route = data.routes?.[0];
-  if (!route) throw new Error(`osrmProvider (${profile}): no route in response`);
+  if (!route)
+    throw new Error(`osrmProvider (${profile}): no route in response`);
 
   const steps = route.legs.flatMap((leg) => leg.steps);
   const runs = groupSteps(steps);
   if (runs.length === 0) return null;
 
   return runs.map((run, i) => {
-    const runFrom = i === 0 ? from : (endpointAt(run.geometries[0]?.coordinates[0]) ?? from);
+    const runFrom =
+      i === 0 ? from : (endpointAt(run.geometries[0]?.coordinates[0]) ?? from);
     const lastGeom = run.geometries[run.geometries.length - 1];
     const runTo =
-      i === runs.length - 1 ? to : (endpointAt(lastGeom?.coordinates[lastGeom.coordinates.length - 1]) ?? to);
+      i === runs.length - 1
+        ? to
+        : (endpointAt(lastGeom?.coordinates[lastGeom.coordinates.length - 1]) ??
+          to);
     return pathForRun(run, runFrom, runTo);
   });
 }

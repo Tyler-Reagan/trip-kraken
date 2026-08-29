@@ -112,29 +112,54 @@ interface TripStore {
   optimize: (opts?: { dayBudgetHours?: number }) => Promise<void>;
   updateLocation: (
     locationId: string,
-    fields: { excluded?: boolean; note?: string | null; name?: string; visitDuration?: number | null }
+    fields: {
+      excluded?: boolean;
+      note?: string | null;
+      name?: string;
+      visitDuration?: number | null;
+    },
   ) => Promise<void>;
-  addPlacement: (locationId: string, date: string, order?: number) => Promise<void>;
-  movePlacement: (placementId: string, date: string, order: number) => Promise<void>;
+  addPlacement: (
+    locationId: string,
+    date: string,
+    order?: number,
+  ) => Promise<void>;
+  movePlacement: (
+    placementId: string,
+    date: string,
+    order: number,
+  ) => Promise<void>;
   removePlacement: (placementId: string) => Promise<void>;
   saveLodgingDates: (
     locationId: string,
-    dates: { checkInDate: string; checkOutDate: string } | null
+    dates: { checkInDate: string; checkOutDate: string } | null,
   ) => Promise<string | null>;
   /** Designate (or update, or release) a Location as the trip's arrival or departure (ADR-0028).
    *  `time` is `"HH:MM"` for a known time, `""` for a designated edge with no known time yet, or
    *  `null` to release the edge — the date component is always the trip's own start/end date and
    *  is never sent from the client. */
-  saveTransitEdge: (locationId: string, which: "arrival" | "departure", time: string | null) => Promise<string | null>;
+  saveTransitEdge: (
+    locationId: string,
+    which: "arrival" | "departure",
+    time: string | null,
+  ) => Promise<string | null>;
   /** Add a discovery result to the trip (and, when `date` is set, place it on that day at
    *  `order`, else appended). Returns an error message or null. Shared by the tray's Add
    *  button and dropping a result card on a day card (#134). */
-  addDiscoveredPlace: (place: NearbyPlace, date: string | null, order?: number) => Promise<string | null>;
+  addDiscoveredPlace: (
+    place: NearbyPlace,
+    date: string | null,
+    order?: number,
+  ) => Promise<string | null>;
   setDayLabel: (date: string, label: string | null) => Promise<void>;
   setTransitCaveatDismissed: (v: boolean) => Promise<void>;
   setRoadProfile: (v: RoadProfile) => Promise<void>;
   setHasJrPass: (v: boolean) => Promise<void>;
-  setJourneyRoadKind: (fromLocationId: string, toLocationId: string, kind: RoadProfile | null) => Promise<void>;
+  setJourneyRoadKind: (
+    fromLocationId: string,
+    toLocationId: string,
+    kind: RoadProfile | null,
+  ) => Promise<void>;
   importBooking: (text: string) => Promise<string | null>;
   enrich: () => Promise<void>;
 
@@ -212,7 +237,9 @@ export const useTripStore = create<TripStore>()((set, get) => {
         activeDayNumber: n,
         inspectedLocationId: null,
         inspectedSurfacedTransit: null,
-        ...(get().autoFocusArmed ? { focusTarget: { tier: "day" as const, dayNumber: n } } : {}),
+        ...(get().autoFocusArmed
+          ? { focusTarget: { tier: "day" as const, dayNumber: n } }
+          : {}),
       }),
     setMapPopupOpen: (v) => set({ mapPopupOpen: v }),
     // Explicit (#137): always sets the target, always re-arms, and ensures the map is visible to
@@ -224,28 +251,50 @@ export const useTripStore = create<TripStore>()((set, get) => {
         autoFocusArmed: true,
         mapPopupOpen: true,
         ...(target.tier === "day"
-          ? { activeDayNumber: target.dayNumber, inspectedLocationId: null, inspectedSurfacedTransit: null }
+          ? {
+              activeDayNumber: target.dayNumber,
+              inspectedLocationId: null,
+              inspectedSurfacedTransit: null,
+            }
           : {}),
       }),
     consumeFocusTarget: () => set({ focusTarget: null }),
     disarmAutoFocus: () => set({ autoFocusArmed: false }),
     setHighlightedLocationId: (id) => set({ highlightedLocationId: id }),
     setHighlightedPathId: (id) => set({ highlightedPathId: id }),
-    setInspectedLocationId: (id) => set({ inspectedLocationId: id, inspectedSurfacedTransit: null }),
-    setInspectedSurfacedTransit: (t) => set({ inspectedSurfacedTransit: t, inspectedLocationId: null }),
+    setInspectedLocationId: (id) =>
+      set({ inspectedLocationId: id, inspectedSurfacedTransit: null }),
+    setInspectedSurfacedTransit: (t) =>
+      set({ inspectedSurfacedTransit: t, inspectedLocationId: null }),
     // Tab-switching only — scope for the target mode must already exist (the tray disables the
     // tab otherwise); scope itself is chosen from the day card's triggers, not the tray (#134).
     setDiscoveryMode: (m) => set({ discoveryMode: m }),
     setNearbySearchLocation: (loc, date) =>
       loc
-        ? set({ nearbySearchLocation: loc, nearbySearchDate: date ?? null, discoveryMode: "nearby" })
-        : set({ nearbySearchLocation: null, nearbySearchDate: null, discoveryMode: get().routeSearch ? "route" : null }),
+        ? set({
+            nearbySearchLocation: loc,
+            nearbySearchDate: date ?? null,
+            discoveryMode: "nearby",
+          })
+        : set({
+            nearbySearchLocation: null,
+            nearbySearchDate: null,
+            discoveryMode: get().routeSearch ? "route" : null,
+          }),
     setRouteSearch: (search) =>
       search
         ? set({ routeSearch: search, discoveryMode: "route" })
-        : set({ routeSearch: null, discoveryMode: get().nearbySearchLocation ? "nearby" : null }),
+        : set({
+            routeSearch: null,
+            discoveryMode: get().nearbySearchLocation ? "nearby" : null,
+          }),
     closeDiscovery: () =>
-      set({ discoveryMode: null, nearbySearchLocation: null, nearbySearchDate: null, routeSearch: null }),
+      set({
+        discoveryMode: null,
+        nearbySearchLocation: null,
+        nearbySearchDate: null,
+        routeSearch: null,
+      }),
     setShowOptimize: (v) => set({ showOptimize: v }),
     setShowAddLocation: (v) => set({ showAddLocation: v }),
 
@@ -267,9 +316,15 @@ export const useTripStore = create<TripStore>()((set, get) => {
     pollEnrichment: () => {
       const { trip, _pollTimer } = get();
       if (_pollTimer !== null) clearTimeout(_pollTimer);
-      const hasPending = trip?.locations.some((l) => l.enrichmentStatus === "pending") ?? false;
-      if (!hasPending) { set({ _pollTimer: null }); return; }
-      const timer = setTimeout(async () => { await get().reload(); }, 2000);
+      const hasPending =
+        trip?.locations.some((l) => l.enrichmentStatus === "pending") ?? false;
+      if (!hasPending) {
+        set({ _pollTimer: null });
+        return;
+      }
+      const timer = setTimeout(async () => {
+        await get().reload();
+      }, 2000);
       set({ _pollTimer: timer });
     },
 
@@ -288,13 +343,19 @@ export const useTripStore = create<TripStore>()((set, get) => {
         body: JSON.stringify(opts ?? {}),
       });
       if (!res.ok) {
-        const message = await res.json().then((b) => b?.error).catch(() => null);
+        const message = await res
+          .json()
+          .then((b) => b?.error)
+          .catch(() => null);
         throw new Error(message || `Optimize failed (${res.status})`);
       }
       // unplaced/warnings (#120, #152) ride on this response only — reload() below refetches the
       // trip itself and would not otherwise carry them.
       const body = await res.json().catch(() => ({}));
-      set({ unplaced: body?.unplaced ?? [], optimizeWarnings: body?.warnings ?? [] });
+      set({
+        unplaced: body?.unplaced ?? [],
+        optimizeWarnings: body?.warnings ?? [],
+      });
       await get().reload();
     },
 
@@ -308,8 +369,15 @@ export const useTripStore = create<TripStore>()((set, get) => {
       const t = get().trip;
       if (t) {
         set({
-          trip: { ...t, locations: t.locations.map((l) => (l.id === locationId ? { ...l, ...fields } : l)) },
-          ...("visitDuration" in fields ? { unplaced: [], optimizeWarnings: [] } : {}),
+          trip: {
+            ...t,
+            locations: t.locations.map((l) =>
+              l.id === locationId ? { ...l, ...fields } : l,
+            ),
+          },
+          ...("visitDuration" in fields
+            ? { unplaced: [], optimizeWarnings: [] }
+            : {}),
         });
       }
       await fetch(`/api/trips/${tripId}/locations/${locationId}`, {
@@ -330,7 +398,17 @@ export const useTripStore = create<TripStore>()((set, get) => {
       const t = get().trip;
       if (t) {
         const id = crypto.randomUUID();
-        set({ trip: { ...t, placements: insertPlacement(t.placements, tripId, { id, locationId, date, order }) } });
+        set({
+          trip: {
+            ...t,
+            placements: insertPlacement(t.placements, tripId, {
+              id,
+              locationId,
+              date,
+              order,
+            }),
+          },
+        });
       }
       await fetch(`/api/trips/${tripId}/placements`, {
         method: "POST",
@@ -348,7 +426,18 @@ export const useTripStore = create<TripStore>()((set, get) => {
       // Optimistic: reproduce the server's move/shift/re-densify logic locally via the shared
       // placementOrdering helper, so a dragged stop moves instantly instead of waiting on reload().
       const t = get().trip;
-      if (t) set({ trip: { ...t, placements: reorderPlacements(t.placements, placementId, date, order) } });
+      if (t)
+        set({
+          trip: {
+            ...t,
+            placements: reorderPlacements(
+              t.placements,
+              placementId,
+              date,
+              order,
+            ),
+          },
+        });
       await fetch(`/api/trips/${tripId}/placements`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -362,8 +451,17 @@ export const useTripStore = create<TripStore>()((set, get) => {
       if (!tripId) return;
       // Optimistic: drop the placement immediately so the stop leaves the day without a round-trip lag.
       const t = get().trip;
-      if (t) set({ trip: { ...t, placements: t.placements.filter((p) => p.id !== placementId) } });
-      const res = await fetch(`/api/trips/${tripId}/placements/${placementId}`, { method: "DELETE" });
+      if (t)
+        set({
+          trip: {
+            ...t,
+            placements: t.placements.filter((p) => p.id !== placementId),
+          },
+        });
+      const res = await fetch(
+        `/api/trips/${tripId}/placements/${placementId}`,
+        { method: "DELETE" },
+      );
       // ADR-0026 self-heal (#171): rides on this response only, the same way unplaced/warnings ride
       // on optimize()'s — reload() below refetches the trip itself and would not otherwise carry it.
       const body = await res.json().catch(() => ({}));
@@ -382,10 +480,19 @@ export const useTripStore = create<TripStore>()((set, get) => {
         const patched: Location[] = t.locations.map((l) => {
           if (l.id !== locationId) return l;
           if (dates === null) {
-            const { checkInDate: _checkInDate, checkOutDate: _checkOutDate, ...rest } = l as Lodging;
+            const {
+              checkInDate: _checkInDate,
+              checkOutDate: _checkOutDate,
+              ...rest
+            } = l as Lodging;
             return { ...rest, kind: "activity" };
           }
-          return { ...l, kind: "lodging", checkInDate: dates.checkInDate, checkOutDate: dates.checkOutDate };
+          return {
+            ...l,
+            kind: "lodging",
+            checkInDate: dates.checkInDate,
+            checkOutDate: dates.checkOutDate,
+          };
         });
         set({ trip: { ...t, locations: patched } });
       }
@@ -399,7 +506,9 @@ export const useTripStore = create<TripStore>()((set, get) => {
         // Roll back the optimistic patch by asking the server what's actually true.
         await get().reload();
         const data = await res.json().catch(() => ({}));
-        return (data as { error?: string }).error ?? "Failed to save lodging dates";
+        return (
+          (data as { error?: string }).error ?? "Failed to save lodging dates"
+        );
       }
       await get().reload();
       return null;
@@ -415,7 +524,8 @@ export const useTripStore = create<TripStore>()((set, get) => {
         // composed here only for the optimistic patch — the server recomputes it from its own read
         // of the trip rather than trusting this value.
         const edgeDate = which === "arrival" ? t.startDate : t.endDate;
-        const value = time === null ? null : time === "" ? edgeDate : `${edgeDate}T${time}`;
+        const value =
+          time === null ? null : time === "" ? edgeDate : `${edgeDate}T${time}`;
         const relegateIfBareActivity = (l: Location): Location => {
           const arriveAt = isTransit(l) ? l.arriveAt : null;
           const departAt = isTransit(l) ? l.departAt : null;
@@ -427,16 +537,25 @@ export const useTripStore = create<TripStore>()((set, get) => {
         };
         const patched: Location[] = t.locations.map((l) => {
           if (l.id === locationId) {
-            const arriveAt = which === "arrival" ? value : isTransit(l) ? l.arriveAt : null;
-            const departAt = which === "departure" ? value : isTransit(l) ? l.departAt : null;
+            const arriveAt =
+              which === "arrival" ? value : isTransit(l) ? l.arriveAt : null;
+            const departAt =
+              which === "departure" ? value : isTransit(l) ? l.departAt : null;
             // Every Location this optimistic patch touches is a real, stored row the traveler is
             // editing — always `authored: true` (ADR-0035); a surfaced entry never reaches the store.
-            return relegateIfBareActivity({ ...l, kind: "transit", authored: true, arriveAt, departAt } as Transit);
+            return relegateIfBareActivity({
+              ...l,
+              kind: "transit",
+              authored: true,
+              arriveAt,
+              departAt,
+            } as Transit);
           }
           // Assigning a new edge releases whoever held it before (ADR-0028 §2's uniqueness
           // invariant) — the optimistic patch has to uphold it too, or the client briefly shows two
           // Locations both claiming the same edge.
-          if (value != null && isTransit(l) && l[field] != null) return relegateIfBareActivity({ ...l, [field]: null });
+          if (value != null && isTransit(l) && l[field] != null)
+            return relegateIfBareActivity({ ...l, [field]: null });
           return l;
         });
         set({ trip: { ...t, locations: patched } });
@@ -449,7 +568,9 @@ export const useTripStore = create<TripStore>()((set, get) => {
       if (!res.ok) {
         await get().reload();
         const data = await res.json().catch(() => ({}));
-        return (data as { error?: string }).error ?? "Failed to save transit time";
+        return (
+          (data as { error?: string }).error ?? "Failed to save transit time"
+        );
       }
       await get().reload();
       return null;
@@ -536,12 +657,24 @@ export const useTripStore = create<TripStore>()((set, get) => {
       if (!tripId || !t) return;
 
       const [locationAId, locationBId] =
-        fromLocationId < toLocationId ? [fromLocationId, toLocationId] : [toLocationId, fromLocationId];
+        fromLocationId < toLocationId
+          ? [fromLocationId, toLocationId]
+          : [toLocationId, fromLocationId];
       const withoutChoice = t.journeyRoadKinds.filter(
-        (k) => !(k.locationAId === locationAId && k.locationBId === locationBId)
+        (k) =>
+          !(k.locationAId === locationAId && k.locationBId === locationBId),
       );
       const journeyRoadKinds = kind
-        ? [...withoutChoice, { id: `${locationAId}:${locationBId}`, tripId, locationAId, locationBId, kind }]
+        ? [
+            ...withoutChoice,
+            {
+              id: `${locationAId}:${locationBId}`,
+              tripId,
+              locationAId,
+              locationBId,
+              kind,
+            },
+          ]
         : withoutChoice;
       set({ trip: { ...t, journeyRoadKinds } });
 
@@ -573,9 +706,15 @@ export const useTripStore = create<TripStore>()((set, get) => {
       if (!tripId) return;
       set({ isEnriching: true, enrichProgress: null });
       try {
-        const res = await fetch(`/api/trips/${tripId}/enrich`, { method: "POST" });
+        const res = await fetch(`/api/trips/${tripId}/enrich`, {
+          method: "POST",
+        });
         if (res.ok) {
-          const data = await res.json() as { enriched: number; total: number; errors: number };
+          const data = (await res.json()) as {
+            enriched: number;
+            total: number;
+            errors: number;
+          };
           set({ enrichProgress: data });
           await get().reload();
         }
@@ -591,7 +730,11 @@ export const useTripStore = create<TripStore>()((set, get) => {
       // itinerary-ward, so it must not emit a focus target and yank the camera out from under the
       // dot the user just clicked.
       const trip = get().trip;
-      const day = trip ? deriveTripPlanDays(trip).find((d) => d.stops.some((s) => s.location.id === locationId)) : undefined;
+      const day = trip
+        ? deriveTripPlanDays(trip).find((d) =>
+            d.stops.some((s) => s.location.id === locationId),
+          )
+        : undefined;
       set({
         highlightedLocationId: locationId,
         activeSurface: "itinerary",

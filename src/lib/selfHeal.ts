@@ -33,16 +33,27 @@ export interface HealablePair {
  *   an Anchor's position is a constraint-level fact, never a local edit
  * - either neighbor's Location has no coordinates yet — nothing to look a route up between
  */
-export function findHealablePair(before: TripWithDetails, removedPlacementId: string): HealablePair | null {
+export function findHealablePair(
+  before: TripWithDetails,
+  removedPlacementId: string,
+): HealablePair | null {
   const removed = before.placements.find((p) => p.id === removedPlacementId);
   if (!removed) return null;
 
-  const removedLocation = before.locations.find((l) => l.id === removed.locationId);
+  const removedLocation = before.locations.find(
+    (l) => l.id === removed.locationId,
+  );
   if (!removedLocation || !isActivity(removedLocation)) return null;
 
-  const sameDay = before.placements.filter((p) => p.date === removed.date && p.id !== removed.id);
-  const predecessor = sameDay.filter((p) => p.order < removed.order).sort((a, b) => b.order - a.order)[0];
-  const successor = sameDay.filter((p) => p.order > removed.order).sort((a, b) => a.order - b.order)[0];
+  const sameDay = before.placements.filter(
+    (p) => p.date === removed.date && p.id !== removed.id,
+  );
+  const predecessor = sameDay
+    .filter((p) => p.order < removed.order)
+    .sort((a, b) => b.order - a.order)[0];
+  const successor = sameDay
+    .filter((p) => p.order > removed.order)
+    .sort((a, b) => a.order - b.order)[0];
   if (!predecessor || !successor) return null;
 
   const fromLoc = before.locations.find((l) => l.id === predecessor.locationId);
@@ -62,7 +73,15 @@ export function findHealablePair(before: TripWithDetails, removedPlacementId: st
  * separate rule that could disagree with it. Also honors this Journey's chosen road kind (#223),
  * the same substitution `path-geometry`'s route applies to its own base list — a removal that
  * heals a Journey with a chosen kind must not silently report the Trip-default kind's cost instead. */
-export function healKinds(trip: TripWithDetails, locationIdA: string, locationIdB: string): PathKind[] {
-  const chosen = journeyRoadKindFor(trip.journeyRoadKinds, locationIdA, locationIdB);
+export function healKinds(
+  trip: TripWithDetails,
+  locationIdA: string,
+  locationIdB: string,
+): PathKind[] {
+  const chosen = journeyRoadKindFor(
+    trip.journeyRoadKinds,
+    locationIdA,
+    locationIdB,
+  );
   return withJourneyRoadKind(["rail", "bus", trip.roadProfile], chosen);
 }

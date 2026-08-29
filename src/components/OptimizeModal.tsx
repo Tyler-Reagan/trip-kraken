@@ -39,7 +39,11 @@ export default function OptimizeModal() {
       if (runWarnings.length > 0) setWarnings(runWarnings);
       else setShowOptimize(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
@@ -56,7 +60,9 @@ export default function OptimizeModal() {
         className="card w-full max-w-md p-6 space-y-5 shadow-xl"
       >
         <div className="flex items-center justify-between">
-          <h2 id="optimize-modal-title" className="text-section text-ink">Plan your itinerary</h2>
+          <h2 id="optimize-modal-title" className="text-section text-ink">
+            Plan your itinerary
+          </h2>
           <button
             onClick={() => setShowOptimize(false)}
             disabled={loading}
@@ -69,13 +75,15 @@ export default function OptimizeModal() {
 
         <p className="text-body text-sub">
           Trip Kraken will cluster your{" "}
-          <strong className="text-ink">{includedCount} locations</strong> into optimized days using
-          geographic proximity.
+          <strong className="text-ink">{includedCount} locations</strong> into
+          optimized days using geographic proximity.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-ink">Getting around</label>
+            <label className="text-sm font-medium text-ink">
+              Getting around
+            </label>
             <div className="flex rounded-lg border border-line border-line-strong overflow-hidden w-fit">
               {ROAD_PROFILES.map((p) => (
                 <button
@@ -84,9 +92,10 @@ export default function OptimizeModal() {
                   onClick={() => setRoadProfile(p.id)}
                   disabled={loading}
                   className={`px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50
-                    ${trip.roadProfile === p.id
-                      ? "bg-brand-600 dark:bg-brand-500 text-white"
-                      : "bg-surface text-sub hover:bg-surface-2"
+                    ${
+                      trip.roadProfile === p.id
+                        ? "bg-brand-600 dark:bg-brand-500 text-white"
+                        : "bg-surface text-sub hover:bg-surface-2"
                     }`}
                 >
                   {p.label}
@@ -94,8 +103,9 @@ export default function OptimizeModal() {
               ))}
             </div>
             <p className="text-xs text-faint">
-              How road legs are routed. Trains and buses are unaffected — this only decides walking vs. driving between stops.
-              Changeable any time; takes effect on the next optimize.
+              How road legs are routed. Trains and buses are unaffected — this
+              only decides walking vs. driving between stops. Changeable any
+              time; takes effect on the next optimize.
             </p>
           </div>
 
@@ -111,17 +121,16 @@ export default function OptimizeModal() {
               I have a Japan Rail Pass
             </label>
             <p className="text-xs text-faint">
-              Routes around lines your Pass doesn&apos;t cover. Nozomi and Mizuho Shinkansen still route — they&apos;re
-              ridable on a Pass with a separate supplement ticket — but are flagged wherever they appear.
-              Changeable any time; takes effect on the next optimize.
+              Routes around lines your Pass doesn&apos;t cover. Nozomi and
+              Mizuho Shinkansen still route — they&apos;re ridable on a Pass
+              with a separate supplement ticket — but are flagged wherever they
+              appear. Changeable any time; takes effect on the next optimize.
             </p>
           </div>
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-ink">
-                Day budget
-              </label>
+              <label className="text-sm font-medium text-ink">Day budget</label>
               <span className="text-sm text-sub">{dayBudgetHours}h</span>
             </div>
             <input
@@ -134,7 +143,8 @@ export default function OptimizeModal() {
               className="w-full accent-brand-600"
             />
             <p className="text-xs text-faint">
-              The length of each day, including travel and waiting — not just time spent visiting.
+              The length of each day, including travel and waiting — not just
+              time spent visiting.
             </p>
           </div>
 
@@ -160,8 +170,16 @@ export default function OptimizeModal() {
             >
               {warnings && warnings.length > 0 ? "Close" : "Cancel"}
             </button>
-            <button type="submit" disabled={loading} className="btn-primary flex-1">
-              {loading ? "Optimizing…" : warnings && warnings.length > 0 ? "Optimize again" : "Generate itinerary"}
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary flex-1"
+            >
+              {loading
+                ? "Optimizing…"
+                : warnings && warnings.length > 0
+                  ? "Optimize again"
+                  : "Generate itinerary"}
             </button>
           </div>
         </form>

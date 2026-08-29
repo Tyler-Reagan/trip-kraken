@@ -19,7 +19,8 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "Trip Kraken",
-  description: "Turn a Google Maps list into a fully optimized travel itinerary.",
+  description:
+    "Turn a Google Maps list into a fully optimized travel itinerary.",
 };
 
 export default function RootLayout({
@@ -32,8 +33,17 @@ export default function RootLayout({
       <body className={`${plexSans.variable} ${plexMono.variable} font-sans`}>
         <nav className="border-b border-line bg-canvas">
           <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
-            <a href="/" className="flex items-center gap-2 font-bold text-lg text-brand-600 dark:text-brand-400">
-              <Image src="/kraken-mascot.png" alt="" width={28} height={28} priority />
+            <a
+              href="/"
+              className="flex items-center gap-2 font-bold text-lg text-brand-600 dark:text-brand-400"
+            >
+              <Image
+                src="/kraken-mascot.png"
+                alt=""
+                width={28}
+                height={28}
+                priority
+              />
               Trip Kraken
             </a>
           </div>

@@ -13,14 +13,21 @@ export default function NewTripForm() {
   const [error, setError] = useState<string | null>(null);
   // Set when the server finds an existing trip with this same name (#119 follow-up) — the form
   // parks here instead of silently creating a second indistinguishable trip.
-  const [duplicate, setDuplicate] = useState<{ existingTrips: DuplicateTrip[]; suggestedName: string } | null>(null);
+  const [duplicate, setDuplicate] = useState<{
+    existingTrips: DuplicateTrip[];
+    suggestedName: string;
+  } | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
   function clearDuplicate() {
     setDuplicate(null);
   }
 
-  async function submitCreate(overrides?: { onDuplicate?: "rename" | "overwrite"; replaceTripId?: string; name?: string }) {
+  async function submitCreate(overrides?: {
+    onDuplicate?: "rename" | "overwrite";
+    replaceTripId?: string;
+    name?: string;
+  }) {
     setError(null);
     setLoading(true);
     try {
@@ -31,14 +38,21 @@ export default function NewTripForm() {
           name: (overrides?.name ?? name).trim() || undefined,
           startDate,
           endDate,
-          ...(overrides?.onDuplicate ? { onDuplicate: overrides.onDuplicate } : {}),
-          ...(overrides?.replaceTripId ? { replaceTripId: overrides.replaceTripId } : {}),
+          ...(overrides?.onDuplicate
+            ? { onDuplicate: overrides.onDuplicate }
+            : {}),
+          ...(overrides?.replaceTripId
+            ? { replaceTripId: overrides.replaceTripId }
+            : {}),
         }),
       });
       const data = await res.json();
 
       if (res.status === 409 && data.duplicate) {
-        setDuplicate({ existingTrips: data.existingTrips, suggestedName: data.suggestedName });
+        setDuplicate({
+          existingTrips: data.existingTrips,
+          suggestedName: data.suggestedName,
+        });
         setRenameValue(data.suggestedName);
         setLoading(false);
         return;
@@ -74,7 +88,11 @@ export default function NewTripForm() {
   function handleOverwrite() {
     if (!duplicate) return;
     const mostRecent = duplicate.existingTrips[0];
-    submitCreate({ onDuplicate: "overwrite", replaceTripId: mostRecent.id, name: name.trim() || mostRecent.name });
+    submitCreate({
+      onDuplicate: "overwrite",
+      replaceTripId: mostRecent.id,
+      name: name.trim() || mostRecent.name,
+    });
   }
 
   return (
@@ -89,31 +107,57 @@ export default function NewTripForm() {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <label htmlFor="trip-name" className="text-sm font-medium text-ink">
-            Trip name{" "}
-            <span className="text-faint font-normal">(optional)</span>
+            Trip name <span className="text-faint font-normal">(optional)</span>
           </label>
           <input
             id="trip-name"
             type="text"
             placeholder="Tokyo week"
             value={name}
-            onChange={(e) => { setName(e.target.value); clearDuplicate(); }}
+            onChange={(e) => {
+              setName(e.target.value);
+              clearDuplicate();
+            }}
             className="input"
           />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label htmlFor="trip-start" className="text-sm font-medium text-ink">
+            <label
+              htmlFor="trip-start"
+              className="text-sm font-medium text-ink"
+            >
               Start date
             </label>
-            <input id="trip-start" type="date" required value={startDate} onChange={(e) => { setStartDate(e.target.value); clearDuplicate(); }} className="input" />
+            <input
+              id="trip-start"
+              type="date"
+              required
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                clearDuplicate();
+              }}
+              className="input"
+            />
           </div>
           <div className="space-y-1.5">
             <label htmlFor="trip-end" className="text-sm font-medium text-ink">
               End date
             </label>
-            <input id="trip-end" type="date" required value={endDate} min={startDate || undefined} onChange={(e) => { setEndDate(e.target.value); clearDuplicate(); }} className="input" />
+            <input
+              id="trip-end"
+              type="date"
+              required
+              value={endDate}
+              min={startDate || undefined}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                clearDuplicate();
+              }}
+              className="input"
+            />
           </div>
         </div>
 
@@ -135,7 +179,11 @@ export default function NewTripForm() {
             loading={loading}
           />
         ) : (
-          <button type="submit" disabled={loading} className="btn-primary w-full">
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-primary w-full"
+          >
             {loading ? "Creating…" : "Create trip"}
           </button>
         )}

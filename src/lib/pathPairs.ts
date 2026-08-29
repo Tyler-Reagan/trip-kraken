@@ -11,7 +11,12 @@
  * What comes back is one or more Paths, since a provider splits a pair at every shift (ADR-0022).
  */
 
-import type { DerivedDay, JourneyRoadKind, Location, ScheduledStop } from "@/types";
+import type {
+  DerivedDay,
+  JourneyRoadKind,
+  Location,
+  ScheduledStop,
+} from "@/types";
 import type { PathEndpoint, PathKind, RoadProfile } from "@/types/path";
 
 export interface PathPair {
@@ -27,12 +32,12 @@ export interface PathPair {
 export function journeyRoadKindFor(
   kinds: JourneyRoadKind[],
   locationIdA: string,
-  locationIdB: string
+  locationIdB: string,
 ): JourneyRoadKind | undefined {
   return kinds.find(
     (k) =>
       (k.locationAId === locationIdA && k.locationBId === locationIdB) ||
-      (k.locationAId === locationIdB && k.locationBId === locationIdA)
+      (k.locationAId === locationIdB && k.locationBId === locationIdA),
   );
 }
 
@@ -55,7 +60,10 @@ export function journeyRoadKindFor(
  * Takes just `{ kind }` rather than a full `JourneyRoadKind` — `solver.ts`'s own shape carries no
  * `id`/`tripId`, and the kind is all this ever reads.
  */
-export function withJourneyRoadKind(kinds: PathKind[], chosen: { kind: RoadProfile } | undefined): PathKind[] {
+export function withJourneyRoadKind(
+  kinds: PathKind[],
+  chosen: { kind: RoadProfile } | undefined,
+): PathKind[] {
   return chosen ? [chosen.kind] : kinds;
 }
 
@@ -89,9 +97,13 @@ export interface ChainEntry {
  */
 export function dayChainEntries(day: DerivedDay): ChainEntry[] {
   const entries: ChainEntry[] = [];
-  if (day.startAnchor) entries.push({ role: "start", location: day.startAnchor });
-  if (day.checkInWaypoint) entries.push({ role: "checkin", location: day.checkInWaypoint });
-  day.stops.forEach((stop, index) => entries.push({ role: "stop", location: stop.location, stop, index }));
+  if (day.startAnchor)
+    entries.push({ role: "start", location: day.startAnchor });
+  if (day.checkInWaypoint)
+    entries.push({ role: "checkin", location: day.checkInWaypoint });
+  day.stops.forEach((stop, index) =>
+    entries.push({ role: "stop", location: stop.location, stop, index }),
+  );
   if (day.endAnchor) entries.push({ role: "end", location: day.endAnchor });
   return entries;
 }
@@ -100,7 +112,9 @@ export function dayChainEntries(day: DerivedDay): ChainEntry[] {
  *  for. Rendering still no-ops per pair when either end lacks coordinates (each row component's own
  *  guard, unchanged); this function's only job is deciding *which* adjacent Locations are a real
  *  gap at all, so that decision is made once rather than by hand in every consumer. */
-export function dayChainPairs(day: DerivedDay): { from: Location; to: Location }[] {
+export function dayChainPairs(
+  day: DerivedDay,
+): { from: Location; to: Location }[] {
   const entries = dayChainEntries(day);
   const pairs: { from: Location; to: Location }[] = [];
   for (let i = 0; i + 1 < entries.length; i++) {
@@ -130,7 +144,8 @@ function chainOfDay(day: DerivedDay): PathEndpoint[] {
 export function pairsOfDay(day: DerivedDay): PathPair[] {
   const chain = chainOfDay(day);
   const pairs: PathPair[] = [];
-  for (let i = 0; i + 1 < chain.length; i++) pairs.push({ from: chain[i], to: chain[i + 1] });
+  for (let i = 0; i + 1 < chain.length; i++)
+    pairs.push({ from: chain[i], to: chain[i + 1] });
   return pairs;
 }
 
@@ -149,10 +164,18 @@ const coordOf = (p: PathEndpoint) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`;
  * choice lookup possible at all; a pair without one (an interchange endpoint a decomposition
  * created) simply can't carry one, same as today.
  */
-export function pairKey(profile: RoadProfile, pair: PathPair, journeyRoadKinds: JourneyRoadKind[]): string {
+export function pairKey(
+  profile: RoadProfile,
+  pair: PathPair,
+  journeyRoadKinds: JourneyRoadKind[],
+): string {
   const chosen =
     pair.from.locationId && pair.to.locationId
-      ? journeyRoadKindFor(journeyRoadKinds, pair.from.locationId, pair.to.locationId)
+      ? journeyRoadKindFor(
+          journeyRoadKinds,
+          pair.from.locationId,
+          pair.to.locationId,
+        )
       : undefined;
   const chosenSuffix = chosen ? `:${chosen.kind}` : "";
   return `${profile}:${coordOf(pair.from)}>${coordOf(pair.to)}${chosenSuffix}`;
@@ -171,7 +194,7 @@ export function pathShiftId(key: string, index: number): string {
 export function uniquePairsOfDays(
   days: DerivedDay[],
   profile: RoadProfile,
-  journeyRoadKinds: JourneyRoadKind[]
+  journeyRoadKinds: JourneyRoadKind[],
 ): PathPair[] {
   const seen = new Map<string, PathPair>();
   for (const day of days) {

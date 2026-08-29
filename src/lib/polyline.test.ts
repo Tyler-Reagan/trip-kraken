@@ -15,11 +15,15 @@ async function main() {
       { lat: 43.252, lng: -126.453 },
     ]),
     "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
-    "matches Google's documented example"
+    "matches Google's documented example",
   );
 
   assert.equal(encodePolyline([]), "", "no points → empty string");
-  assert.equal(encodePolyline([{ lat: 0, lng: 0 }]), "??", "origin encodes to two zero-deltas");
+  assert.equal(
+    encodePolyline([{ lat: 0, lng: 0 }]),
+    "??",
+    "origin encodes to two zero-deltas",
+  );
 
   console.log("✓ polyline.test.ts passed");
 }

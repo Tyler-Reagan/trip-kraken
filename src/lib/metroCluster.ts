@@ -75,7 +75,13 @@ function groupByProximity<T>(items: Placed<T>[]): Placed<T>[][] {
     while (grew) {
       grew = false;
       for (let i = remaining.length - 1; i >= 0; i--) {
-        if (bucket.some((b) => haversineMeters(b.point, remaining[i].point) <= METRO_CLUSTER_RADIUS_METERS)) {
+        if (
+          bucket.some(
+            (b) =>
+              haversineMeters(b.point, remaining[i].point) <=
+              METRO_CLUSTER_RADIUS_METERS,
+          )
+        ) {
           bucket.push(...remaining.splice(i, 1));
           grew = true;
         }
@@ -107,7 +113,7 @@ function groupByProximity<T>(items: Placed<T>[]): Placed<T>[][] {
  */
 export function clusterByMetro<A extends Geocodable, L extends Geocodable>(
   activities: A[],
-  lodgings: L[]
+  lodgings: L[],
 ): MetroCluster<A, L>[] {
   const validLodgings = placed(lodgings);
 
@@ -117,14 +123,19 @@ export function clusterByMetro<A extends Geocodable, L extends Geocodable>(
       activities: group.map((g) => g.item),
       centroid,
       lodgings: validLodgings
-        .filter((l) => haversineMeters(l.point, centroid) <= METRO_CLUSTER_RADIUS_METERS)
+        .filter(
+          (l) =>
+            haversineMeters(l.point, centroid) <= METRO_CLUSTER_RADIUS_METERS,
+        )
         .map((l) => l.item),
     };
   });
 
   // Reference identity, not id: these are the very objects pass 1 just put in its `lodgings`.
   const covered = new Set(activityFounded.flatMap((m) => m.lodgings));
-  const lodgingFounded = groupByProximity(validLodgings.filter((l) => !covered.has(l.item))).map((group) => ({
+  const lodgingFounded = groupByProximity(
+    validLodgings.filter((l) => !covered.has(l.item)),
+  ).map((group) => ({
     activities: [] as A[],
     centroid: centroidOf(group.map((g) => g.point)),
     lodgings: group.map((g) => g.item),

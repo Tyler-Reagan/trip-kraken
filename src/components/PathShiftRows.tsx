@@ -10,10 +10,21 @@
  */
 
 import { useMemo, useState } from "react";
-import { Route, TrainFront, PersonStanding, CarFront, ChevronRight, ChevronDown } from "lucide-react";
+import {
+  Route,
+  TrainFront,
+  PersonStanding,
+  CarFront,
+  ChevronRight,
+  ChevronDown,
+} from "lucide-react";
 import { isRailPath, type Path, type RoadProfile } from "@/types/path";
 import type { Transit } from "@/types";
-import { surfacedTransitOf, surfacedTransitIdOf, isTransferWalk } from "@/lib/surfacedTransit";
+import {
+  surfacedTransitOf,
+  surfacedTransitIdOf,
+  isTransferWalk,
+} from "@/lib/surfacedTransit";
 import { pathShiftId } from "@/lib/pathPairs";
 import { formatDuration } from "@/lib/visitDuration";
 
@@ -26,14 +37,20 @@ function iconFor(path: Path) {
 function labelFor(path: Path): string {
   if (path.kind === "rail") return path.lineName;
   if (isTransferWalk(path)) return `Change at ${path.from.stationName}`;
-  if (path.kind === "walking" && path.to.stationName) return `Walk to ${path.to.stationName}`;
-  if (path.kind === "walking" && path.from.stationName) return `Walk from ${path.from.stationName}`;
+  if (path.kind === "walking" && path.to.stationName)
+    return `Walk to ${path.to.stationName}`;
+  if (path.kind === "walking" && path.from.stationName)
+    return `Walk from ${path.from.stationName}`;
   return path.kind ?? "Unknown";
 }
 
 function summaryOf(chain: Path[]): string {
-  const lineNames = chain.filter((p) => p.kind === "rail").map((p) => p.lineName);
-  return lineNames.length > 0 ? lineNames.join(" → ") : `${chain.length} shifts`;
+  const lineNames = chain
+    .filter((p) => p.kind === "rail")
+    .map((p) => p.lineName);
+  return lineNames.length > 0
+    ? lineNames.join(" → ")
+    : `${chain.length} shifts`;
 }
 
 /** Whether one Path needs the "extra fare applies" marker (issue #211/#212): an objective fact
@@ -43,7 +60,9 @@ function summaryOf(chain: Path[]): string {
  * this predicate is evaluated — `chainHasSupplement` and `ShiftRow` both call it rather than each
  * re-deriving it. */
 function needsSupplementMarker(path: Path, hasJrPass: boolean): boolean {
-  return hasJrPass && path.kind === "rail" && path.jrPassSupplementRequired === true;
+  return (
+    hasJrPass && path.kind === "rail" && path.jrPassSupplementRequired === true
+  );
 }
 
 /** Whether any rail Path in the chain needs the marker — so a collapsed header still says so
@@ -96,22 +115,31 @@ function roadKindApplies(chain: Path[]): boolean {
  * something to surface as a concept.
  */
 function JourneyKindToggle({
-  kind, onKindChange,
+  kind,
+  onKindChange,
 }: {
   kind: RoadProfile;
   onKindChange: (kind: RoadProfile | null) => void;
 }) {
   const buttonClass = (active: boolean) =>
     `p-1 rounded-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
-      active ? "text-brand-600 dark:text-brand-400 bg-surface-2" : "text-faint hover:text-sub hover:bg-surface-2"
+      active
+        ? "text-brand-600 dark:text-brand-400 bg-surface-2"
+        : "text-faint hover:text-sub hover:bg-surface-2"
     }`;
   return (
-    <span className="flex items-center gap-0.5 shrink-0" role="group" aria-label="This Journey's road kind">
+    <span
+      className="flex items-center gap-0.5 shrink-0"
+      role="group"
+      aria-label="This Journey's road kind"
+    >
       <button
         type="button"
         onClick={() => onKindChange(kind === "walking" ? null : "walking")}
         aria-pressed={kind === "walking"}
-        title={kind === "walking" ? "Walking" : "Switch this Journey to walking"}
+        title={
+          kind === "walking" ? "Walking" : "Switch this Journey to walking"
+        }
         className={buttonClass(kind === "walking")}
       >
         <PersonStanding className="w-3.5 h-3.5" />
@@ -120,7 +148,9 @@ function JourneyKindToggle({
         type="button"
         onClick={() => onKindChange(kind === "driving" ? null : "driving")}
         aria-pressed={kind === "driving"}
-        title={kind === "driving" ? "Driving" : "Switch this Journey to driving"}
+        title={
+          kind === "driving" ? "Driving" : "Switch this Journey to driving"
+        }
         className={buttonClass(kind === "driving")}
       >
         <CarFront className="w-3.5 h-3.5" />
@@ -135,7 +165,15 @@ function JourneyKindToggle({
  * directly between full Location rows and should read as a subordinate member of the same family,
  * not a different, denser component. */
 function ShiftRow({
-  path, transitById, onStationClick, onHoverChange, shiftId, highlighted, supplementApplies, endContent, as: Row,
+  path,
+  transitById,
+  onStationClick,
+  onHoverChange,
+  shiftId,
+  highlighted,
+  supplementApplies,
+  endContent,
+  as: Row,
 }: {
   path: Path;
   transitById: Map<string, Transit>;
@@ -156,7 +194,9 @@ function ShiftRow({
   const straightLine = path.travelCost.basisOfCost === "straightLine";
   const clickableStation = isTransferWalk(path) ? path.from : null;
   const clickableTransit = clickableStation
-    ? transitById.get(surfacedTransitIdOf(clickableStation.lat, clickableStation.lng))
+    ? transitById.get(
+        surfacedTransitIdOf(clickableStation.lat, clickableStation.lng),
+      )
     : undefined;
 
   return (
@@ -165,7 +205,10 @@ function ShiftRow({
       onMouseEnter={onHoverChange ? () => onHoverChange(shiftId) : undefined}
       onMouseLeave={onHoverChange ? () => onHoverChange(null) : undefined}
     >
-      <span className="absolute left-[7px] top-0 bottom-0 w-px bg-line" aria-hidden />
+      <span
+        className="absolute left-[7px] top-0 bottom-0 w-px bg-line"
+        aria-hidden
+      />
       <span className="absolute left-1 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-surface ring-1 ring-line">
         <Icon className="w-2.5 h-2.5 shrink-0 text-brand-500 dark:text-brand-400" />
       </span>
@@ -181,8 +224,12 @@ function ShiftRow({
         <span className="text-ink">{labelFor(path)}</span>
       )}
       <span className="flex-1" />
-      <span className="text-numeral text-faint shrink-0">{formatDuration(Math.round(path.travelCost.costAsMinutes))}</span>
-      {straightLine && <span className="text-faint shrink-0">(straight-line)</span>}
+      <span className="text-numeral text-faint shrink-0">
+        {formatDuration(Math.round(path.travelCost.costAsMinutes))}
+      </span>
+      {straightLine && (
+        <span className="text-faint shrink-0">(straight-line)</span>
+      )}
       {supplementApplies && (
         <span
           className="text-amber-700 dark:text-amber-400 shrink-0"
@@ -251,21 +298,33 @@ interface PathShiftRowsProps {
  * produces: not yet requested, requested and resolved-empty, or a real chain.
  */
 export default function PathShiftRows({
-  chain, tripId, pairKey, trailing, onStationClick, onHoverChange, highlightedPathId, hasJrPass,
-  kindToggle, as = "li",
+  chain,
+  tripId,
+  pairKey,
+  trailing,
+  onStationClick,
+  onHoverChange,
+  highlightedPathId,
+  hasJrPass,
+  kindToggle,
+  as = "li",
 }: PathShiftRowsProps) {
   const [expanded, setExpanded] = useState(false);
   const Row = as;
 
   const transitById = useMemo(
     () => new Map(surfacedTransitOf(chain ?? [], tripId).map((t) => [t.id, t])),
-    [chain, tripId]
+    [chain, tripId],
   );
 
   if (chain === null) {
     // Resolved-no-route: no shift content, same as "non-transit Paths render nothing new" —
     // but `trailing` (the along-the-way button) still needs a row to sit on.
-    return trailing ? <Row className="flex items-center justify-end py-1 pr-2.5">{trailing}</Row> : null;
+    return trailing ? (
+      <Row className="flex items-center justify-end py-1 pr-2.5">
+        {trailing}
+      </Row>
+    ) : null;
   }
 
   if (chain === undefined) {
@@ -279,7 +338,12 @@ export default function PathShiftRows({
     );
   }
 
-  if (chain.length === 0) return trailing ? <Row className="flex items-center justify-end py-1 pr-2.5">{trailing}</Row> : null;
+  if (chain.length === 0)
+    return trailing ? (
+      <Row className="flex items-center justify-end py-1 pr-2.5">
+        {trailing}
+      </Row>
+    ) : null;
 
   // A long chain collapses behind a persistent header row with a re-openable toggle, since it
   // genuinely needs one — the chevron and the "N shifts" summary are real content the collapsed
@@ -291,7 +355,10 @@ export default function PathShiftRows({
   // hierarchy.
   const collapsible = chain.length > 2;
   const showRows = !collapsible || expanded;
-  const kindControl = kindToggle && roadKindApplies(chain) ? <JourneyKindToggle {...kindToggle} /> : null;
+  const kindControl =
+    kindToggle && roadKindApplies(chain) ? (
+      <JourneyKindToggle {...kindToggle} />
+    ) : null;
   const mergedEnd =
     !collapsible && (kindControl || trailing) ? (
       <span className="flex items-center gap-1.5 shrink-0">
@@ -309,10 +376,15 @@ export default function PathShiftRows({
             aria-expanded={expanded}
             className="flex items-center gap-1 pl-1 min-w-0 text-meta text-sub hover:text-ink rounded-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
-            {expanded
-              ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-brand-500 dark:text-brand-400" />
-              : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-brand-500 dark:text-brand-400" />}
-            <span className="truncate">{summaryOf(chain)} <span className="text-faint">· {chain.length} shifts</span></span>
+            {expanded ? (
+              <ChevronDown className="w-3.5 h-3.5 shrink-0 text-brand-500 dark:text-brand-400" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5 shrink-0 text-brand-500 dark:text-brand-400" />
+            )}
+            <span className="truncate">
+              {summaryOf(chain)}{" "}
+              <span className="text-faint">· {chain.length} shifts</span>
+            </span>
             {!expanded && chainHasSupplement(chain, hasJrPass) && (
               <span
                 className="text-amber-700 dark:text-amber-400 shrink-0"
@@ -327,23 +399,26 @@ export default function PathShiftRows({
           {trailing}
         </Row>
       )}
-      {showRows && chain.map((path, i) => {
-        const shiftId = pathShiftId(pairKey, i);
-        return (
-          <ShiftRow
-            key={i}
-            path={path}
-            transitById={transitById}
-            onStationClick={onStationClick}
-            onHoverChange={onHoverChange}
-            shiftId={shiftId}
-            highlighted={highlightedPathId === shiftId}
-            supplementApplies={needsSupplementMarker(path, hasJrPass)}
-            endContent={mergedEnd && i === chain.length - 1 ? mergedEnd : null}
-            as={as}
-          />
-        );
-      })}
+      {showRows &&
+        chain.map((path, i) => {
+          const shiftId = pathShiftId(pairKey, i);
+          return (
+            <ShiftRow
+              key={i}
+              path={path}
+              transitById={transitById}
+              onStationClick={onStationClick}
+              onHoverChange={onHoverChange}
+              shiftId={shiftId}
+              highlighted={highlightedPathId === shiftId}
+              supplementApplies={needsSupplementMarker(path, hasJrPass)}
+              endContent={
+                mergedEnd && i === chain.length - 1 ? mergedEnd : null
+              }
+              as={as}
+            />
+          );
+        })}
     </>
   );
 }

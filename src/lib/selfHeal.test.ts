@@ -5,10 +5,20 @@
 
 import assert from "node:assert/strict";
 import { findHealablePair, healKinds } from "./selfHeal";
-import type { Activity, JourneyRoadKind, Lodging, Placement, TripWithDetails } from "@/types";
+import type {
+  Activity,
+  JourneyRoadKind,
+  Lodging,
+  Placement,
+  TripWithDetails,
+} from "@/types";
 
 let n = 0;
-const activity = (name: string, lat: number | null = 35 + n, lng: number | null = 139 + n): Activity => ({
+const activity = (
+  name: string,
+  lat: number | null = 35 + n,
+  lng: number | null = 139 + n,
+): Activity => ({
   id: `a${n++}`,
   tripId: "t1",
   name,
@@ -31,11 +41,25 @@ const activity = (name: string, lat: number | null = 35 + n, lng: number | null 
   kind: "activity",
 });
 
-const lodging = (): Lodging => ({ ...activity("Hotel"), kind: "lodging", checkInDate: "2026-09-01", checkOutDate: "2026-09-05" });
+const lodging = (): Lodging => ({
+  ...activity("Hotel"),
+  kind: "lodging",
+  checkInDate: "2026-09-01",
+  checkOutDate: "2026-09-05",
+});
 
-const place = (id: string, date: string, order: number): Placement => ({ id, tripId: "t1", locationId: id, date, order });
+const place = (id: string, date: string, order: number): Placement => ({
+  id,
+  tripId: "t1",
+  locationId: id,
+  date,
+  order,
+});
 
-const trip = (locations: TripWithDetails["locations"], placements: Placement[]): TripWithDetails => ({
+const trip = (
+  locations: TripWithDetails["locations"],
+  placements: Placement[],
+): TripWithDetails => ({
   id: "t1",
   name: "Test",
   sourceUrl: null,
@@ -55,7 +79,14 @@ const trip = (locations: TripWithDetails["locations"], placements: Placement[]):
 // Three activities in the middle of a Day: a1(0) a2(1) a3(2) — removing a2 heals a1↔a3.
 {
   const [a1, a2, a3] = [activity("A1"), activity("A2"), activity("A3")];
-  const t = trip([a1, a2, a3], [place(a1.id, "2026-09-01", 0), place(a2.id, "2026-09-01", 1), place(a3.id, "2026-09-01", 2)]);
+  const t = trip(
+    [a1, a2, a3],
+    [
+      place(a1.id, "2026-09-01", 0),
+      place(a2.id, "2026-09-01", 1),
+      place(a3.id, "2026-09-01", 2),
+    ],
+  );
   const pair = findHealablePair(t, a2.id);
   assert.ok(pair);
   assert.equal(pair!.from.locationId, a1.id);
@@ -67,15 +98,29 @@ const trip = (locations: TripWithDetails["locations"], placements: Placement[]):
 // out of scope (ADR-0026 §4), null.
 {
   const [a1, a2] = [activity("A1"), activity("A2")];
-  const t = trip([a1, a2], [place(a1.id, "2026-09-01", 0), place(a2.id, "2026-09-01", 1)]);
-  assert.equal(findHealablePair(t, a1.id), null, "no predecessor → nothing to heal");
+  const t = trip(
+    [a1, a2],
+    [place(a1.id, "2026-09-01", 0), place(a2.id, "2026-09-01", 1)],
+  );
+  assert.equal(
+    findHealablePair(t, a1.id),
+    null,
+    "no predecessor → nothing to heal",
+  );
 }
 
 // Removing the last Placement: same reasoning, the other direction.
 {
   const [a1, a2] = [activity("A1"), activity("A2")];
-  const t = trip([a1, a2], [place(a1.id, "2026-09-01", 0), place(a2.id, "2026-09-01", 1)]);
-  assert.equal(findHealablePair(t, a2.id), null, "no successor → nothing to heal");
+  const t = trip(
+    [a1, a2],
+    [place(a1.id, "2026-09-01", 0), place(a2.id, "2026-09-01", 1)],
+  );
+  assert.equal(
+    findHealablePair(t, a2.id),
+    null,
+    "no successor → nothing to heal",
+  );
 }
 
 // The only Placement on its Day: neither a predecessor nor a successor.
@@ -89,7 +134,14 @@ const trip = (locations: TripWithDetails["locations"], placements: Placement[]):
 // correctly — orders 0, 2, 5 here, not the contiguous 0/1/2 the other cases use.
 {
   const [a1, a2, a3] = [activity("A1"), activity("A2"), activity("A3")];
-  const t = trip([a1, a2, a3], [place(a1.id, "2026-09-01", 0), place(a2.id, "2026-09-01", 2), place(a3.id, "2026-09-01", 5)]);
+  const t = trip(
+    [a1, a2, a3],
+    [
+      place(a1.id, "2026-09-01", 0),
+      place(a2.id, "2026-09-01", 2),
+      place(a3.id, "2026-09-01", 5),
+    ],
+  );
   const pair = findHealablePair(t, a2.id);
   assert.equal(pair?.from.locationId, a1.id);
   assert.equal(pair?.to.locationId, a3.id);
@@ -100,15 +152,33 @@ const trip = (locations: TripWithDetails["locations"], placements: Placement[]):
 {
   const lodge = lodging();
   const a1 = activity("A1");
-  const t = trip([lodge, a1], [place(lodge.id, "2026-09-01", 0), place(a1.id, "2026-09-01", 1)]);
+  const t = trip(
+    [lodge, a1],
+    [place(lodge.id, "2026-09-01", 0), place(a1.id, "2026-09-01", 1)],
+  );
   assert.equal(findHealablePair(t, lodge.id), null);
 }
 
 // Removing a Placement whose neighbor has no coordinates yet: nothing to look a route up between.
 {
-  const [a1, a2, a3] = [activity("A1", null, null), activity("A2"), activity("A3")];
-  const t = trip([a1, a2, a3], [place(a1.id, "2026-09-01", 0), place(a2.id, "2026-09-01", 1), place(a3.id, "2026-09-01", 2)]);
-  assert.equal(findHealablePair(t, a2.id), null, "ungeocoded neighbor → nothing to look up");
+  const [a1, a2, a3] = [
+    activity("A1", null, null),
+    activity("A2"),
+    activity("A3"),
+  ];
+  const t = trip(
+    [a1, a2, a3],
+    [
+      place(a1.id, "2026-09-01", 0),
+      place(a2.id, "2026-09-01", 1),
+      place(a3.id, "2026-09-01", 2),
+    ],
+  );
+  assert.equal(
+    findHealablePair(t, a2.id),
+    null,
+    "ungeocoded neighbor → nothing to look up",
+  );
 }
 
 // A removal on one Day never reaches across to another Day's Placements.
@@ -116,9 +186,17 @@ const trip = (locations: TripWithDetails["locations"], placements: Placement[]):
   const [a1, a2, a3] = [activity("A1"), activity("A2"), activity("A3")];
   const t = trip(
     [a1, a2, a3],
-    [place(a1.id, "2026-09-01", 0), place(a2.id, "2026-09-01", 1), place(a3.id, "2026-09-02", 0)]
+    [
+      place(a1.id, "2026-09-01", 0),
+      place(a2.id, "2026-09-01", 1),
+      place(a3.id, "2026-09-02", 0),
+    ],
   );
-  assert.equal(findHealablePair(t, a2.id), null, "a2's only same-Day predecessor has no successor");
+  assert.equal(
+    findHealablePair(t, a2.id),
+    null,
+    "a2's only same-Day predecessor has no successor",
+  );
 }
 
 // A placement id that doesn't exist (already removed, or a stale client) → null, not a throw.
@@ -130,8 +208,16 @@ const trip = (locations: TripWithDetails["locations"], placements: Placement[]):
 // healKinds mirrors optimize.ts's own selection exactly — rail/bus always, the Trip's road profile.
 {
   const t = trip([], []);
-  assert.deepEqual(healKinds({ ...t, roadProfile: "driving" }, "a", "b"), ["rail", "bus", "driving"]);
-  assert.deepEqual(healKinds({ ...t, roadProfile: "walking" }, "a", "b"), ["rail", "bus", "walking"]);
+  assert.deepEqual(healKinds({ ...t, roadProfile: "driving" }, "a", "b"), [
+    "rail",
+    "bus",
+    "driving",
+  ]);
+  assert.deepEqual(healKinds({ ...t, roadProfile: "walking" }, "a", "b"), [
+    "rail",
+    "bus",
+    "walking",
+  ]);
 }
 
 // healKinds also honors this Journey's chosen kind (#223) — a removal that heals a Journey with a
@@ -139,11 +225,33 @@ const trip = (locations: TripWithDetails["locations"], placements: Placement[]):
 // entirely (not just substitutes the road element) — osm-japan never declines a cell within its
 // reach, so keeping "rail" alongside a chosen kind would leave the choice permanently outranked.
 {
-  const chosen: JourneyRoadKind = { id: "k1", tripId: "t1", locationAId: "a", locationBId: "b", kind: "driving" };
-  const t = { ...trip([], []), roadProfile: "walking" as const, journeyRoadKinds: [chosen] };
-  assert.deepEqual(healKinds(t, "a", "b"), ["driving"], "the choice overrides the Trip default and excludes rail/bus");
-  assert.deepEqual(healKinds(t, "b", "a"), ["driving"], "a choice is unordered");
-  assert.deepEqual(healKinds(t, "a", "c"), ["rail", "bus", "walking"], "an unrelated pair is unaffected");
+  const chosen: JourneyRoadKind = {
+    id: "k1",
+    tripId: "t1",
+    locationAId: "a",
+    locationBId: "b",
+    kind: "driving",
+  };
+  const t = {
+    ...trip([], []),
+    roadProfile: "walking" as const,
+    journeyRoadKinds: [chosen],
+  };
+  assert.deepEqual(
+    healKinds(t, "a", "b"),
+    ["driving"],
+    "the choice overrides the Trip default and excludes rail/bus",
+  );
+  assert.deepEqual(
+    healKinds(t, "b", "a"),
+    ["driving"],
+    "a choice is unordered",
+  );
+  assert.deepEqual(
+    healKinds(t, "a", "c"),
+    ["rail", "bus", "walking"],
+    "an unrelated pair is unaffected",
+  );
 }
 
 console.log("✓ selfHeal.test.ts passed");

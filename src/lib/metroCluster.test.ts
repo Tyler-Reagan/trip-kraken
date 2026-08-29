@@ -4,7 +4,10 @@
  */
 
 import assert from "node:assert/strict";
-import { clusterByMetro, METRO_CLUSTER_RADIUS_METERS } from "@/lib/metroCluster";
+import {
+  clusterByMetro,
+  METRO_CLUSTER_RADIUS_METERS,
+} from "@/lib/metroCluster";
 import type { Activity, Lodging } from "@/types";
 
 let seq = 0;
@@ -49,10 +52,13 @@ function lodging(lat: number | null, lng: number | null): Lodging {
 const OSAKA = { lat: 34.6937, lng: 135.5023 };
 const TOKYO = { lat: 35.6762, lng: 139.6503 };
 
-function scattered(center: { lat: number; lng: number }, count: number): Activity[] {
+function scattered(
+  center: { lat: number; lng: number },
+  count: number,
+): Activity[] {
   // Small jitter (~0-2km) — well inside one metro, never enough to bridge the Osaka/Tokyo gap.
   return Array.from({ length: count }, (_, i) =>
-    activity(center.lat + (i % 5) * 0.005, center.lng + (i % 3) * 0.005)
+    activity(center.lat + (i % 5) * 0.005, center.lng + (i % 3) * 0.005),
   );
 }
 
@@ -63,16 +69,28 @@ function scattered(center: { lat: number; lng: number }, count: number): Activit
   const tokyoStops = scattered(TOKYO, 6);
   const clusters = clusterByMetro([...osakaStops, ...tokyoStops], []);
 
-  assert.equal(clusters.length, 2, "Osaka + Tokyo stops split into two metro clusters");
+  assert.equal(
+    clusters.length,
+    2,
+    "Osaka + Tokyo stops split into two metro clusters",
+  );
   const sizes = clusters.map((c) => c.activities.length).sort((a, b) => a - b);
-  assert.deepEqual(sizes, [6, 19], "cluster sizes match the 19 Osaka / 6 Tokyo split");
+  assert.deepEqual(
+    sizes,
+    [6, 19],
+    "cluster sizes match the 19 Osaka / 6 Tokyo split",
+  );
 }
 
 // ── A single metro's spread stays one cluster (no false positives) ──────────
 
 {
   const clusters = clusterByMetro(scattered(OSAKA, 10), []);
-  assert.equal(clusters.length, 1, "intra-city spread doesn't fragment into multiple clusters");
+  assert.equal(
+    clusters.length,
+    1,
+    "intra-city spread doesn't fragment into multiple clusters",
+  );
 }
 
 // ── A cluster matches a lodging within the metro radius ─────────────────────
@@ -80,14 +98,25 @@ function scattered(center: { lat: number; lng: number }, count: number): Activit
 {
   const osakaLodging = lodging(OSAKA.lat + 0.01, OSAKA.lng + 0.01);
   const tokyoLodging = lodging(TOKYO.lat, TOKYO.lng);
-  const clusters = clusterByMetro([...scattered(OSAKA, 3), ...scattered(TOKYO, 2)], [osakaLodging, tokyoLodging]);
+  const clusters = clusterByMetro(
+    [...scattered(OSAKA, 3), ...scattered(TOKYO, 2)],
+    [osakaLodging, tokyoLodging],
+  );
 
   assert.equal(clusters.length, 2);
   for (const c of clusters) {
-    assert.equal(c.lodgings.length, 1, "every cluster here has exactly one covering lodging");
+    assert.equal(
+      c.lodgings.length,
+      1,
+      "every cluster here has exactly one covering lodging",
+    );
   }
   const osakaCluster = clusters.find((c) => c.activities[0].lat! < 35)!;
-  assert.equal(osakaCluster.lodgings[0].id, osakaLodging.id, "cluster matched to the lodging in its own metro");
+  assert.equal(
+    osakaCluster.lodgings[0].id,
+    osakaLodging.id,
+    "cluster matched to the lodging in its own metro",
+  );
 }
 
 // ── Multiple lodgings covering the same metro all match (union, not "the" lodging) ──
@@ -101,7 +130,7 @@ function scattered(center: { lat: number; lng: number }, count: number): Activit
   assert.deepEqual(
     clusters[0].lodgings.map((l) => l.id).sort(),
     [hotelA.id, hotelB.id].sort(),
-    "both lodgings in the same metro match, not just the nearest one"
+    "both lodgings in the same metro match, not just the nearest one",
   );
 }
 
@@ -113,7 +142,11 @@ function scattered(center: { lat: number; lng: number }, count: number): Activit
 
   const activityFounded = clusters.filter((c) => c.activities.length > 0);
   assert.equal(activityFounded.length, 1);
-  assert.deepEqual(activityFounded[0].lodgings, [], "a lodging outside the metro radius is not a match");
+  assert.deepEqual(
+    activityFounded[0].lodgings,
+    [],
+    "a lodging outside the metro radius is not a match",
+  );
 }
 
 // ── A lodging covering no activity-founded metro founds its own ──────────────
@@ -124,17 +157,33 @@ function scattered(center: { lat: number; lng: number }, count: number): Activit
 {
   const atami = { lat: 35.0880435, lng: 139.0639024 }; // >75km from both Tokyo and Osaka
   const stay = lodging(atami.lat, atami.lng);
-  const clusters = clusterByMetro([...scattered(OSAKA, 4), ...scattered(TOKYO, 2)], [stay]);
+  const clusters = clusterByMetro(
+    [...scattered(OSAKA, 4), ...scattered(TOKYO, 2)],
+    [stay],
+  );
 
-  assert.equal(clusters.length, 3, "the lodging-only region becomes its own metro");
+  assert.equal(
+    clusters.length,
+    3,
+    "the lodging-only region becomes its own metro",
+  );
   const founded = clusters.find((c) => c.activities.length === 0);
   assert.ok(founded, "a metro may hold zero activities");
-  assert.deepEqual(founded!.lodgings.map((l) => l.id), [stay.id]);
+  assert.deepEqual(
+    founded!.lodgings.map((l) => l.id),
+    [stay.id],
+  );
 
   // The property the optimizer actually depends on: it belongs to exactly one metro, so its Days
   // get one skill ordinal rather than the union of every metro's.
-  const memberships = clusters.filter((c) => c.lodgings.some((l) => l.id === stay.id));
-  assert.equal(memberships.length, 1, "an isolated lodging joins exactly one metro — its own");
+  const memberships = clusters.filter((c) =>
+    c.lodgings.some((l) => l.id === stay.id),
+  );
+  assert.equal(
+    memberships.length,
+    1,
+    "an isolated lodging joins exactly one metro — its own",
+  );
 }
 
 // ── Founding is a second pass, so a lodging can never bridge two activity metros ──
@@ -144,14 +193,27 @@ function scattered(center: { lat: number; lng: number }, count: number): Activit
 {
   // Two activity groups ~400km apart, with a lodging placed midway — within the radius of neither
   // group's members, but the bridging risk is what this pins.
-  const midpoint = { lat: (OSAKA.lat + TOKYO.lat) / 2, lng: (OSAKA.lng + TOKYO.lng) / 2 };
+  const midpoint = {
+    lat: (OSAKA.lat + TOKYO.lat) / 2,
+    lng: (OSAKA.lng + TOKYO.lng) / 2,
+  };
   const between = lodging(midpoint.lat, midpoint.lng);
-  const clusters = clusterByMetro([...scattered(OSAKA, 3), ...scattered(TOKYO, 3)], [between]);
+  const clusters = clusterByMetro(
+    [...scattered(OSAKA, 3), ...scattered(TOKYO, 3)],
+    [between],
+  );
 
   const activityFounded = clusters.filter((c) => c.activities.length > 0);
-  assert.equal(activityFounded.length, 2, "Osaka and Tokyo stay separate metros");
+  assert.equal(
+    activityFounded.length,
+    2,
+    "Osaka and Tokyo stay separate metros",
+  );
   for (const c of activityFounded) {
-    assert.ok(c.activities.length === 3, "neither activity metro absorbed the other");
+    assert.ok(
+      c.activities.length === 3,
+      "neither activity metro absorbed the other",
+    );
   }
 }
 
@@ -161,16 +223,32 @@ function scattered(center: { lat: number; lng: number }, count: number): Activit
   const nearby = lodging(OSAKA.lat + 0.01, OSAKA.lng + 0.01);
   const clusters = clusterByMetro(scattered(OSAKA, 4), [nearby]);
 
-  assert.equal(clusters.length, 1, "a lodging inside an activity metro joins it rather than founding a second");
-  assert.deepEqual(clusters[0].lodgings.map((l) => l.id), [nearby.id]);
+  assert.equal(
+    clusters.length,
+    1,
+    "a lodging inside an activity metro joins it rather than founding a second",
+  );
+  assert.deepEqual(
+    clusters[0].lodgings.map((l) => l.id),
+    [nearby.id],
+  );
 }
 
 // ── Activities without real coordinates are excluded, not clustered as (0,0) ─
 
 {
-  const clusters = clusterByMetro([...scattered(OSAKA, 2), activity(0, 0), activity(null, null)], []);
-  assert.equal(clusters.length, 1, "ungeocoded activities drop out rather than forming a phantom cluster");
+  const clusters = clusterByMetro(
+    [...scattered(OSAKA, 2), activity(0, 0), activity(null, null)],
+    [],
+  );
+  assert.equal(
+    clusters.length,
+    1,
+    "ungeocoded activities drop out rather than forming a phantom cluster",
+  );
   assert.equal(clusters[0].activities.length, 2);
 }
 
-console.log(`metroCluster.test.ts passed (radius ${METRO_CLUSTER_RADIUS_METERS}m)`);
+console.log(
+  `metroCluster.test.ts passed (radius ${METRO_CLUSTER_RADIUS_METERS}m)`,
+);

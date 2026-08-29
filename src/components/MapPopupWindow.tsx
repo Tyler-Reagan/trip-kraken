@@ -18,12 +18,18 @@ const DEFAULT_H = 500;
 const MIN_W = 380;
 const MIN_H = 320;
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+const clamp = (v: number, lo: number, hi: number) =>
+  Math.min(Math.max(v, lo), Math.max(lo, hi));
 
 /** Where the window used to be pinned (`right-6 top-24`), but as real coordinates so it can move. */
 function defaultFrame(): Frame {
   const vw = typeof window === "undefined" ? 1280 : window.innerWidth;
-  return { x: Math.max(MARGIN, vw - DEFAULT_W - MARGIN), y: 96, w: DEFAULT_W, h: DEFAULT_H };
+  return {
+    x: Math.max(MARGIN, vw - DEFAULT_W - MARGIN),
+    y: 96,
+    w: DEFAULT_W,
+    h: DEFAULT_H,
+  };
 }
 
 /**
@@ -88,7 +94,11 @@ export default function MapPopupWindow() {
       <div
         ref={windowRef}
         className="fixed left-0 top-0 z-40 card shadow-2xl overflow-hidden flex flex-col"
-        style={{ transform: `translate(${f.x}px, ${f.y}px)`, width: f.w, height: f.h }}
+        style={{
+          transform: `translate(${f.x}px, ${f.y}px)`,
+          width: f.w,
+          height: f.h,
+        }}
       >
         <div
           ref={titleRef}
@@ -123,21 +133,41 @@ export default function MapPopupWindow() {
           renderDirections={["nw", "n", "ne", "w", "e", "sw", "s", "se"]}
           // Snap to the viewport edges/centre as the window nears them — the reason to buy the lib.
           snappable
-          snapDirections={{ top: true, left: true, bottom: true, right: true, center: true, middle: true }}
-          bounds={{ left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight, position: "client" }}
+          snapDirections={{
+            top: true,
+            left: true,
+            bottom: true,
+            right: true,
+            center: true,
+            middle: true,
+          }}
+          bounds={{
+            left: 0,
+            top: 0,
+            right: window.innerWidth,
+            bottom: window.innerHeight,
+            position: "client",
+          }}
           // Uncontrolled: mutate the DOM here, record it in the ref, never setState mid-gesture.
           onDrag={({ target, beforeTranslate }) => {
             const fr = frameRef.current;
             fr.x = beforeTranslate[0];
             fr.y = beforeTranslate[1];
-            (target as HTMLElement).style.transform = `translate(${fr.x}px, ${fr.y}px)`;
+            (target as HTMLElement).style.transform =
+              `translate(${fr.x}px, ${fr.y}px)`;
           }}
           onResize={({ target, width, height, drag }) => {
             const fr = frameRef.current;
             // Enforce the min by simply not applying past it: moveable reads the DOM back each
             // frame, so leaving the box at the floor is what holds the floor — no divergence.
-            if (width >= MIN_W) { fr.w = width; fr.x = drag.beforeTranslate[0]; }
-            if (height >= MIN_H) { fr.h = height; fr.y = drag.beforeTranslate[1]; }
+            if (width >= MIN_W) {
+              fr.w = width;
+              fr.x = drag.beforeTranslate[0];
+            }
+            if (height >= MIN_H) {
+              fr.h = height;
+              fr.y = drag.beforeTranslate[1];
+            }
             const el = target as HTMLElement;
             el.style.width = `${fr.w}px`;
             el.style.height = `${fr.h}px`;

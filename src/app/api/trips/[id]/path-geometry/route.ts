@@ -62,13 +62,19 @@ interface PairRequest {
 
 function parseEndpoint(value: unknown): PathEndpoint | null {
   if (!value || typeof value !== "object") return null;
-  const { lat, lng, locationId } = value as { lat?: unknown; lng?: unknown; locationId?: unknown };
+  const { lat, lng, locationId } = value as {
+    lat?: unknown;
+    lng?: unknown;
+    locationId?: unknown;
+  };
   if (typeof lat !== "number" || typeof lng !== "number") return null;
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
   // Kept (not stripped) so the pair's Location pin, if any, can be looked up (#223) — the client
   // already sends it, embedded on every chain-derived endpoint (`pathPairs.ts`'s `chainOfDay`).
-  return typeof locationId === "string" ? { lat, lng, locationId } : { lat, lng };
+  return typeof locationId === "string"
+    ? { lat, lng, locationId }
+    : { lat, lng };
 }
 
 function parsePairs(value: unknown): PairRequest[] | null {
@@ -86,7 +92,11 @@ function parsePairs(value: unknown): PairRequest[] | null {
 
 /** A fixed pool over a shared cursor — results stay index-aligned with `items` regardless of the
  * order the workers finish in, which is what lets the response be a parallel array. */
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
   const results = new Array<R>(items.length);
   let cursor = 0;
   const worker = async () => {
@@ -94,15 +104,21 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
       results[i] = await fn(items[i]);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
   return results;
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id: tripId } = await params;
 
   const trip = await getTripWithDetails(tripId);
-  if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+  if (!trip)
+    return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
   let body: unknown;
   try {
@@ -112,33 +128,48 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const pairs = parsePairs((body as { pairs?: unknown })?.pairs);
-  if (!pairs) return NextResponse.json({ error: "pairs must be an array of {from,to} coordinates" }, { status: 400 });
+  if (!pairs)
+    return NextResponse.json(
+      { error: "pairs must be an array of {from,to} coordinates" },
+      { status: 400 },
+    );
   if (pairs.length > MAX_PAIRS) {
-    return NextResponse.json({ error: `pairs exceeds the ${MAX_PAIRS} maximum` }, { status: 400 });
+    return NextResponse.json(
+      { error: `pairs exceeds the ${MAX_PAIRS} maximum` },
+      { status: 400 },
+    );
   }
 
-  const results = await mapWithConcurrency(pairs, CONCURRENCY, async (pair): Promise<Path[] | null> => {
-    // A *declined* pair already resolves to a terminal `haversine` answer, so nothing here needs a
-    // catch for that. This catch is for a pair OSRM refuses outright — it throws rather than
-    // declines on a non-`Ok` response code, `NoRoute` among them (two points with no road path
-    // between them at all). One such pair must not fail the batch: `null` means "no geometry", the
-    // map draws that pair straight and dashed, and the honest reading is unchanged.
-    try {
-      // #223: a Journey with a chosen kind gets that kind instead of the Trip's `roadProfile` —
-      // the same substitution the optimizer and self-heal apply, kept to the base list this route
-      // already uses (no "bus", per the cost-avoidance reasoning above). Without this, a chosen
-      // Journey's displayed geometry (and duration — the same Path objects feed both) silently
-      // disagreed with what was actually chosen.
-      const chosen =
-        pair.from.locationId && pair.to.locationId
-          ? journeyRoadKindFor(trip.journeyRoadKinds, pair.from.locationId, pair.to.locationId)
-          : undefined;
-      const kinds = withJourneyRoadKind(["rail", trip.roadProfile], chosen);
-      return await describeJourney(pair.from, pair.to, kinds);
-    } catch {
-      return null;
-    }
-  });
+  const results = await mapWithConcurrency(
+    pairs,
+    CONCURRENCY,
+    async (pair): Promise<Path[] | null> => {
+      // A *declined* pair already resolves to a terminal `haversine` answer, so nothing here needs a
+      // catch for that. This catch is for a pair OSRM refuses outright — it throws rather than
+      // declines on a non-`Ok` response code, `NoRoute` among them (two points with no road path
+      // between them at all). One such pair must not fail the batch: `null` means "no geometry", the
+      // map draws that pair straight and dashed, and the honest reading is unchanged.
+      try {
+        // #223: a Journey with a chosen kind gets that kind instead of the Trip's `roadProfile` —
+        // the same substitution the optimizer and self-heal apply, kept to the base list this route
+        // already uses (no "bus", per the cost-avoidance reasoning above). Without this, a chosen
+        // Journey's displayed geometry (and duration — the same Path objects feed both) silently
+        // disagreed with what was actually chosen.
+        const chosen =
+          pair.from.locationId && pair.to.locationId
+            ? journeyRoadKindFor(
+                trip.journeyRoadKinds,
+                pair.from.locationId,
+                pair.to.locationId,
+              )
+            : undefined;
+        const kinds = withJourneyRoadKind(["rail", trip.roadProfile], chosen);
+        return await describeJourney(pair.from, pair.to, kinds);
+      } catch {
+        return null;
+      }
+    },
+  );
 
   return NextResponse.json({ results });
 }

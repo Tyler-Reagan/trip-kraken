@@ -59,7 +59,11 @@ function pointOf(node: OsmNode): Point {
  * ways after the gap available to the stops that sit on them, and §1's gate refuses only the
  * segments that actually cross the break.
  */
-function assembleChain(relation: OsmRelation, waysById: Map<string, OsmWay>, nodesById: Map<string, OsmNode>): Chain | null {
+function assembleChain(
+  relation: OsmRelation,
+  waysById: Map<string, OsmWay>,
+  nodesById: Map<string, OsmNode>,
+): Chain | null {
   const ways = relation.members
     .filter((m) => m.type === "way" && m.role === "")
     .map((m) => waysById.get(m.ref))
@@ -73,8 +77,10 @@ function assembleChain(relation: OsmRelation, waysById: Map<string, OsmWay>, nod
   // match alone would send the whole chain round backwards.
   if (ways.length > 1) {
     const next = ways[1].nodeRefs;
-    const meets = (id: string) => id === next[0] || id === next[next.length - 1];
-    if (!meets(nodeIds[nodeIds.length - 1]) && meets(nodeIds[0])) nodeIds.reverse();
+    const meets = (id: string) =>
+      id === next[0] || id === next[next.length - 1];
+    if (!meets(nodeIds[nodeIds.length - 1]) && meets(nodeIds[0]))
+      nodeIds.reverse();
   }
 
   const breaks = new Set<number>();
@@ -120,7 +126,12 @@ function assembleChain(relation: OsmRelation, waysById: Map<string, OsmWay>, nod
     else occurrences.set(kept[i], [i]);
   }
 
-  return { occurrences, points, breaks: keptBreaks, closed: kept[0] === kept[kept.length - 1] };
+  return {
+    occurrences,
+    points,
+    breaks: keptBreaks,
+    closed: kept[0] === kept[kept.length - 1],
+  };
 }
 
 /**
@@ -137,7 +148,8 @@ function reverseChain(chain: Chain): Chain {
   // A break between vertices i and i+1 becomes a break between their mirrored neighbours.
   for (const i of chain.breaks) breaks.add(last - i - 1);
   const occurrences = new Map<string, number[]>();
-  for (const [id, list] of chain.occurrences) occurrences.set(id, list.map((i) => last - i).reverse());
+  for (const [id, list] of chain.occurrences)
+    occurrences.set(id, list.map((i) => last - i).reverse());
   return { occurrences, points, breaks, closed: chain.closed };
 }
 
@@ -148,7 +160,10 @@ function pointAt(chain: Chain, position: ChainPosition): Point {
   if (fraction === 0) return chain.points[index];
   const a = chain.points[index];
   const b = chain.points[index + 1];
-  return { lat: a.lat + (b.lat - a.lat) * fraction, lng: a.lng + (b.lng - a.lng) * fraction };
+  return {
+    lat: a.lat + (b.lat - a.lat) * fraction,
+    lng: a.lng + (b.lng - a.lng) * fraction,
+  };
 }
 
 /** Where along a segment `p` projects, as a fraction clamped into [0, 1]. Plane geometry on
@@ -176,7 +191,11 @@ function projectionFraction(p: Point, a: Point, b: Point): number {
  * notion of nearness would be a second thing to get wrong. The bound also stops a loop line from
  * snapping to the wrong lap. Beyond it, `null` — and §1's gate refuses the segments either side.
  */
-function locateStop(chain: Chain, node: OsmNode, after: ChainPosition): ChainPosition | null {
+function locateStop(
+  chain: Chain,
+  node: OsmNode,
+  after: ChainPosition,
+): ChainPosition | null {
   const exact = chain.occurrences.get(node.id);
   if (exact !== undefined) {
     // The first pass through this place at or after the previous stop. Stops come in travel
@@ -190,7 +209,11 @@ function locateStop(chain: Chain, node: OsmNode, after: ChainPosition): ChainPos
   const station = pointOf(node);
   let best: { position: ChainPosition; meters: number } | null = null;
   for (let i = 0; i < chain.points.length - 1; i++) {
-    const fraction = projectionFraction(station, chain.points[i], chain.points[i + 1]);
+    const fraction = projectionFraction(
+      station,
+      chain.points[i],
+      chain.points[i + 1],
+    );
     const position = i + fraction;
     const meters = haversineMeters(station, pointAt(chain, position));
     if (!best || meters < best.meters) best = { position, meters };
@@ -200,15 +223,24 @@ function locateStop(chain: Chain, node: OsmNode, after: ChainPosition): ChainPos
 }
 
 /** The vertices between two positions, inclusive of both ends. `from` must be at or before `to`. */
-function sliceBetween(chain: Chain, from: ChainPosition, to: ChainPosition): Point[] {
+function sliceBetween(
+  chain: Chain,
+  from: ChainPosition,
+  to: ChainPosition,
+): Point[] {
   const points: Point[] = [pointAt(chain, from)];
-  for (let i = Math.floor(from) + 1; i <= Math.ceil(to) - 1; i++) points.push(chain.points[i]);
+  for (let i = Math.floor(from) + 1; i <= Math.ceil(to) - 1; i++)
+    points.push(chain.points[i]);
   points.push(pointAt(chain, to));
   return points;
 }
 
 /** True when any recorded break falls between the two positions — §1's gate. */
-function crossesBreak(chain: Chain, from: ChainPosition, to: ChainPosition): boolean {
+function crossesBreak(
+  chain: Chain,
+  from: ChainPosition,
+  to: ChainPosition,
+): boolean {
   for (let i = Math.floor(from); i <= Math.ceil(to) - 1; i++) {
     if (chain.breaks.has(i)) return true;
   }
@@ -217,11 +249,16 @@ function crossesBreak(chain: Chain, from: ChainPosition, to: ChainPosition): boo
 
 function lengthOf(points: Point[]): number {
   let meters = 0;
-  for (let i = 1; i < points.length; i++) meters += haversineMeters(points[i - 1], points[i]);
+  for (let i = 1; i < points.length; i++)
+    meters += haversineMeters(points[i - 1], points[i]);
   return meters;
 }
 
-function segmentBetween(chain: Chain, from: ChainPosition, to: ChainPosition): TracedSegment | null {
+function segmentBetween(
+  chain: Chain,
+  from: ChainPosition,
+  to: ChainPosition,
+): TracedSegment | null {
   let points: Point[];
 
   // The same place twice — a relation listing one station as two consecutive stop members. There
@@ -237,8 +274,12 @@ function segmentBetween(chain: Chain, from: ChainPosition, to: ChainPosition): T
     // these would put the app's most conspicuous dashed line on the Yamanote, the Osaka Loop and a
     // Nagoya subway loop, three of the lines a Japan itinerary is most likely to actually ride.
     const last = chain.points.length - 1;
-    if (crossesBreak(chain, from, last) || crossesBreak(chain, 0, to)) return null;
-    points = [...sliceBetween(chain, from, last), ...sliceBetween(chain, 0, to).slice(1)];
+    if (crossesBreak(chain, from, last) || crossesBreak(chain, 0, to))
+      return null;
+    points = [
+      ...sliceBetween(chain, from, last),
+      ...sliceBetween(chain, 0, to).slice(1),
+    ];
   } else {
     // One hop runs against the chain while the line as a whole runs with it. A systematically
     // backwards chain was already turned around before any cutting happened, so what is left here
@@ -254,11 +295,17 @@ function segmentBetween(chain: Chain, from: ChainPosition, to: ChainPosition): T
 
   // A repeated vertex carries nothing and the wraparound above produces one at the seam whenever a
   // loop's closing stop is the chain's own first node.
-  points = points.filter((p, i) => i === 0 || p.lat !== points[i - 1].lat || p.lng !== points[i - 1].lng);
+  points = points.filter(
+    (p, i) =>
+      i === 0 || p.lat !== points[i - 1].lat || p.lng !== points[i - 1].lng,
+  );
 
   if (points.length < 2) return null;
   return {
-    geometry: { type: "LineString", coordinates: points.map((p) => [p.lng, p.lat]) },
+    geometry: {
+      type: "LineString",
+      coordinates: points.map((p) => [p.lng, p.lat]),
+    },
     tracedLengthMeters: lengthOf(points),
   };
 }
@@ -276,9 +323,11 @@ export function traceLineGeometry(
   relation: OsmRelation,
   stopOsmIds: string[],
   waysById: Map<string, OsmWay>,
-  nodesById: Map<string, OsmNode>
+  nodesById: Map<string, OsmNode>,
 ): (TracedSegment | null)[] {
-  const empty = new Array<TracedSegment | null>(Math.max(0, stopOsmIds.length - 1)).fill(null);
+  const empty = new Array<TracedSegment | null>(
+    Math.max(0, stopOsmIds.length - 1),
+  ).fill(null);
   let chain = assembleChain(relation, waysById, nodesById);
   if (!chain) return empty;
 

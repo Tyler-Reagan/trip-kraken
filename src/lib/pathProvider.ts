@@ -17,7 +17,13 @@
  * provider never has to infer or collapse a set it didn't ask for.
  */
 
-import { type Path, type PathEndpoint, type PathKind, type TravelCost, makeTravelCost } from "@/types/path";
+import {
+  type Path,
+  type PathEndpoint,
+  type PathKind,
+  type TravelCost,
+  makeTravelCost,
+} from "@/types/path";
 import { haversineMeters, type Point } from "@/lib/geo";
 
 export interface PathProviderOptions {
@@ -39,13 +45,22 @@ export type MatrixCell = TravelCost | null;
 export interface PathProvider {
   /** Fetch every pairwise cost in one round trip (ADR-0004), for sequencing's inner loops. Any
    * cell may be `null` — the provider declining that specific pair, not an error. */
-  costMatrix(points: Point[], kinds: PathKind[], opts?: PathProviderOptions): Promise<MatrixCell[][]>;
+  costMatrix(
+    points: Point[],
+    kinds: PathKind[],
+    opts?: PathProviderOptions,
+  ): Promise<MatrixCell[][]>;
   /** One A-to-B journey as its constituent Paths (ADR-0021, ADR-0022) — for the final plan's
    * display only; called lazily at display time, never inside sequencing's construction/refinement
    * loops. `null` is a decline, the same as a `MatrixCell`. Every provider currently returns a
    * single-element array when it does answer (decomposition unimplemented, P1 of the ADR-0022
    * refactor). */
-  describeJourney(from: PathEndpoint, to: PathEndpoint, kinds: PathKind[], opts?: PathProviderOptions): Promise<Path[] | null>;
+  describeJourney(
+    from: PathEndpoint,
+    to: PathEndpoint,
+    kinds: PathKind[],
+    opts?: PathProviderOptions,
+  ): Promise<Path[] | null>;
 }
 
 // Average city travel speed for estimating durations (20 km/h) — unchanged from the pre-O2 constant.
@@ -53,7 +68,12 @@ const AVG_SPEED_M_PER_S = (20 * 1000) / 3600;
 
 function haversineCost(from: Point, to: Point): TravelCost {
   const distanceMeters = haversineMeters(from, to);
-  return makeTravelCost(distanceMeters, distanceMeters / AVG_SPEED_M_PER_S, "straightLine", "haversine");
+  return makeTravelCost(
+    distanceMeters,
+    distanceMeters / AVG_SPEED_M_PER_S,
+    "straightLine",
+    "haversine",
+  );
 }
 
 /**

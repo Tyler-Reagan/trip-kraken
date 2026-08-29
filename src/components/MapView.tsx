@@ -1,17 +1,48 @@
 "use client";
 
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Fragment, useMemo, useState, useCallback, useRef, useEffect } from "react";
-import Map, { Source, Layer, AttributionControl, MapMouseEvent } from "react-map-gl/maplibre";
+import {
+  Fragment,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+} from "react";
+import Map, {
+  Source,
+  Layer,
+  AttributionControl,
+  MapMouseEvent,
+} from "react-map-gl/maplibre";
 import type { MapRef, LayerProps } from "react-map-gl/maplibre";
 import type { FeatureCollection, LineString, Point } from "geojson";
-import { ChevronRight, Crosshair, Globe, MapPin, PanelLeftClose, TrainFront } from "lucide-react";
+import {
+  ChevronRight,
+  Crosshair,
+  Globe,
+  MapPin,
+  PanelLeftClose,
+  TrainFront,
+} from "lucide-react";
 import { useTripStore, type FocusTarget } from "@/store/tripStore";
 import { deriveTripPlanDays, type DerivedDay, type Location } from "@/types";
 import type { PathEndpoint } from "@/types/path";
 import { DAY_COLORS, dayColorCss, dayTextColor } from "@/lib/dayColors";
-import { boundsOf, metroOfDay, metrosOf, type Bounds, type TripMetro } from "@/lib/tripMetros";
-import { pairKey, pairsOfDay, dayChainEntries, pathShiftId, journeyRoadKindFor } from "@/lib/pathPairs";
+import {
+  boundsOf,
+  metroOfDay,
+  metrosOf,
+  type Bounds,
+  type TripMetro,
+} from "@/lib/tripMetros";
+import {
+  pairKey,
+  pairsOfDay,
+  dayChainEntries,
+  pathShiftId,
+  journeyRoadKindFor,
+} from "@/lib/pathPairs";
 import { haversineMeters } from "@/lib/geo";
 import { usePathGeometryContext } from "@/lib/usePathGeometry";
 import PathShiftRows from "./PathShiftRows";
@@ -21,7 +52,8 @@ import PathShiftRows from "./PathShiftRows";
 // why Stadia over MapTiler/self-hosted PMTiles. No API key needed on localhost (strict but
 // unpublished rate limit); NEXT_PUBLIC_STADIA_API_KEY is read if a key is ever provisioned, but
 // nothing sets it today.
-const STADIA_STYLE_URL = "https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json";
+const STADIA_STYLE_URL =
+  "https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json";
 const STADIA_API_KEY = process.env.NEXT_PUBLIC_STADIA_API_KEY;
 const STADIA_DARK = STADIA_API_KEY
   ? `${STADIA_STYLE_URL}?api_key=${STADIA_API_KEY}`
@@ -83,12 +115,15 @@ function toRgb(rgb: [number, number, number]): string {
   return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
 }
 
-function computeInitialViewState(trip: { locations: { excluded: boolean; lat: number | null; lng: number | null }[] }) {
+function computeInitialViewState(trip: {
+  locations: { excluded: boolean; lat: number | null; lng: number | null }[];
+}) {
   const valid = trip.locations.filter(
     (l): l is typeof l & { lat: number; lng: number } =>
-      !l.excluded && l.lat !== null && l.lng !== null
+      !l.excluded && l.lat !== null && l.lng !== null,
   );
-  if (valid.length === 0) return { longitude: 139.69, latitude: 35.69, zoom: 10 };
+  if (valid.length === 0)
+    return { longitude: 139.69, latitude: 35.69, zoom: 10 };
   if (valid.length === 1) {
     return { longitude: valid[0].lng, latitude: valid[0].lat, zoom: 14 };
   }
@@ -109,8 +144,14 @@ function computeInitialViewState(trip: { locations: { excluded: boolean; lat: nu
 
 /** Every point a day actually draws — its stops plus its lodging bookends, which are on the map
  *  and on the day's route line, so fitting to the stops alone would crop them out. */
-function pointsOfDay(day: DerivedDay): { lat: number | null; lng: number | null }[] {
-  return [...day.stops.map((s) => s.location), day.startAnchor, day.endAnchor].filter((p) => p !== null);
+function pointsOfDay(
+  day: DerivedDay,
+): { lat: number | null; lng: number | null }[] {
+  return [
+    ...day.stops.map((s) => s.location),
+    day.startAnchor,
+    day.endAnchor,
+  ].filter((p) => p !== null);
 }
 
 /**
@@ -157,9 +198,12 @@ export default function MapView() {
   }, []);
 
   const initialViewState = useMemo(
-    () => trip ? computeInitialViewState(trip) : { longitude: 139.69, latitude: 35.69, zoom: 10 },
+    () =>
+      trip
+        ? computeInitialViewState(trip)
+        : { longitude: 139.69, latitude: 35.69, zoom: 10 },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [trip?.id]
+    [trip?.id],
   );
 
   // Day-clustered plan, projected from placements + lodging dates (ADR-0015).
@@ -173,8 +217,14 @@ export default function MapView() {
   const [metroOverride, setMetroOverride] = useState<string | null>(null);
   useEffect(() => setMetroOverride(null), [activeDayNumber]);
   const browsedMetro: TripMetro | null =
-    metros.find((m) => m.id === metroOverride) ?? metroOfDay(metros, activeDayNumber) ?? metros[0] ?? null;
-  const browsedDays = useMemo(() => new Set(browsedMetro?.dayNumbers ?? []), [browsedMetro]);
+    metros.find((m) => m.id === metroOverride) ??
+    metroOfDay(metros, activeDayNumber) ??
+    metros[0] ??
+    null;
+  const browsedDays = useMemo(
+    () => new Set(browsedMetro?.dayNumbers ?? []),
+    [browsedMetro],
+  );
 
   const activeDay = days.find((d) => d.dayNumber === activeDayNumber) ?? null;
 
@@ -187,23 +237,51 @@ export default function MapView() {
 
   // Build GeoJSON for route lines and stop dots
   const { pointsGeoJSON, routesGeoJSON } = useMemo(() => {
-    const points: FeatureCollection<Point> = { type: "FeatureCollection", features: [] };
-    const routes: FeatureCollection<LineString> = { type: "FeatureCollection", features: [] };
+    const points: FeatureCollection<Point> = {
+      type: "FeatureCollection",
+      features: [],
+    };
+    const routes: FeatureCollection<LineString> = {
+      type: "FeatureCollection",
+      features: [],
+    };
 
     // "Anchor" here covers both bookend kinds (ADR-0028): a Lodging or a trip-edge Transit
     // Location. Both render as the same neutral marker — only the tooltip/panel text tells them
     // apart, since a full distinct map icon would need a symbol layer this style doesn't load.
-    const anchorMap: Record<string, { locationId: string; name: string; lat: number; lng: number; kind: "lodging" | "transit"; dayNumbers: number[] }> = {};
+    const anchorMap: Record<
+      string,
+      {
+        locationId: string;
+        name: string;
+        lat: number;
+        lng: number;
+        kind: "lodging" | "transit";
+        dayNumbers: number[];
+      }
+    > = {};
     const addAnchor = (loc: Location, dayNumber: number) => {
-      if (loc.lat === null || loc.lng === null || loc.kind === "activity") return;
+      if (loc.lat === null || loc.lng === null || loc.kind === "activity")
+        return;
       const e = anchorMap[loc.id];
-      if (e) { if (!e.dayNumbers.includes(dayNumber)) e.dayNumbers.push(dayNumber); }
-      else anchorMap[loc.id] = { locationId: loc.id, name: loc.name, lat: loc.lat, lng: loc.lng, kind: loc.kind, dayNumbers: [dayNumber] };
+      if (e) {
+        if (!e.dayNumbers.includes(dayNumber)) e.dayNumbers.push(dayNumber);
+      } else
+        anchorMap[loc.id] = {
+          locationId: loc.id,
+          name: loc.name,
+          lat: loc.lat,
+          lng: loc.lng,
+          kind: loc.kind,
+          dayNumbers: [dayNumber],
+        };
     };
     const alphaFor = (dayNumbers: number[]) =>
-      dayNumbers.includes(activeDayNumber) ? ALPHA_ACTIVE
-      : dayNumbers.some((n) => browsedDays.has(n)) ? ALPHA_METRO
-      : ALPHA_REST;
+      dayNumbers.includes(activeDayNumber)
+        ? ALPHA_ACTIVE
+        : dayNumbers.some((n) => browsedDays.has(n))
+          ? ALPHA_METRO
+          : ALPHA_REST;
 
     for (const day of days) {
       const rgb = DAY_COLORS[(day.dayNumber - 1) % DAY_COLORS.length];
@@ -212,14 +290,20 @@ export default function MapView() {
       const color = toRgb(rgb);
 
       const geocodedStops = day.stops.filter(
-        (s): s is typeof s & { location: typeof s.location & { lat: number; lng: number } } =>
-          s.location.lat !== null && s.location.lng !== null
+        (
+          s,
+        ): s is typeof s & {
+          location: typeof s.location & { lat: number; lng: number };
+        } => s.location.lat !== null && s.location.lng !== null,
       );
 
       geocodedStops.forEach((stop, i) => {
         points.features.push({
           type: "Feature",
-          geometry: { type: "Point", coordinates: [stop.location.lng, stop.location.lat] },
+          geometry: {
+            type: "Point",
+            coordinates: [stop.location.lng, stop.location.lat],
+          },
           properties: {
             locationId: stop.location.id,
             name: stop.location.name,
@@ -243,16 +327,35 @@ export default function MapView() {
       // its metro siblings hint at their shape, the rest stay off entirely. Every Path of a Day
       // shares that one opacity, so the solid/dashed distinction reads as provenance rather than as
       // emphasis (§3).
-      const routeAlpha = isActive ? 0.65 : browsedDays.has(day.dayNumber) ? 0.18 : 0;
+      const routeAlpha = isActive
+        ? 0.65
+        : browsedDays.has(day.dayNumber)
+          ? 0.18
+          : 0;
       // `pathId` tags every feature belonging to one decomposed shift (ADR-0036) with the same
       // identity `StopPanel`'s hover wiring uses (`pathPairs.ts`'s `pathShiftId`) — undefined for a
       // whole-pair straight line drawn with no Path behind it at all (unanswered or refused), since
       // there's no specific shift to highlight there.
-      const drawStraight = (from: PathEndpoint, to: PathEndpoint, pathId?: string) => {
+      const drawStraight = (
+        from: PathEndpoint,
+        to: PathEndpoint,
+        pathId?: string,
+      ) => {
         routes.features.push({
           type: "Feature",
-          geometry: { type: "LineString", coordinates: [[from.lng, from.lat], [to.lng, to.lat]] },
-          properties: { color, alpha: routeAlpha, dashed: 1, pathId: pathId ?? null },
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [from.lng, from.lat],
+              [to.lng, to.lat],
+            ],
+          },
+          properties: {
+            color,
+            alpha: routeAlpha,
+            dashed: 1,
+            pathId: pathId ?? null,
+          },
         });
       };
       /** A dashed stretch between two spans, or between a span and the Path's own end — skipped
@@ -260,7 +363,11 @@ export default function MapView() {
        * router snapped to, tens of metres off the requested coordinate, and a dash drawn across
        * that offset would claim a gap that isn't one. A real missing stretch is an untraced ride
        * edge — a whole inter-station hop — so the two are far apart in scale, not adjacent. */
-      const drawGap = (from: PathEndpoint, to: PathEndpoint, pathId?: string) => {
+      const drawGap = (
+        from: PathEndpoint,
+        to: PathEndpoint,
+        pathId?: string,
+      ) => {
         if (haversineMeters(from, to) < GAP_MIN_METERS) return;
         drawStraight(from, to, pathId);
       };
@@ -316,7 +423,9 @@ export default function MapView() {
 
     // Render each Anchor (Lodging or trip-edge Transit) as a single neutral-colored feature.
     for (const anchor of Object.values(anchorMap)) {
-      const sortedDays = anchor.dayNumbers.slice().sort((a: number, b: number) => a - b);
+      const sortedDays = anchor.dayNumbers
+        .slice()
+        .sort((a: number, b: number) => a - b);
       points.features.push({
         type: "Feature",
         geometry: { type: "Point", coordinates: [anchor.lng, anchor.lat] },
@@ -334,7 +443,15 @@ export default function MapView() {
     }
 
     return { pointsGeoJSON: points, routesGeoJSON: routes };
-  }, [days, activeDayNumber, browsedDays, highlightedLocationId, pathGeometry, roadProfile, trip]);
+  }, [
+    days,
+    activeDayNumber,
+    browsedDays,
+    highlightedLocationId,
+    pathGeometry,
+    roadProfile,
+    trip,
+  ]);
 
   // ADR-0029 §3: a Path with no real shape draws dashed, in the same day colour and opacity — the
   // traveler sees that we are guessing at that stretch, not that it matters more or less. Same
@@ -356,7 +473,12 @@ export default function MapView() {
       "line-color": ["get", "color"],
       "line-opacity": ["get", "alpha"],
       "line-width": 3,
-      "line-dasharray": ["case", ["==", ["get", "dashed"], 1], ["literal", [2, 1.5]], ["literal", [1, 0]]],
+      "line-dasharray": [
+        "case",
+        ["==", ["get", "dashed"], 1],
+        ["literal", [2, 1.5]],
+        ["literal", [1, 0]],
+      ],
     },
     layout: { "line-cap": "round", "line-join": "round" },
   };
@@ -384,21 +506,26 @@ export default function MapView() {
     paint: {
       "circle-radius": [
         "case",
-        ["==", ["get", "isHighlighted"], 1], 18,
-        ["==", ["get", "isBase"], 1], 13,
+        ["==", ["get", "isHighlighted"], 1],
+        18,
+        ["==", ["get", "isBase"], 1],
+        13,
         11,
       ],
-      "circle-color": ["case", ["==", ["get", "isHighlighted"], 1], "#ffffff", ["get", "color"]],
-      "circle-opacity": ["get", "alpha"],
-      "circle-stroke-width": [
+      "circle-color": [
         "case",
-        ["==", ["get", "isBase"], 1], 3,
-        2,
+        ["==", ["get", "isHighlighted"], 1],
+        "#ffffff",
+        ["get", "color"],
       ],
+      "circle-opacity": ["get", "alpha"],
+      "circle-stroke-width": ["case", ["==", ["get", "isBase"], 1], 3, 2],
       "circle-stroke-color": [
         "case",
-        ["==", ["get", "isHighlighted"], 1], "#16a34a",
-        ["==", ["get", "isBase"], 1], "#374151",
+        ["==", ["get", "isHighlighted"], 1],
+        "#16a34a",
+        ["==", ["get", "isBase"], 1],
+        "#374151",
         "rgba(0,0,0,0.3)",
       ],
       "circle-stroke-opacity": ["get", "alpha"],
@@ -426,16 +553,26 @@ export default function MapView() {
     layout: {
       "text-field": [
         "let",
-        "latin", ["coalesce", ["get", "name:latin"], ""],
-        "nonlatin", [
+        "latin",
+        ["coalesce", ["get", "name:latin"], ""],
+        "nonlatin",
+        [
           "case",
-          ["all", ["has", "name:nonlatin"], ["is-supported-script", ["get", "name:nonlatin"]]],
+          [
+            "all",
+            ["has", "name:nonlatin"],
+            ["is-supported-script", ["get", "name:nonlatin"]],
+          ],
           ["get", "name:nonlatin"],
           "",
         ],
         [
           "case",
-          ["all", ["!=", ["var", "latin"], ""], ["!=", ["var", "nonlatin"], ""]],
+          [
+            "all",
+            ["!=", ["var", "latin"], ""],
+            ["!=", ["var", "nonlatin"], ""],
+          ],
           ["concat", ["var", "latin"], "\n", ["var", "nonlatin"]],
           ["concat", ["var", "latin"], ["var", "nonlatin"]],
         ],
@@ -459,18 +596,22 @@ export default function MapView() {
   // Keep the fitted extent clear of the docked panel, but never pad a narrow canvas into nothing.
   const fitPadding = useCallback(() => {
     const width = canvasRef.current?.clientWidth ?? 0;
-    const left = panelOpen && width > 2 * PANEL_W ? PANEL_W + FIT_PADDING : FIT_PADDING;
+    const left =
+      panelOpen && width > 2 * PANEL_W ? PANEL_W + FIT_PADDING : FIT_PADDING;
     return { top: FIT_PADDING, bottom: FIT_PADDING, right: FIT_PADDING, left };
   }, [panelOpen]);
 
   const boundsFor = useCallback(
-    (target: Exclude<FocusTarget, { tier: "stop" } | { tier: "point" }>): Bounds | null => {
+    (
+      target: Exclude<FocusTarget, { tier: "stop" } | { tier: "point" }>,
+    ): Bounds | null => {
       if (target.tier === "trip") return boundsOf(days.flatMap(pointsOfDay));
-      if (target.tier === "metro") return metros.find((m) => m.id === target.metroId)?.bounds ?? null;
+      if (target.tier === "metro")
+        return metros.find((m) => m.id === target.metroId)?.bounds ?? null;
       const day = days.find((d) => d.dayNumber === target.dayNumber);
       return day ? boundsOf(pointsOfDay(day)) : null;
     },
-    [days, metros]
+    [days, metros],
   );
 
   // Consume the focus command (#137): move the camera, then clear it. Returns false only when
@@ -482,20 +623,33 @@ export default function MapView() {
       if (target.tier === "stop") {
         const loc = trip?.locations.find((l) => l.id === target.locationId);
         if (loc?.lat != null && loc.lng != null) {
-          map.flyTo({ center: [loc.lng, loc.lat], zoom: STOP_ZOOM, duration: CAMERA_MS });
+          map.flyTo({
+            center: [loc.lng, loc.lat],
+            zoom: STOP_ZOOM,
+            duration: CAMERA_MS,
+          });
         }
         return true;
       }
       if (target.tier === "point") {
-        map.flyTo({ center: [target.lng, target.lat], zoom: STOP_ZOOM, duration: CAMERA_MS });
+        map.flyTo({
+          center: [target.lng, target.lat],
+          zoom: STOP_ZOOM,
+          duration: CAMERA_MS,
+        });
         return true;
       }
       const bounds = boundsFor(target);
       // maxZoom keeps a one-stop day or metro from slamming to street level.
-      if (bounds) map.fitBounds(bounds, { padding: fitPadding(), maxZoom: STOP_ZOOM, duration: CAMERA_MS });
+      if (bounds)
+        map.fitBounds(bounds, {
+          padding: fitPadding(),
+          maxZoom: STOP_ZOOM,
+          duration: CAMERA_MS,
+        });
       return true;
     },
-    [trip, boundsFor, fitPadding]
+    [trip, boundsFor, fitPadding],
   );
 
   useEffect(() => {
@@ -509,7 +663,7 @@ export default function MapView() {
     (e: { originalEvent?: MouseEvent | TouchEvent | WheelEvent }) => {
       if (e.originalEvent) disarmAutoFocus();
     },
-    [disarmAutoFocus]
+    [disarmAutoFocus],
   );
 
   // Guarded because the "stops" layer mounts after the map itself (Source/Layer render at
@@ -523,36 +677,49 @@ export default function MapView() {
 
   // Shared by click (tap) and hover so touch devices — which never fire mousemove — get the
   // same info surface a mouse hover gets, just triggered by tapping the stop instead.
-  const buildTooltip = useCallback((e: MapMouseEvent): TooltipState => {
-    const f = queryStopFeature(e);
-    if (!f?.properties) return null;
-    const isBase = f.properties.isBase === 1;
-    return {
-      x: e.point.x,
-      y: e.point.y,
-      name: f.properties.name as string,
-      isBase,
-      ...(isBase
-        ? {
-            anchorKind: f.properties.anchorKind as "lodging" | "transit",
-            dayNumbers: JSON.parse(f.properties.dayNumbers as string) as number[],
-          }
-        : { dayNumber: f.properties.dayNumber as number, order: f.properties.order as number }
-      ),
-    };
-  }, [queryStopFeature]);
+  const buildTooltip = useCallback(
+    (e: MapMouseEvent): TooltipState => {
+      const f = queryStopFeature(e);
+      if (!f?.properties) return null;
+      const isBase = f.properties.isBase === 1;
+      return {
+        x: e.point.x,
+        y: e.point.y,
+        name: f.properties.name as string,
+        isBase,
+        ...(isBase
+          ? {
+              anchorKind: f.properties.anchorKind as "lodging" | "transit",
+              dayNumbers: JSON.parse(
+                f.properties.dayNumbers as string,
+              ) as number[],
+            }
+          : {
+              dayNumber: f.properties.dayNumber as number,
+              order: f.properties.order as number,
+            }),
+      };
+    },
+    [queryStopFeature],
+  );
 
-  const handleClick = useCallback((e: MapMouseEvent) => {
-    const f = queryStopFeature(e);
-    if (f?.properties?.locationId) {
-      handleMapLocationClick(f.properties.locationId as string);
-    }
-    setTooltip(buildTooltip(e));
-  }, [handleMapLocationClick, buildTooltip, queryStopFeature]);
+  const handleClick = useCallback(
+    (e: MapMouseEvent) => {
+      const f = queryStopFeature(e);
+      if (f?.properties?.locationId) {
+        handleMapLocationClick(f.properties.locationId as string);
+      }
+      setTooltip(buildTooltip(e));
+    },
+    [handleMapLocationClick, buildTooltip, queryStopFeature],
+  );
 
-  const handleMouseMove = useCallback((e: MapMouseEvent) => {
-    setTooltip(buildTooltip(e));
-  }, [buildTooltip]);
+  const handleMouseMove = useCallback(
+    (e: MapMouseEvent) => {
+      setTooltip(buildTooltip(e));
+    },
+    [buildTooltip],
+  );
 
   const handleMouseLeave = useCallback(() => setTooltip(null), []);
 
@@ -576,16 +743,25 @@ export default function MapView() {
             return (
               <button
                 key={metro.id}
-                onClick={() => { setMetroOverride(metro.id); focusMap({ tier: "metro", metroId: metro.id }); }}
+                onClick={() => {
+                  setMetroOverride(metro.id);
+                  focusMap({ tier: "metro", metroId: metro.id });
+                }}
                 aria-pressed={selected}
                 title={`Fit ${metro.label} — ${metro.stopCount} stop${metro.stopCount !== 1 ? "s" : ""} across the trip`}
                 className={`flex items-center gap-1.5 px-3 py-2 text-xs shrink-0 border-b-2 -mb-px transition-colors ${
-                  selected ? "border-brand-400 text-ink font-semibold" : "border-transparent text-sub hover:text-ink"
+                  selected
+                    ? "border-brand-400 text-ink font-semibold"
+                    : "border-transparent text-sub hover:text-ink"
                 }`}
               >
-                <MapPin className={`w-3.5 h-3.5 shrink-0 ${selected ? "text-brand-500 dark:text-brand-400" : "text-faint"}`} />
+                <MapPin
+                  className={`w-3.5 h-3.5 shrink-0 ${selected ? "text-brand-500 dark:text-brand-400" : "text-faint"}`}
+                />
                 {metro.label}
-                <span className="text-numeral text-faint">{metro.stopCount}</span>
+                <span className="text-numeral text-faint">
+                  {metro.stopCount}
+                </span>
               </button>
             );
           })}
@@ -605,12 +781,19 @@ export default function MapView() {
                 aria-pressed={selected}
                 title={`Fit day ${dayNumber}${day?.label ? ` — ${day.label}` : ""}`}
                 className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs shrink-0 transition-colors ${
-                  selected ? "bg-surface-3 text-ink ring-1 ring-brand-500" : "text-sub hover:bg-surface-2"
+                  selected
+                    ? "bg-surface-3 text-ink ring-1 ring-brand-500"
+                    : "text-sub hover:bg-surface-2"
                 }`}
               >
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: dayColorCss(dayNumber) }} />
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ background: dayColorCss(dayNumber) }}
+                />
                 <span className="font-medium">Day {dayNumber}</span>
-                <span className="text-numeral text-faint">{day?.stops.length ?? 0}</span>
+                <span className="text-numeral text-faint">
+                  {day?.stops.length ?? 0}
+                </span>
               </button>
             );
           })}
@@ -654,16 +837,27 @@ export default function MapView() {
             <div className="bg-gray-900/90 text-white text-xs rounded-lg border border-white/10 px-2.5 py-1.5 leading-snug">
               <strong className="font-semibold">{tooltip.name}</strong>
               <br />
-              {tooltip.isBase
-                ? <span className="opacity-70">{tooltip.anchorKind === "transit" ? "Transit" : "Lodging"} · Days {tooltip.dayNumbers!.join(", ")}</span>
-                : <span className="opacity-70">Day {tooltip.dayNumber} · Stop {tooltip.order}</span>
-              }
+              {tooltip.isBase ? (
+                <span className="opacity-70">
+                  {tooltip.anchorKind === "transit" ? "Transit" : "Lodging"} ·
+                  Days {tooltip.dayNumbers!.join(", ")}
+                </span>
+              ) : (
+                <span className="opacity-70">
+                  Day {tooltip.dayNumber} · Stop {tooltip.order}
+                </span>
+              )}
             </div>
           </div>
         )}
 
         {mapReady && activeDay && (
-          <StopPanel day={activeDay} open={panelOpen} onToggle={setPanelOpen} onFocus={focusMap} />
+          <StopPanel
+            day={activeDay}
+            open={panelOpen}
+            onToggle={setPanelOpen}
+            onFocus={focusMap}
+          />
         )}
       </div>
     </div>
@@ -676,7 +870,10 @@ export default function MapView() {
  * Docked rather than floating so it can be collapsed out of the way on a small canvas.
  */
 function StopPanel({
-  day, open, onToggle, onFocus,
+  day,
+  open,
+  onToggle,
+  onFocus,
 }: {
   day: DerivedDay;
   open: boolean;
@@ -703,7 +900,7 @@ function StopPanel({
         from: { lat: from.lat, lng: from.lng!, locationId: from.id },
         to: { lat: to.lat, lng: to.lng!, locationId: to.id },
       },
-      trip.journeyRoadKinds
+      trip.journeyRoadKinds,
     );
     return (
       <PathShiftRows
@@ -711,15 +908,20 @@ function StopPanel({
         chain={pathGeometry.get(key)}
         tripId={trip.id}
         pairKey={key}
-        onStationClick={(t) => onFocus({ tier: "point", lat: t.lat!, lng: t.lng! })}
+        onStationClick={(t) =>
+          onFocus({ tier: "point", lat: t.lat!, lng: t.lng! })
+        }
         onHoverChange={setHighlightedPathId}
         hasJrPass={trip.hasJrPass}
         kindToggle={
           from.id === to.id
             ? undefined
             : {
-                kind: journeyRoadKindFor(trip.journeyRoadKinds, from.id, to.id)?.kind ?? roadProfile,
-                onKindChange: (kind) => setJourneyRoadKind(from.id, to.id, kind),
+                kind:
+                  journeyRoadKindFor(trip.journeyRoadKinds, from.id, to.id)
+                    ?.kind ?? roadProfile,
+                onKindChange: (kind) =>
+                  setJourneyRoadKind(from.id, to.id, kind),
               }
         }
       />
@@ -733,7 +935,9 @@ function StopPanel({
         className="absolute left-0 top-3 flex items-center gap-1.5 rounded-r-lg bg-surface border border-l-0 border-line pl-2 pr-2.5 py-1.5 text-xs text-ink shadow-lg hover:bg-surface-2"
       >
         <ChevronRight className="w-3.5 h-3.5 text-brand-500 dark:text-brand-400" />
-        <span className="font-medium">{day.stops.length} stop{day.stops.length !== 1 ? "s" : ""}</span>
+        <span className="font-medium">
+          {day.stops.length} stop{day.stops.length !== 1 ? "s" : ""}
+        </span>
       </button>
     );
   }
@@ -744,11 +948,17 @@ function StopPanel({
       style={{ width: PANEL_W }}
     >
       <div className="flex items-center gap-2 px-2.5 py-2 border-b border-line">
-        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: dayColorCss(day.dayNumber) }} />
+        <span
+          className="w-2.5 h-2.5 rounded-full shrink-0"
+          style={{ background: dayColorCss(day.dayNumber) }}
+        />
         <div className="min-w-0">
-          <p className="text-xs font-semibold text-ink leading-tight">Day {day.dayNumber}</p>
+          <p className="text-xs font-semibold text-ink leading-tight">
+            Day {day.dayNumber}
+          </p>
           <p className="text-meta text-faint truncate">
-            {day.stops.length} stop{day.stops.length !== 1 ? "s" : ""}{day.label ? ` · ${day.label}` : ""}
+            {day.stops.length} stop{day.stops.length !== 1 ? "s" : ""}
+            {day.label ? ` · ${day.label}` : ""}
           </p>
         </div>
         <button
@@ -766,17 +976,35 @@ function StopPanel({
             the check-in waypoint at all, which meant the two Location lists disagreed about how
             many Locations a Day even has; fixed by sharing the same entries function. */}
         {dayChainEntries(day).map((entry, i, entries) => (
-          <Fragment key={entry.role === "stop" ? `stop-${entry.stop!.placement.id}` : entry.role}>
+          <Fragment
+            key={
+              entry.role === "stop"
+                ? `stop-${entry.stop!.placement.id}`
+                : entry.role
+            }
+          >
             {entry.role === "stop" ? (
-              <PanelStopRow loc={entry.location} dayNumber={day.dayNumber} index={entry.index!} onFocus={onFocus} />
+              <PanelStopRow
+                loc={entry.location}
+                dayNumber={day.dayNumber}
+                index={entry.index!}
+                onFocus={onFocus}
+              />
             ) : (
-              <PanelAnchorRow loc={entry.location} label={panelAnchorLabel(entry.role, entry.location)} onFocus={onFocus} />
+              <PanelAnchorRow
+                loc={entry.location}
+                label={panelAnchorLabel(entry.role, entry.location)}
+                onFocus={onFocus}
+              />
             )}
-            {i < entries.length - 1 && gap(entry.location, entries[i + 1].location)}
+            {i < entries.length - 1 &&
+              gap(entry.location, entries[i + 1].location)}
           </Fragment>
         ))}
         {day.stops.length === 0 && !day.startAnchor && !day.endAnchor && (
-          <p className="px-2.5 py-3 text-xs text-faint italic">Nothing planned this day.</p>
+          <p className="px-2.5 py-3 text-xs text-faint italic">
+            Nothing planned this day.
+          </p>
         )}
       </div>
     </div>
@@ -786,7 +1014,10 @@ function StopPanel({
 /** Ungeocoded stops are disabled, matching the day card's Search convention (#128 decision 7) —
  *  there's no coordinate to fly to. */
 function PanelStopRow({
-  loc, dayNumber, index, onFocus,
+  loc,
+  dayNumber,
+  index,
+  onFocus,
 }: {
   loc: Location;
   dayNumber: number;
@@ -798,20 +1029,30 @@ function PanelStopRow({
     <button
       disabled={!geocoded}
       onClick={() => onFocus({ tier: "stop", locationId: loc.id })}
-      title={geocoded ? `Zoom to ${loc.name}` : "No coordinates — run Enrich first"}
+      title={
+        geocoded ? `Zoom to ${loc.name}` : "No coordinates — run Enrich first"
+      }
       className="group w-full flex items-center gap-2 px-2.5 py-1.5 text-left transition-colors enabled:hover:bg-surface-2 disabled:cursor-not-allowed"
     >
       <span
         className="w-5 h-5 grid place-items-center rounded-full text-[10px] font-semibold shrink-0"
         style={
           geocoded
-            ? { background: dayColorCss(dayNumber), color: dayTextColor(dayNumber) }
-            : { border: "1px dashed var(--border-strong)", color: "var(--faint)" }
+            ? {
+                background: dayColorCss(dayNumber),
+                color: dayTextColor(dayNumber),
+              }
+            : {
+                border: "1px dashed var(--border-strong)",
+                color: "var(--faint)",
+              }
         }
       >
         {index + 1}
       </span>
-      <span className={`text-xs truncate flex-1 ${geocoded ? "text-sub group-hover:text-ink" : "text-faint"}`}>
+      <span
+        className={`text-xs truncate flex-1 ${geocoded ? "text-sub group-hover:text-ink" : "text-faint"}`}
+      >
         {loc.name}
       </span>
       {geocoded && (
@@ -824,7 +1065,10 @@ function PanelStopRow({
 /** The subtext for one anchor row, matching `DayCard`'s `AnchorRow` convention (ADR-0036) —
  *  "checkin" has no prior precedent in this panel, since it never rendered a check-in waypoint row
  *  at all until this change. */
-function panelAnchorLabel(role: "start" | "checkin" | "end", loc: Location): string {
+function panelAnchorLabel(
+  role: "start" | "checkin" | "end",
+  loc: Location,
+): string {
   if (role === "checkin") return "Check-in · drop bags";
   const isEdge = loc.kind === "transit";
   if (role === "start") return isEdge ? "Arrived here" : "Woke here";
@@ -837,7 +1081,9 @@ function panelAnchorLabel(role: "start" | "checkin" | "end", loc: Location): str
  *  already used for it in the Manifest, since the map's circle layer has no room for a second
  *  distinct marker shape without a symbol layer this style doesn't load. */
 function PanelAnchorRow({
-  loc, label, onFocus,
+  loc,
+  label,
+  onFocus,
 }: {
   loc: Location;
   label: string;
@@ -849,7 +1095,9 @@ function PanelAnchorRow({
     <button
       disabled={!geocoded}
       onClick={() => onFocus({ tier: "stop", locationId: loc.id })}
-      title={geocoded ? `Zoom to ${loc.name}` : "No coordinates — run Enrich first"}
+      title={
+        geocoded ? `Zoom to ${loc.name}` : "No coordinates — run Enrich first"
+      }
       className="group w-full flex items-center gap-2 px-2.5 py-1.5 text-left transition-colors enabled:hover:bg-surface-2 disabled:cursor-not-allowed"
     >
       <span
@@ -859,7 +1107,9 @@ function PanelAnchorRow({
         {isEdge && <TrainFront className="w-3 h-3 text-gray-700" />}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-xs truncate text-sub group-hover:text-ink">{loc.name}</span>
+        <span className="block text-xs truncate text-sub group-hover:text-ink">
+          {loc.name}
+        </span>
         <span className="block text-meta text-faint">{label}</span>
       </span>
     </button>

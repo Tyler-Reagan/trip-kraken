@@ -144,7 +144,8 @@ export function buildSpatialIndex(graph: TransitGraph): SpatialIndex {
           const bucket = buckets.get(`${row + dr}:${col + dc}`);
           if (!bucket) continue;
           for (const stop of bucket) {
-            if (haversineMeters({ lat, lng }, stop) <= radiusMeters) results.push(stop);
+            if (haversineMeters({ lat, lng }, stop) <= radiusMeters)
+              results.push(stop);
           }
         }
       }

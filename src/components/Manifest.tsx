@@ -6,7 +6,13 @@ import { ChevronRight, Map as MapIcon, Star } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 import { clusterByMetro } from "@/lib/metroCluster";
 import { localityOf, metroKey, metroLabel } from "@/lib/tripMetros";
-import { isActivity, isLodging, type Location, type Lodging, type TripWithDetails } from "@/types";
+import {
+  isActivity,
+  isLodging,
+  type Location,
+  type Lodging,
+  type TripWithDetails,
+} from "@/types";
 import { NightStrip, PALETTE } from "./LodgingNightStrip";
 import { TransitSection } from "./TransitEdgeSlots";
 import VisitDurationEditor from "./VisitDurationEditor";
@@ -31,16 +37,27 @@ import VisitDurationEditor from "./VisitDurationEditor";
  * legend and an opt-in "?"/first-touch ghost hint both lost out in `/prototype` comparisons (since
  * torn down) to this one-line gesture caption, which read as intuitive without extra chrome.
  */
-function LodgingSection({ trip, activities }: { trip: TripWithDetails; activities: Location[] }) {
+function LodgingSection({
+  trip,
+  activities,
+}: {
+  trip: TripWithDetails;
+  activities: Location[];
+}) {
   // Excluded activities are kept in the trip but intentionally out of the plan (ADR-0015) — the
   // lodging dropdown promotes a place *into* the plan, so an excluded one shouldn't be offered.
   const promotable = activities.filter((a) => !a.excluded);
   return (
     <div className="space-y-2">
       <p className="text-xs text-faint">
-        Drag across nights to add a stay · drag a block&rsquo;s edge to resize, its middle to move · click to edit or remove
+        Drag across nights to add a stay · drag a block&rsquo;s edge to resize,
+        its middle to move · click to edit or remove
       </p>
-      <NightStrip trip={trip} lodgings={trip.locations.filter(isLodging)} activities={promotable} />
+      <NightStrip
+        trip={trip}
+        lodgings={trip.locations.filter(isLodging)}
+        activities={promotable}
+      />
     </div>
   );
 }
@@ -51,13 +68,21 @@ function ActivityRow({ loc, metro }: { loc: Location; metro: string }) {
   const locality = localityOf(loc.address, metro);
 
   return (
-    <div className={`card p-3 flex items-center gap-3 ${loc.excluded ? "opacity-50" : ""}`}>
+    <div
+      className={`card p-3 flex items-center gap-3 ${loc.excluded ? "opacity-50" : ""}`}
+    >
       <input
         type="checkbox"
         checked={!loc.excluded}
-        onChange={(e) => updateLocation(loc.id, { excluded: !e.target.checked })}
+        onChange={(e) =>
+          updateLocation(loc.id, { excluded: !e.target.checked })
+        }
         className="rounded border-line-strong text-brand-600 focus:ring-brand-500 shrink-0"
-        title={loc.excluded ? "Excluded from the plan — click to include" : "Included — click to exclude"}
+        title={
+          loc.excluded
+            ? "Excluded from the plan — click to include"
+            : "Included — click to exclude"
+        }
       />
       {/* Not flex-1: the slack belongs in one gutter before the controls, not between every
           descriptive item. Name, locality, and rating all describe the place, so they cluster; the
@@ -74,7 +99,11 @@ function ActivityRow({ loc, metro }: { loc: Location; metro: string }) {
               sits beside it — a second line would double the height of all 24 rows to say one
               word. Below `sm` it goes entirely: truncated to "To…" it is worse than absent, and
               the group heading already names the area. */}
-          {locality && <span className="hidden sm:inline text-xs text-faint truncate shrink">{locality}</span>}
+          {locality && (
+            <span className="hidden sm:inline text-xs text-faint truncate shrink">
+              {locality}
+            </span>
+          )}
         </span>
         {/* The reason, on the row, in words — not a tooltip. A failed lookup is the one thing here
             a user has to act on, and "which one, and why" is the whole of what they need. */}
@@ -99,7 +128,13 @@ function ActivityRow({ loc, metro }: { loc: Location; metro: string }) {
   );
 }
 
-function Group({ title, children }: { title: string; children: React.ReactNode }) {
+function Group({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="space-y-2">
       <h3 className="text-meta text-faint">{title}</h3>
@@ -109,7 +144,13 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 }
 
 /** Activities sharing a metro, in the order the metro first appears in the trip's own list. */
-type ActivityGroup = { key: string; label: string; items: Location[]; hasLodging: boolean; lodgingColor: string | null };
+type ActivityGroup = {
+  key: string;
+  label: string;
+  items: Location[];
+  hasLodging: boolean;
+  lodgingColor: string | null;
+};
 
 /**
  * Groups activities by metro through #116's `clusterByMetro` — the same detector the optimizer's
@@ -120,10 +161,14 @@ type ActivityGroup = { key: string; label: string; items: Location[]; hasLodging
  * vanish from a grouped list. They get their own trailing group instead — which doubles as the
  * place a failed lookup is visible, since that's exactly why a place has no coordinates.
  */
-function groupByMetro(activities: Location[], lodgings: Lodging[]): ActivityGroup[] {
+function groupByMetro(
+  activities: Location[],
+  lodgings: Lodging[],
+): ActivityGroup[] {
   const clusters = clusterByMetro<Location, Lodging>(activities, lodgings);
   const order = new Map(activities.map((a, i) => [a.id, i]));
-  const firstIndex = (g: Location[]) => Math.min(...g.map((a) => order.get(a.id) ?? Infinity));
+  const firstIndex = (g: Location[]) =>
+    Math.min(...g.map((a) => order.get(a.id) ?? Infinity));
 
   const groups: ActivityGroup[] = clusters
     .filter((c) => c.activities.length > 0)
@@ -134,7 +179,12 @@ function groupByMetro(activities: Location[], lodgings: Lodging[]): ActivityGrou
       hasLodging: c.lodgings.length > 0,
       // The same swatch the night strip paints this metro's stay with, so the group and its
       // lodging read as one thing rather than two lists that happen to share a word.
-      lodgingColor: c.lodgings[0] ? PALETTE[lodgings.findIndex((l) => l.id === c.lodgings[0].id) % PALETTE.length] : null,
+      lodgingColor: c.lodgings[0]
+        ? PALETTE[
+            lodgings.findIndex((l) => l.id === c.lodgings[0].id) %
+              PALETTE.length
+          ]
+        : null,
     }))
     .sort((a, b) => firstIndex(a.items) - firstIndex(b.items));
 
@@ -143,7 +193,13 @@ function groupByMetro(activities: Location[], lodgings: Lodging[]): ActivityGrou
   // Coverage is meaningless for places with no coordinates — flagging "no lodging" on a group
   // whose members aren't anywhere yet would be noise dressed as a warning.
   if (unplaced.length > 0) {
-    groups.push({ key: "__unplaced", label: "Not yet located", items: unplaced, hasLodging: true, lodgingColor: null });
+    groups.push({
+      key: "__unplaced",
+      label: "Not yet located",
+      items: unplaced,
+      hasLodging: true,
+      lodgingColor: null,
+    });
   }
 
   return groups;
@@ -173,10 +229,17 @@ function MetroGroup({ group }: { group: ActivityGroup }) {
           aria-hidden
         />
         {group.lodgingColor && (
-          <span className={`w-3 h-3 rounded-sm shrink-0 ${group.lodgingColor}`} aria-hidden />
+          <span
+            className={`w-3 h-3 rounded-sm shrink-0 ${group.lodgingColor}`}
+            aria-hidden
+          />
         )}
-        <span className="text-lg font-semibold text-ink group-hover/hdr:text-brand-600 dark:group-hover/hdr:text-brand-400">{group.label}</span>
-        <span className="text-sm font-semibold text-sub tabular-nums">{group.items.length}</span>
+        <span className="text-lg font-semibold text-ink group-hover/hdr:text-brand-600 dark:group-hover/hdr:text-brand-400">
+          {group.label}
+        </span>
+        <span className="text-sm font-semibold text-sub tabular-nums">
+          {group.items.length}
+        </span>
         {!group.hasLodging && (
           <span className="text-xs font-semibold px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
             no lodging
@@ -188,7 +251,9 @@ function MetroGroup({ group }: { group: ActivityGroup }) {
       </button>
       {open && (
         <div className="space-y-2">
-          {group.items.map((a) => <ActivityRow key={a.id} loc={a} metro={group.label} />)}
+          {group.items.map((a) => (
+            <ActivityRow key={a.id} loc={a} metro={group.label} />
+          ))}
         </div>
       )}
     </div>
@@ -210,8 +275,9 @@ export default function Manifest() {
         <MapIcon className="w-8 h-8 mx-auto" />
         <p className="font-medium">No places yet</p>
         <p className="text-sm">
-          Click <strong className="text-ink">+ Add location</strong> to search for places,
-          then <strong className="text-ink">Plan itinerary</strong> to cluster them into days.
+          Click <strong className="text-ink">+ Add location</strong> to search
+          for places, then <strong className="text-ink">Plan itinerary</strong>{" "}
+          to cluster them into days.
         </p>
       </div>
     );
@@ -223,14 +289,24 @@ export default function Manifest() {
         <LodgingSection trip={trip} activities={activities} />
       </Group>
 
-      <Group title={`Activities · ${activities.length}${excludedCount ? ` · ${excludedCount} excluded` : ""}`}>
+      <Group
+        title={`Activities · ${activities.length}${excludedCount ? ` · ${excludedCount} excluded` : ""}`}
+      >
         <div className="space-y-2">
-          {activities.length === 0 && <p className="text-sm text-faint">No activities yet.</p>}
+          {activities.length === 0 && (
+            <p className="text-sm text-faint">No activities yet.</p>
+          )}
           {/* One group is no grouping — a lone header over the whole list is chrome that says
               nothing the section heading hasn't already said. */}
           {groups.length > 1
             ? groups.map((g) => <MetroGroup key={g.key} group={g} />)
-            : activities.map((a) => <ActivityRow key={a.id} loc={a} metro={groups[0]?.label ?? ""} />)}
+            : activities.map((a) => (
+                <ActivityRow
+                  key={a.id}
+                  loc={a}
+                  metro={groups[0]?.label ?? ""}
+                />
+              ))}
         </div>
       </Group>
 

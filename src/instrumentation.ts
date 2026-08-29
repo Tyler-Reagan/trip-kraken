@@ -9,6 +9,8 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { recoverPendingEnrichment } = await import("@/lib/enrichmentQueue");
     // Fire-and-forget, same as enqueueLocationEnrichment itself — startup shouldn't block on it.
-    recoverPendingEnrichment().catch((err) => console.error("[instrumentation] enrichment recovery failed:", err));
+    recoverPendingEnrichment().catch((err) =>
+      console.error("[instrumentation] enrichment recovery failed:", err),
+    );
   }
 }

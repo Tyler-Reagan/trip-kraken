@@ -17,7 +17,12 @@
  * for `'failed'` rows remains a human-triggered path.
  */
 
-import { getLocationForEnrichment, applyEnrichment, markEnrichmentFailed, getPendingLocationIds } from "@/lib/db";
+import {
+  getLocationForEnrichment,
+  applyEnrichment,
+  markEnrichmentFailed,
+  getPendingLocationIds,
+} from "@/lib/db";
 import { enrichLocation } from "@/lib/places";
 
 type QueueItem = { locationId: string };
@@ -53,7 +58,10 @@ async function runConsumer(): Promise<void> {
       } catch (err) {
         // The thrown reason is the only account of *why* this row failed — the Retry affordance
         // has nothing else to show a user, so it's recorded rather than swallowed.
-        await markEnrichmentFailed(item.locationId, err instanceof Error ? err.message : String(err));
+        await markEnrichmentFailed(
+          item.locationId,
+          err instanceof Error ? err.message : String(err),
+        );
       }
 
       // Enforce Google rate limit between calls
@@ -77,7 +85,7 @@ export function enqueueLocationEnrichment(locationId: string): void {
   // is sent before the consumer starts. Does not block the caller.
   setImmediate(() => {
     runConsumer().catch((err) =>
-      console.error("[enrichmentQueue] consumer error:", err)
+      console.error("[enrichmentQueue] consumer error:", err),
     );
   });
 }

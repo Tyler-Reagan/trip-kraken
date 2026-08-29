@@ -135,19 +135,30 @@ export type TripWithDetails = {
 
 /** Add `n` days to an ISO date, returning ISO (UTC math avoids DST drift). */
 export const addDaysIso = (date: IsoDate, n: number): IsoDate =>
-  new Date(Date.parse(date + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+  new Date(Date.parse(date + "T00:00:00Z") + n * 86400000)
+    .toISOString()
+    .slice(0, 10);
 
 /** The trip's day count — derived from the required date range (inclusive of both ends). */
 export const numDaysOf = (startDate: IsoDate, endDate: IsoDate): number =>
-  Math.round((Date.parse(endDate + "T00:00:00Z") - Date.parse(startDate + "T00:00:00Z")) / 86400000) + 1;
+  Math.round(
+    (Date.parse(endDate + "T00:00:00Z") -
+      Date.parse(startDate + "T00:00:00Z")) /
+      86400000,
+  ) + 1;
 
 /** Every calendar date of the trip, in order — the basis for day-clustering the plan. */
 export const tripDates = (startDate: IsoDate, endDate: IsoDate): IsoDate[] =>
-  Array.from({ length: numDaysOf(startDate, endDate) }, (_, i) => addDaysIso(startDate, i));
+  Array.from({ length: numDaysOf(startDate, endDate) }, (_, i) =>
+    addDaysIso(startDate, i),
+  );
 
 /** 1-based day number a date falls on (Day 1 = startDate); the derived day-number label. */
 export const dayNumberOf = (startDate: IsoDate, date: IsoDate): number =>
-  Math.round((Date.parse(date + "T00:00:00Z") - Date.parse(startDate + "T00:00:00Z")) / 86400000) + 1;
+  Math.round(
+    (Date.parse(date + "T00:00:00Z") - Date.parse(startDate + "T00:00:00Z")) /
+      86400000,
+  ) + 1;
 
 /** Does this lodging cover the night of `date`? Half-open [checkInDate, checkOutDate). */
 export const lodgingCoversNight = (l: Lodging, date: IsoDate): boolean =>
@@ -155,8 +166,10 @@ export const lodgingCoversNight = (l: Lodging, date: IsoDate): boolean =>
 
 /** The lodging you sleep under on `date`, if any — the derived day-presence projection that
  *  replaces stored stay rows (ADR-0015 §2). Bookings don't overlap, so at most one matches. */
-export const lodgingOnNight = (lodgings: Lodging[], date: IsoDate): Lodging | null =>
-  lodgings.find((l) => lodgingCoversNight(l, date)) ?? null;
+export const lodgingOnNight = (
+  lodgings: Lodging[],
+  date: IsoDate,
+): Lodging | null => lodgings.find((l) => lodgingCoversNight(l, date)) ?? null;
 
 /** Roles derived for a single Location (ADR-0015 §4, ADR-0028): `lodging` from kind; `arrival`/
  *  `departure` straight off a Transit Location's own `arriveAt`/`departAt`. An empty list is a
@@ -203,19 +216,32 @@ export type DerivedDay = {
 export function deriveTripPlanDays(trip: TripWithDetails): DerivedDay[] {
   const lodgings = trip.locations.filter(isLodging);
   const byId = new Map(trip.locations.map((l) => [l.id, l]));
-  const arrival = trip.locations.find((l): l is Transit => isTransit(l) && l.arriveAt != null) ?? null;
-  const departure = trip.locations.find((l): l is Transit => isTransit(l) && l.departAt != null) ?? null;
+  const arrival =
+    trip.locations.find(
+      (l): l is Transit => isTransit(l) && l.arriveAt != null,
+    ) ?? null;
+  const departure =
+    trip.locations.find(
+      (l): l is Transit => isTransit(l) && l.departAt != null,
+    ) ?? null;
   const numDays = numDaysOf(trip.startDate, trip.endDate);
   const resolveAnchor = (id: string | null): Lodging | Transit | null =>
-    id != null ? ((byId.get(id) as Lodging | Transit | undefined) ?? null) : null;
+    id != null
+      ? ((byId.get(id) as Lodging | Transit | undefined) ?? null)
+      : null;
 
   return tripDates(trip.startDate, trip.endDate).map((date, i) => {
     const dayNumber = i + 1;
     const stops = trip.placements
       .filter((p) => p.date === date)
       .sort((a, b) => a.order - b.order)
-      .map((placement) => ({ placement, location: byId.get(placement.locationId) }))
-      .filter((s): s is ScheduledStop => !!s.location && isActivity(s.location));
+      .map((placement) => ({
+        placement,
+        location: byId.get(placement.locationId),
+      }))
+      .filter(
+        (s): s is ScheduledStop => !!s.location && isActivity(s.location),
+      );
     const woke = lodgingOnNight(lodgings, addDaysIso(date, -1));
     const sleep = lodgingOnNight(lodgings, date);
     const { startId, endId } = anchorsOnDate({

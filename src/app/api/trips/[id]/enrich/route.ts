@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { tripExists, getEnrichableLocations, applyEnrichment, markEnrichmentFailed } from "@/lib/db";
+import {
+  tripExists,
+  getEnrichableLocations,
+  applyEnrichment,
+  markEnrichmentFailed,
+} from "@/lib/db";
 import { enrichLocation } from "@/lib/places";
 
 export async function POST(
   _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: tripId } = await params;
 
-  if (!(await tripExists(tripId))) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+  if (!(await tripExists(tripId)))
+    return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
   // Eligibility: locations flagged as needing enrichment (pending at creation, failed on
   // a prior attempt). This endpoint is the retry/recovery path — the happy path runs
@@ -25,7 +31,10 @@ export async function POST(
       if (await applyEnrichment(loc.id, result)) enriched++;
       else errors++;
     } catch (err) {
-      await markEnrichmentFailed(loc.id, err instanceof Error ? err.message : String(err));
+      await markEnrichmentFailed(
+        loc.id,
+        err instanceof Error ? err.message : String(err),
+      );
       errors++;
     }
 

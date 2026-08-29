@@ -4,11 +4,31 @@
  */
 
 import assert from "node:assert/strict";
-import { pairsOfDay, pairKey, uniquePairsOfDays, dayChainEntries, dayChainPairs, journeyRoadKindFor, withJourneyRoadKind } from "./pathPairs";
+import {
+  pairsOfDay,
+  pairKey,
+  uniquePairsOfDays,
+  dayChainEntries,
+  dayChainPairs,
+  journeyRoadKindFor,
+  withJourneyRoadKind,
+} from "./pathPairs";
 import type { PathPair } from "./pathPairs";
-import type { Activity, DerivedDay, JourneyRoadKind, Lodging, Location, Placement, ScheduledStop } from "@/types";
+import type {
+  Activity,
+  DerivedDay,
+  JourneyRoadKind,
+  Lodging,
+  Location,
+  Placement,
+  ScheduledStop,
+} from "@/types";
 
-const activity = (id: string, lat: number | null, lng: number | null): Activity => ({
+const activity = (
+  id: string,
+  lat: number | null,
+  lng: number | null,
+): Activity => ({
   id,
   tripId: "t1",
   name: id,
@@ -31,12 +51,13 @@ const activity = (id: string, lat: number | null, lng: number | null): Activity 
   kind: "activity",
 });
 
-const lodging = (id: string, lat: number, lng: number): Lodging => ({
-  ...activity(id, lat, lng),
-  kind: "lodging",
-  checkIn: "2026-09-01",
-  checkOut: "2026-09-03",
-} as unknown as Lodging);
+const lodging = (id: string, lat: number, lng: number): Lodging =>
+  ({
+    ...activity(id, lat, lng),
+    kind: "lodging",
+    checkIn: "2026-09-01",
+    checkOut: "2026-09-03",
+  }) as unknown as Lodging;
 
 const placement = (locationId: string, order: number): Placement => ({
   id: `p-${locationId}`,
@@ -46,7 +67,10 @@ const placement = (locationId: string, order: number): Placement => ({
   order,
 });
 
-const stop = (loc: Activity, order: number): ScheduledStop => ({ placement: placement(loc.id, order), location: loc });
+const stop = (loc: Activity, order: number): ScheduledStop => ({
+  placement: placement(loc.id, order),
+  location: loc,
+});
 
 const day = (over: Partial<DerivedDay> = {}): DerivedDay => ({
   date: "2026-09-01",
@@ -59,21 +83,26 @@ const day = (over: Partial<DerivedDay> = {}): DerivedDay => ({
   ...over,
 });
 
-const shape = (pairs: PathPair[]) => pairs.map((p) => `${p.from.locationId}>${p.to.locationId}`);
-const shapeLocPairs = (pairs: { from: Location; to: Location }[]) => pairs.map((p) => `${p.from.id}>${p.to.id}`);
+const shape = (pairs: PathPair[]) =>
+  pairs.map((p) => `${p.from.locationId}>${p.to.locationId}`);
+const shapeLocPairs = (pairs: { from: Location; to: Location }[]) =>
+  pairs.map((p) => `${p.from.id}>${p.to.id}`);
 
 // ── pairsOfDay: the chain's composition and order ────────────────────────────────────────────
 
 {
   const d = day({
     startAnchor: lodging("hotel", 35.0, 139.0),
-    stops: [stop(activity("a1", 35.1, 139.1), 1), stop(activity("a2", 35.2, 139.2), 2)],
+    stops: [
+      stop(activity("a1", 35.1, 139.1), 1),
+      stop(activity("a2", 35.2, 139.2), 2),
+    ],
     endAnchor: lodging("hotel", 35.0, 139.0),
   });
   assert.deepEqual(
     shape(pairsOfDay(d)),
     ["hotel>a1", "a1>a2", "a2>hotel"],
-    "a normal Day chains start Anchor -> stops -> end Anchor"
+    "a normal Day chains start Anchor -> stops -> end Anchor",
   );
 }
 
@@ -88,13 +117,17 @@ const shapeLocPairs = (pairs: { from: Location; to: Location }[]) => pairs.map((
   assert.deepEqual(
     shape(pairsOfDay(d)),
     ["old-hotel>new-hotel", "new-hotel>a1", "a1>new-hotel"],
-    "the check-in waypoint sits between the start Anchor and the first stop"
+    "the check-in waypoint sits between the start Anchor and the first stop",
   );
 }
 
 {
   const d = day({ stops: [stop(activity("a1", 35.1, 139.1), 1)] });
-  assert.deepEqual(pairsOfDay(d), [], "one positioned entry and no Anchors yields no pairs");
+  assert.deepEqual(
+    pairsOfDay(d),
+    [],
+    "one positioned entry and no Anchors yields no pairs",
+  );
 }
 
 {
@@ -115,27 +148,44 @@ const shapeLocPairs = (pairs: { from: Location; to: Location }[]) => pairs.map((
   assert.deepEqual(
     shape(pairsOfDay(d)),
     ["hotel>a1", "a1>a2"],
-    "a stop with no coordinates is skipped and its neighbours join up"
+    "a stop with no coordinates is skipped and its neighbours join up",
   );
 }
 
 // ── pairKey: what invalidates a held answer ──────────────────────────────────────────────────
 
 {
-  const p: PathPair = { from: { lat: 35.0, lng: 139.0 }, to: { lat: 35.1, lng: 139.1 } };
-  assert.equal(pairKey("walking", p, []), "walking:139.000000,35.000000>139.100000,35.100000");
+  const p: PathPair = {
+    from: { lat: 35.0, lng: 139.0 },
+    to: { lat: 35.1, lng: 139.1 },
+  };
+  assert.equal(
+    pairKey("walking", p, []),
+    "walking:139.000000,35.000000>139.100000,35.100000",
+  );
 
   assert.notEqual(
     pairKey("walking", p, []),
     pairKey("driving", p, []),
-    "the Road profile selects the OSRM graph, so it must key the answer"
+    "the Road profile selects the OSRM graph, so it must key the answer",
   );
 
   const reversed: PathPair = { from: p.to, to: p.from };
-  assert.notEqual(pairKey("walking", p, []), pairKey("walking", reversed, []), "direction is part of the pair");
+  assert.notEqual(
+    pairKey("walking", p, []),
+    pairKey("walking", reversed, []),
+    "direction is part of the pair",
+  );
 
-  const moved: PathPair = { from: { lat: 35.0, lng: 139.0 }, to: { lat: 35.100001, lng: 139.1 } };
-  assert.notEqual(pairKey("walking", p, []), pairKey("walking", moved, []), "a re-geocode invalidates by construction");
+  const moved: PathPair = {
+    from: { lat: 35.0, lng: 139.0 },
+    to: { lat: 35.100001, lng: 139.1 },
+  };
+  assert.notEqual(
+    pairKey("walking", p, []),
+    pairKey("walking", moved, []),
+    "a re-geocode invalidates by construction",
+  );
 
   const sameCoordsOtherLocation: PathPair = {
     from: { lat: 35.0, lng: 139.0, locationId: "x" },
@@ -144,15 +194,25 @@ const shapeLocPairs = (pairs: { from: Location; to: Location }[]) => pairs.map((
   assert.equal(
     pairKey("walking", p, []),
     pairKey("walking", sameCoordsOtherLocation, []),
-    "identity plays no part when neither has a chosen kind: two Locations at one point share an answer"
+    "identity plays no part when neither has a chosen kind: two Locations at one point share an answer",
   );
 }
 
 {
   // Float arithmetic reaching the same point by a different route must produce the same key.
-  const direct: PathPair = { from: { lat: 35.1, lng: 139.0 }, to: { lat: 35.2, lng: 139.0 } };
-  const summed: PathPair = { from: { lat: 35.0 + 0.1, lng: 139.0 }, to: { lat: 0.1 + 35.1, lng: 139.0 } };
-  assert.equal(pairKey("walking", direct, []), pairKey("walking", summed, []), "fixed precision absorbs float drift");
+  const direct: PathPair = {
+    from: { lat: 35.1, lng: 139.0 },
+    to: { lat: 35.2, lng: 139.0 },
+  };
+  const summed: PathPair = {
+    from: { lat: 35.0 + 0.1, lng: 139.0 },
+    to: { lat: 0.1 + 35.1, lng: 139.0 },
+  };
+  assert.equal(
+    pairKey("walking", direct, []),
+    pairKey("walking", summed, []),
+    "fixed precision absorbs float drift",
+  );
 }
 
 // A chosen kind changes which kind answers this pair (#218), so it must key the held answer too
@@ -163,27 +223,48 @@ const shapeLocPairs = (pairs: { from: Location; to: Location }[]) => pairs.map((
     from: { lat: 35.0, lng: 139.0, locationId: "x" },
     to: { lat: 35.1, lng: 139.1, locationId: "y" },
   };
-  const chosen: JourneyRoadKind = { id: "k1", tripId: "t1", locationAId: "x", locationBId: "y", kind: "driving" };
+  const chosen: JourneyRoadKind = {
+    id: "k1",
+    tripId: "t1",
+    locationAId: "x",
+    locationBId: "y",
+    kind: "driving",
+  };
 
-  assert.notEqual(pairKey("walking", p, [chosen]), pairKey("walking", p, []), "a chosen kind invalidates the unchosen answer");
+  assert.notEqual(
+    pairKey("walking", p, [chosen]),
+    pairKey("walking", p, []),
+    "a chosen kind invalidates the unchosen answer",
+  );
   assert.ok(
     pairKey("walking", p, [chosen]).endsWith(":driving") &&
-      pairKey("walking", { from: p.to, to: p.from }, [chosen]).endsWith(":driving"),
-    "a choice is unordered, so both directions of the same pair carry the same suffix (direction still keys the coordinates)"
+      pairKey("walking", { from: p.to, to: p.from }, [chosen]).endsWith(
+        ":driving",
+      ),
+    "a choice is unordered, so both directions of the same pair carry the same suffix (direction still keys the coordinates)",
   );
 
-  const unrelatedChoice: JourneyRoadKind = { id: "k2", tripId: "t1", locationAId: "x", locationBId: "z", kind: "driving" };
+  const unrelatedChoice: JourneyRoadKind = {
+    id: "k2",
+    tripId: "t1",
+    locationAId: "x",
+    locationBId: "z",
+    kind: "driving",
+  };
   assert.equal(
     pairKey("walking", p, [unrelatedChoice]),
     pairKey("walking", p, []),
-    "a choice on a different pair doesn't affect this one's key"
+    "a choice on a different pair doesn't affect this one's key",
   );
 
-  const noLocationId: PathPair = { from: { lat: 35.0, lng: 139.0 }, to: { lat: 35.1, lng: 139.1 } };
+  const noLocationId: PathPair = {
+    from: { lat: 35.0, lng: 139.0 },
+    to: { lat: 35.1, lng: 139.1 },
+  };
   assert.equal(
     pairKey("walking", noLocationId, [chosen]),
     pairKey("walking", noLocationId, []),
-    "a pair with no locationId can't carry a choice, same as journeyRoadKindFor already requires"
+    "a pair with no locationId can't carry a choice, same as journeyRoadKindFor already requires",
   );
 }
 
@@ -193,10 +274,28 @@ const shapeLocPairs = (pairs: { from: Location; to: Location }[]) => pairs.map((
   // Not a substitution within the list — osm-japan never declines a cell within its reach, so
   // keeping "rail" alongside a chosen kind leaves the choice permanently outranked (#223). A
   // choice drops every other kind and asks for the chosen one alone.
-  const chosen: JourneyRoadKind = { id: "k1", tripId: "t1", locationAId: "a", locationBId: "b", kind: "driving" };
-  assert.deepEqual(withJourneyRoadKind(["rail", "bus", "walking"], chosen), ["driving"], "a choice excludes rail/bus entirely, not just the road element");
-  assert.deepEqual(withJourneyRoadKind(["rail", "walking"], chosen), ["driving"], "same, for a base list without bus");
-  assert.deepEqual(withJourneyRoadKind(["rail", "bus", "walking"], undefined), ["rail", "bus", "walking"], "no choice, no change");
+  const chosen: JourneyRoadKind = {
+    id: "k1",
+    tripId: "t1",
+    locationAId: "a",
+    locationBId: "b",
+    kind: "driving",
+  };
+  assert.deepEqual(
+    withJourneyRoadKind(["rail", "bus", "walking"], chosen),
+    ["driving"],
+    "a choice excludes rail/bus entirely, not just the road element",
+  );
+  assert.deepEqual(
+    withJourneyRoadKind(["rail", "walking"], chosen),
+    ["driving"],
+    "same, for a base list without bus",
+  );
+  assert.deepEqual(
+    withJourneyRoadKind(["rail", "bus", "walking"], undefined),
+    ["rail", "bus", "walking"],
+    "no choice, no change",
+  );
 }
 
 // ── uniquePairsOfDays: one lookup per distinct pair ──────────────────────────────────────────
@@ -206,47 +305,72 @@ const shapeLocPairs = (pairs: { from: Location; to: Location }[]) => pairs.map((
   const a1 = activity("a1", 35.1, 139.1);
   // Consecutive Days bookended by the same lodging share the hotel>a1 pair.
   const days = [
-    day({ dayNumber: 1, startAnchor: hotel, stops: [stop(a1, 1)], endAnchor: hotel }),
-    day({ dayNumber: 2, startAnchor: hotel, stops: [stop(a1, 1)], endAnchor: hotel }),
+    day({
+      dayNumber: 1,
+      startAnchor: hotel,
+      stops: [stop(a1, 1)],
+      endAnchor: hotel,
+    }),
+    day({
+      dayNumber: 2,
+      startAnchor: hotel,
+      stops: [stop(a1, 1)],
+      endAnchor: hotel,
+    }),
   ];
   assert.deepEqual(
     shape(uniquePairsOfDays(days, "walking", [])),
     ["hotel>a1", "a1>hotel"],
-    "a pair shared across Days is looked up once"
+    "a pair shared across Days is looked up once",
   );
 }
 
 {
   const days = [
-    day({ dayNumber: 1, startAnchor: lodging("h", 35.0, 139.0), stops: [stop(activity("a1", 35.1, 139.1), 1)] }),
-    day({ dayNumber: 2, startAnchor: lodging("h", 35.0, 139.0), stops: [stop(activity("a2", 35.2, 139.2), 1)] }),
+    day({
+      dayNumber: 1,
+      startAnchor: lodging("h", 35.0, 139.0),
+      stops: [stop(activity("a1", 35.1, 139.1), 1)],
+    }),
+    day({
+      dayNumber: 2,
+      startAnchor: lodging("h", 35.0, 139.0),
+      stops: [stop(activity("a2", 35.2, 139.2), 1)],
+    }),
   ];
   assert.deepEqual(
     shape(uniquePairsOfDays(days, "walking", [])),
     ["h>a1", "h>a2"],
-    "distinct pairs across Days are all kept, in first-seen order"
+    "distinct pairs across Days are all kept, in first-seen order",
   );
 }
 
-assert.deepEqual(uniquePairsOfDays([], "walking", []), [], "a Trip with no Days needs no lookups");
+assert.deepEqual(
+  uniquePairsOfDays([], "walking", []),
+  [],
+  "a Trip with no Days needs no lookups",
+);
 
 // ── dayChainEntries / dayChainPairs: render-oriented chain, ungeocoded entries kept (ADR-0036) ──
 
 {
   const d = day({
     startAnchor: lodging("hotel", 35.0, 139.0),
-    stops: [stop(activity("a1", 35.1, 139.1), 1), stop(activity("a2", 35.2, 139.2), 2)],
+    stops: [
+      stop(activity("a1", 35.1, 139.1), 1),
+      stop(activity("a2", 35.2, 139.2), 2),
+    ],
     endAnchor: lodging("hotel", 35.0, 139.0),
   });
   assert.deepEqual(
     dayChainEntries(d).map((e) => e.role),
     ["start", "stop", "stop", "end"],
-    "a normal Day's entries: start Anchor, stops, end Anchor"
+    "a normal Day's entries: start Anchor, stops, end Anchor",
   );
   assert.deepEqual(
     shapeLocPairs(dayChainPairs(d)),
     ["hotel>a1", "a1>a2", "a2>hotel"],
-    "and the same pairs pairsOfDay would produce, in Location form"
+    "and the same pairs pairsOfDay would produce, in Location form",
   );
 }
 
@@ -261,7 +385,7 @@ assert.deepEqual(uniquePairsOfDays([], "walking", []), [], "a Trip with no Days 
   assert.deepEqual(
     shapeLocPairs(dayChainPairs(d)),
     ["narita>hotel"],
-    "a Day with only a start Anchor and a check-in waypoint still gets one connector between them"
+    "a Day with only a start Anchor and a check-in waypoint still gets one connector between them",
   );
 }
 
@@ -274,7 +398,7 @@ assert.deepEqual(uniquePairsOfDays([], "walking", []), [], "a Trip with no Days 
   assert.deepEqual(
     shapeLocPairs(dayChainPairs(d)),
     ["narita>hotel", "hotel>hotel"],
-    "all three anchor kinds with no stops still gets both connectors, start->checkin and checkin->end"
+    "all three anchor kinds with no stops still gets both connectors, start->checkin and checkin->end",
   );
 }
 
@@ -289,7 +413,7 @@ assert.deepEqual(uniquePairsOfDays([], "walking", []), [], "a Trip with no Days 
   assert.deepEqual(
     shapeLocPairs(dayChainPairs(d)),
     ["old-hotel>new-hotel", "new-hotel>a1", "a1>new-hotel"],
-    "with stops present, dayChainPairs matches pairsOfDay's existing ordering"
+    "with stops present, dayChainPairs matches pairsOfDay's existing ordering",
   );
 }
 
@@ -305,23 +429,47 @@ assert.deepEqual(uniquePairsOfDays([], "walking", []), [], "a Trip with no Days 
   assert.deepEqual(
     dayChainEntries(d).map((e) => e.role),
     ["start", "stop"],
-    "an ungeocoded stop is still an entry"
+    "an ungeocoded stop is still an entry",
   );
   assert.deepEqual(
     shapeLocPairs(dayChainPairs(d)),
     ["hotel>nowhere"],
-    "and still produces a pair — the row/connector's own lat===null guard is what suppresses rendering, not the pairing rule"
+    "and still produces a pair — the row/connector's own lat===null guard is what suppresses rendering, not the pairing rule",
   );
 }
 
 // ── journeyRoadKindFor: the read-side mirror of db/index.ts's canonicalJourneyPair (#217/#219) ───
 
 {
-  const kinds: JourneyRoadKind[] = [{ id: "k1", tripId: "t1", locationAId: "a", locationBId: "b", kind: "driving" }];
-  assert.equal(journeyRoadKindFor(kinds, "a", "b")?.kind, "driving", "found in stored order");
-  assert.equal(journeyRoadKindFor(kinds, "b", "a")?.kind, "driving", "found in reversed order — a choice is unordered");
-  assert.equal(journeyRoadKindFor(kinds, "a", "c"), undefined, "no choice for an unrelated pair");
-  assert.equal(journeyRoadKindFor([], "a", "b"), undefined, "no choices at all");
+  const kinds: JourneyRoadKind[] = [
+    {
+      id: "k1",
+      tripId: "t1",
+      locationAId: "a",
+      locationBId: "b",
+      kind: "driving",
+    },
+  ];
+  assert.equal(
+    journeyRoadKindFor(kinds, "a", "b")?.kind,
+    "driving",
+    "found in stored order",
+  );
+  assert.equal(
+    journeyRoadKindFor(kinds, "b", "a")?.kind,
+    "driving",
+    "found in reversed order — a choice is unordered",
+  );
+  assert.equal(
+    journeyRoadKindFor(kinds, "a", "c"),
+    undefined,
+    "no choice for an unrelated pair",
+  );
+  assert.equal(
+    journeyRoadKindFor([], "a", "b"),
+    undefined,
+    "no choices at all",
+  );
 }
 
 console.log("pathPairs.test.ts: all assertions passed");

@@ -26,7 +26,11 @@ import {
   type TransferEdge,
 } from "./transitGraph";
 
-export const DEFAULT_GRAPH_PATH = path.join(process.cwd(), "db", "transit-japan.db");
+export const DEFAULT_GRAPH_PATH = path.join(
+  process.cwd(),
+  "db",
+  "transit-japan.db",
+);
 
 // Table/column naming mirrors the app's Drizzle schema convention (schema.ts): PascalCase
 // singular table names, camelCase columns — even though this file is a distinct, non-Drizzle
@@ -84,7 +88,11 @@ export interface GraphMeta {
 }
 
 /** Writes `graph` to `filePath`, replacing any existing file — the ingestion pipeline's output step. */
-export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH, meta?: GraphMeta): void {
+export function save(
+  graph: TransitGraph,
+  filePath: string = DEFAULT_GRAPH_PATH,
+  meta?: GraphMeta,
+): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.rmSync(filePath, { force: true });
 
@@ -92,29 +100,43 @@ export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH,
   try {
     createSchema(sqlite);
     const insertStop = sqlite.prepare(
-      "INSERT INTO StopNode (id, lineId, lineName, lineType, stationName, lat, lng, sequence, operator, osmNodeId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO StopNode (id, lineId, lineName, lineType, stationName, lat, lng, sequence, operator, osmNodeId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
-    const insertCluster = sqlite.prepare("INSERT INTO Cluster (id, name) VALUES (?, ?)");
+    const insertCluster = sqlite.prepare(
+      "INSERT INTO Cluster (id, name) VALUES (?, ?)",
+    );
     const insertMember = sqlite.prepare(
-      "INSERT INTO ClusterMember (clusterId, stopNodeId) VALUES (?, ?)"
+      "INSERT INTO ClusterMember (clusterId, stopNodeId) VALUES (?, ?)",
     );
     const insertRide = sqlite.prepare(
-      "INSERT INTO RideEdge (fromStopId, toStopId, distanceMeters, geometry, tracedLengthMeters) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO RideEdge (fromStopId, toStopId, distanceMeters, geometry, tracedLengthMeters) VALUES (?, ?, ?, ?, ?)",
     );
     const insertTransfer = sqlite.prepare(
-      "INSERT INTO TransferEdge (fromStopId, toStopId, clusterId) VALUES (?, ?, ?)"
+      "INSERT INTO TransferEdge (fromStopId, toStopId, clusterId) VALUES (?, ?, ?)",
     );
     const insertMeta = sqlite.prepare(
-      "INSERT INTO Meta (snapshotDate, region, ingestedAt) VALUES (?, ?, ?)"
+      "INSERT INTO Meta (snapshotDate, region, ingestedAt) VALUES (?, ?, ?)",
     );
 
     const writeAll = sqlite.transaction(() => {
       for (const stop of graph.stopNodes.values()) {
-        insertStop.run(stop.id, stop.lineId, stop.lineName, stop.lineType, stop.stationName, stop.lat, stop.lng, stop.sequence, stop.operator ?? null, stop.osmNodeId);
+        insertStop.run(
+          stop.id,
+          stop.lineId,
+          stop.lineName,
+          stop.lineType,
+          stop.stationName,
+          stop.lat,
+          stop.lng,
+          stop.sequence,
+          stop.operator ?? null,
+          stop.osmNodeId,
+        );
       }
       for (const cluster of graph.clusters.values()) {
         insertCluster.run(cluster.id, cluster.name);
-        for (const stopNodeId of cluster.stopNodeIds) insertMember.run(cluster.id, stopNodeId);
+        for (const stopNodeId of cluster.stopNodeIds)
+          insertMember.run(cluster.id, stopNodeId);
       }
       for (const edge of graph.rideEdges) {
         insertRide.run(
@@ -122,7 +144,7 @@ export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH,
           edge.toStopId,
           edge.distanceMeters,
           edge.geometry ? encodeLineString(edge.geometry) : null,
-          edge.tracedLengthMeters ?? null
+          edge.tracedLengthMeters ?? null,
         );
       }
       for (const edge of graph.transferEdges) {
@@ -130,7 +152,11 @@ export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH,
       }
       // "unknown" rather than a thrown error: a hand-built fixture written by a test has no
       // Extract behind it, and refusing to save one would be a worse answer than saying so.
-      insertMeta.run(meta?.snapshotDate ?? "unknown", meta?.region ?? "unknown", new Date().toISOString());
+      insertMeta.run(
+        meta?.snapshotDate ?? "unknown",
+        meta?.region ?? "unknown",
+        new Date().toISOString(),
+      );
     });
     writeAll();
   } finally {
@@ -141,12 +167,18 @@ export function save(graph: TransitGraph, filePath: string = DEFAULT_GRAPH_PATH,
 /** Reads `filePath` back into an in-memory `TransitGraph` + spatial index. Throws loudly (never
  * returns a silent empty graph) when the file is missing — a missing graph means ingestion was
  * never run, and every caller downstream needs to know that, not compute against nothing. */
-export function load(filePath: string = DEFAULT_GRAPH_PATH): { graph: TransitGraph; spatialIndex: SpatialIndex } {
+export function load(filePath: string = DEFAULT_GRAPH_PATH): {
+  graph: TransitGraph;
+  spatialIndex: SpatialIndex;
+} {
   if (!fs.existsSync(filePath)) {
     throw new Error(`transit graph not ingested: ${filePath} does not exist`);
   }
 
-  const sqlite = new Database(filePath, { readonly: true, fileMustExist: true });
+  const sqlite = new Database(filePath, {
+    readonly: true,
+    fileMustExist: true,
+  });
   try {
     // A schema check, not a version number: this file has no `Meta` schema-version column to read
     // instead (ADR-0030 §6's `snapshotDate`/`region` answer a different question). Issue #159 added
@@ -157,17 +189,24 @@ export function load(filePath: string = DEFAULT_GRAPH_PATH): { graph: TransitGra
     // ADR-0017/ADR-0018 §4 exist to rule out elsewhere in this codebase; the missing-file check above
     // already treats "ingestion never ran" as loud, and a stale schema is the same class of problem.
     const stopNodeColumns = new Set(
-      (sqlite.prepare("PRAGMA table_info(StopNode)").all() as { name: string }[]).map((c) => c.name)
+      (
+        sqlite.prepare("PRAGMA table_info(StopNode)").all() as {
+          name: string;
+        }[]
+      ).map((c) => c.name),
     );
     if (!stopNodeColumns.has("osmNodeId")) {
       throw new Error(
-        `transit graph at ${filePath} predates issue #159 (StopNode.osmNodeId) — re-run \`pnpm ingest:transit-graph\``
+        `transit graph at ${filePath} predates issue #159 (StopNode.osmNodeId) — re-run \`pnpm ingest:transit-graph\``,
       );
     }
 
     const graph = createGraph();
 
-    for (const row of sqlite.prepare("SELECT * FROM StopNode").all() as (Omit<StopNode, "operator"> & {
+    for (const row of sqlite.prepare("SELECT * FROM StopNode").all() as (Omit<
+      StopNode,
+      "operator"
+    > & {
       operator: string | null;
     })[]) {
       // Omit the key entirely when unknown, rather than assign `undefined` — an object with an
@@ -176,9 +215,16 @@ export function load(filePath: string = DEFAULT_GRAPH_PATH): { graph: TransitGra
       const { operator, ...rest } = row;
       graph.stopNodes.set(row.id, operator ? { ...rest, operator } : rest);
     }
-    const clusterRows = sqlite.prepare("SELECT * FROM Cluster").all() as { id: string; name: string }[];
+    const clusterRows = sqlite.prepare("SELECT * FROM Cluster").all() as {
+      id: string;
+      name: string;
+    }[];
     for (const row of clusterRows) {
-      graph.clusters.set(row.id, { id: row.id, name: row.name, stopNodeIds: [] });
+      graph.clusters.set(row.id, {
+        id: row.id,
+        name: row.name,
+        stopNodeIds: [],
+      });
     }
     const memberRows = sqlite.prepare("SELECT * FROM ClusterMember").all() as {
       clusterId: string;
@@ -187,9 +233,11 @@ export function load(filePath: string = DEFAULT_GRAPH_PATH): { graph: TransitGra
     for (const row of memberRows) {
       graph.clusters.get(row.clusterId)?.stopNodeIds.push(row.stopNodeId);
     }
-    const rideRows = sqlite.prepare(
-      "SELECT fromStopId, toStopId, distanceMeters, geometry, tracedLengthMeters FROM RideEdge"
-    ).all() as (Omit<RideEdge, "geometry"> & { geometry: Buffer | null })[];
+    const rideRows = sqlite
+      .prepare(
+        "SELECT fromStopId, toStopId, distanceMeters, geometry, tracedLengthMeters FROM RideEdge",
+      )
+      .all() as (Omit<RideEdge, "geometry"> & { geometry: Buffer | null })[];
     for (const row of rideRows) {
       const edge: RideEdge = {
         fromStopId: row.fromStopId,
@@ -203,7 +251,9 @@ export function load(filePath: string = DEFAULT_GRAPH_PATH): { graph: TransitGra
       graph.rideEdges.push(edge);
     }
     graph.transferEdges.push(
-      ...(sqlite.prepare("SELECT fromStopId, toStopId, clusterId FROM TransferEdge").all() as TransferEdge[])
+      ...(sqlite
+        .prepare("SELECT fromStopId, toStopId, clusterId FROM TransferEdge")
+        .all() as TransferEdge[]),
     );
 
     return { graph, spatialIndex: buildSpatialIndex(graph) };
@@ -212,7 +262,9 @@ export function load(filePath: string = DEFAULT_GRAPH_PATH): { graph: TransitGra
   }
 }
 
-const g = globalThis as unknown as { _transitGraph?: { graph: TransitGraph; spatialIndex: SpatialIndex } };
+const g = globalThis as unknown as {
+  _transitGraph?: { graph: TransitGraph; spatialIndex: SpatialIndex };
+};
 
 /** The cached, lazily-loaded singleton (mirrors `db/client.ts`'s `getDrizzle()`) — loads once
  * per process/hot-reload, every later call reuses the same in-memory graph + index. Takes no
@@ -220,7 +272,10 @@ const g = globalThis as unknown as { _transitGraph?: { graph: TransitGraph; spat
  * are in tension, since a later call with a different path would otherwise silently return the
  * graph loaded for the first one. `load()` above is the parameterized entry point for callers
  * (tests, ingestion) that need a specific file. */
-export function getTransitGraph(): { graph: TransitGraph; spatialIndex: SpatialIndex } {
+export function getTransitGraph(): {
+  graph: TransitGraph;
+  spatialIndex: SpatialIndex;
+} {
   if (!g._transitGraph) g._transitGraph = load(DEFAULT_GRAPH_PATH);
   return g._transitGraph;
 }

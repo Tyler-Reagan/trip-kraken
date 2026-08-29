@@ -21,17 +21,34 @@ import type { PathKind } from "@/types/path";
  * both precede `driving`/`walking`/`bicycle` — mirroring the old `TravelMode` precedence's
  * "transit first" — with `other` last: a real, selectable kind (ADR-0022), but not one anything
  * defaults toward. */
-const PATH_KIND_PRECEDENCE: readonly PathKind[] = ["rail", "bus", "driving", "walking", "bicycle", "other"];
+const PATH_KIND_PRECEDENCE: readonly PathKind[] = [
+  "rail",
+  "bus",
+  "driving",
+  "walking",
+  "bicycle",
+  "other",
+];
 
 /** The fallback set when a caller passes nothing to resolve — kept module-private now that no
  * Trip-level column feeds this function; only `resolvePrimaryPathKind`'s own empty/unset case
  * uses it. */
-const DEFAULT_KINDS: readonly PathKind[] = ["rail", "bus", "driving", "walking", "bicycle"];
+const DEFAULT_KINDS: readonly PathKind[] = [
+  "rail",
+  "bus",
+  "driving",
+  "walking",
+  "bicycle",
+];
 
 /** Resolves a kind set to one representative kind — `googleRoutesProvider.ts`'s only remaining
  * use, since Google's matrix/routes calls take exactly one `travelMode` per request. An empty or
  * unset set falls back to `DEFAULT_KINDS`, never to no kind at all. */
-export function resolvePrimaryPathKind(kinds: readonly PathKind[] | null | undefined): PathKind {
+export function resolvePrimaryPathKind(
+  kinds: readonly PathKind[] | null | undefined,
+): PathKind {
   const effective = kinds && kinds.length > 0 ? kinds : DEFAULT_KINDS;
-  return PATH_KIND_PRECEDENCE.find((k) => effective.includes(k)) ?? DEFAULT_KINDS[0];
+  return (
+    PATH_KIND_PRECEDENCE.find((k) => effective.includes(k)) ?? DEFAULT_KINDS[0]
+  );
 }

@@ -42,7 +42,10 @@ type NewPlace = {
  * every other search leaves it out of the field mask, so it's absent from the response entirely. */
 type RoutingSummary = { legs?: { distanceMeters?: number }[] };
 
-type SearchResponse = { places?: NewPlace[]; routingSummaries?: RoutingSummary[] };
+type SearchResponse = {
+  places?: NewPlace[];
+  routingSummaries?: RoutingSummary[];
+};
 
 /** New expresses price as an enum; NearbyPlace keeps the legacy 0–4 scale. */
 const PRICE_LEVELS: Record<string, number> = {
@@ -54,10 +57,15 @@ const PRICE_LEVELS: Record<string, number> = {
 };
 
 function stripGenericTypes(types: string[]): string[] {
-  return types.filter((t) => t !== "point_of_interest" && t !== "establishment");
+  return types.filter(
+    (t) => t !== "point_of_interest" && t !== "establishment",
+  );
 }
 
-function toNearbyPlace(p: NewPlace, detourMeters: number | null = null): NearbyPlace {
+function toNearbyPlace(
+  p: NewPlace,
+  detourMeters: number | null = null,
+): NearbyPlace {
   return {
     placeId: p.id,
     name: p.displayName?.text ?? "",
@@ -67,7 +75,8 @@ function toNearbyPlace(p: NewPlace, detourMeters: number | null = null): NearbyP
     rating: p.rating ?? null,
     reviewCount: p.userRatingCount ?? null,
     categories: stripGenericTypes(p.types ?? []),
-    priceLevel: p.priceLevel !== undefined ? (PRICE_LEVELS[p.priceLevel] ?? null) : null,
+    priceLevel:
+      p.priceLevel !== undefined ? (PRICE_LEVELS[p.priceLevel] ?? null) : null,
     distanceMeters: null,
     detourMeters,
   };
@@ -85,7 +94,7 @@ function requireApiKey(): string {
 async function postSearch(
   method: "searchText" | "searchNearby",
   body: Record<string, unknown>,
-  fieldMask: string = SEARCH_FIELD_MASK
+  fieldMask: string = SEARCH_FIELD_MASK,
 ): Promise<SearchResponse> {
   const res = await fetch(`${PLACES_BASE}/places:${method}`, {
     method: "POST",
@@ -100,7 +109,9 @@ async function postSearch(
     error?: { message?: string };
   };
   if (!res.ok) {
-    throw new Error(data.error?.message ?? `Google Places API error: HTTP ${res.status}`);
+    throw new Error(
+      data.error?.message ?? `Google Places API error: HTTP ${res.status}`,
+    );
   }
   return data;
 }
@@ -117,7 +128,7 @@ export async function searchNearby(
     keyword?: string;
     limit?: number;
     openNow?: boolean;
-  }
+  },
 ): Promise<NearbyPlace[]> {
   const radius = Math.min(opts.radius ?? 1000, 50000);
   const limit = Math.min(opts.limit ?? 20, 20); // New caps at 20 per request (no pagination)
@@ -136,7 +147,10 @@ export async function searchNearby(
       .filter(
         (p) =>
           !p.location ||
-          haversineMeters({ lat, lng }, { lat: p.location.latitude, lng: p.location.longitude }) <= radius
+          haversineMeters(
+            { lat, lng },
+            { lat: p.location.latitude, lng: p.location.longitude },
+          ) <= radius,
       )
       .map((p) => toNearbyPlace(p));
   }
@@ -148,9 +162,13 @@ export async function searchNearby(
       locationRestriction: circle(lat, lng, radius),
       maxResultCount: limit,
     },
-    opts.openNow ? `${SEARCH_FIELD_MASK},places.currentOpeningHours.openNow` : SEARCH_FIELD_MASK
+    opts.openNow
+      ? `${SEARCH_FIELD_MASK},places.currentOpeningHours.openNow`
+      : SEARCH_FIELD_MASK,
   );
-  const filtered = opts.openNow ? places.filter((p) => p.currentOpeningHours?.openNow) : places;
+  const filtered = opts.openNow
+    ? places.filter((p) => p.currentOpeningHours?.openNow)
+    : places;
   return filtered.map((p) => toNearbyPlace(p));
 }
 
@@ -161,7 +179,7 @@ export async function searchNearby(
  */
 export async function searchText(
   query: string,
-  opts: { limit?: number; openNow?: boolean } = {}
+  opts: { limit?: number; openNow?: boolean } = {},
 ): Promise<NearbyPlace[]> {
   const { places = [] } = await postSearch("searchText", {
     textQuery: query,
@@ -186,7 +204,7 @@ export async function searchAlongRoute(
   query: string,
   polyline: string,
   origin: Point,
-  opts: { limit?: number; openNow?: boolean } = {}
+  opts: { limit?: number; openNow?: boolean } = {},
 ): Promise<NearbyPlace[]> {
   const { places = [], routingSummaries = [] } = await postSearch(
     "searchText",
@@ -194,12 +212,16 @@ export async function searchAlongRoute(
       textQuery: query,
       pageSize: Math.min(opts.limit ?? 20, 20),
       searchAlongRouteParameters: { polyline: { encodedPolyline: polyline } },
-      routingParameters: { origin: { latitude: origin.lat, longitude: origin.lng } },
+      routingParameters: {
+        origin: { latitude: origin.lat, longitude: origin.lng },
+      },
       ...(opts.openNow ? { openNow: true } : {}),
     },
-    `${SEARCH_FIELD_MASK},routingSummaries.legs.distanceMeters`
+    `${SEARCH_FIELD_MASK},routingSummaries.legs.distanceMeters`,
   );
-  return places.map((p, i) => toNearbyPlace(p, routingSummaries[i]?.legs?.[0]?.distanceMeters ?? null));
+  return places.map((p, i) =>
+    toNearbyPlace(p, routingSummaries[i]?.legs?.[0]?.distanceMeters ?? null),
+  );
 }
 
 // ─── Place Details enrichment ────────────────────────────────────────────────
@@ -240,16 +262,27 @@ function toHHMM(p: HoursPoint): string {
  * Build a full weekly hours map from Place Details periods.
  * Also derives openTime/closeTime (Monday preferred) for the optimizer.
  */
-function extractWeeklyHours(
-  periods: HoursPeriod[]
-): { openTime: string | null; closeTime: string | null; hoursJson: Record<string, { open: string; close: string | null }> | null } {
-  if (!periods.length) return { openTime: null, closeTime: null, hoursJson: null };
+function extractWeeklyHours(periods: HoursPeriod[]): {
+  openTime: string | null;
+  closeTime: string | null;
+  hoursJson: Record<string, { open: string; close: string | null }> | null;
+} {
+  if (!periods.length)
+    return { openTime: null, closeTime: null, hoursJson: null };
 
   // 24/7: single period opening Sunday midnight with no close
   const first = periods[0];
-  if (periods.length === 1 && first.open.day === 0 && first.open.hour === 0 && first.open.minute === 0 && !first.close) {
+  if (
+    periods.length === 1 &&
+    first.open.day === 0 &&
+    first.open.hour === 0 &&
+    first.open.minute === 0 &&
+    !first.close
+  ) {
     const allDay = { open: "00:00", close: "23:59" };
-    const hoursJson = Object.fromEntries([0,1,2,3,4,5,6].map((d) => [String(d), allDay]));
+    const hoursJson = Object.fromEntries(
+      [0, 1, 2, 3, 4, 5, 6].map((d) => [String(d), allDay]),
+    );
     return { openTime: "00:00", closeTime: "23:59", hoursJson };
   }
 
@@ -292,7 +325,7 @@ export async function findPlaceFromText(
   /** Bias radius in metres, and — when coords are supplied — the hard cutoff for accepting the
    *  match. Use ~100 when coords are precise (e.g. from a prior geocode); use ~5000 when coords
    *  are only approximate (e.g. anchor hotel). */
-  biasRadius = 1000
+  biasRadius = 1000,
 ): Promise<{ placeId: string; lat: number; lng: number } | null> {
   try {
     const { places = [] } = await postSearch(
@@ -300,19 +333,28 @@ export async function findPlaceFromText(
       {
         textQuery: name,
         pageSize: 1,
-        ...(lat !== null && lng !== null ? { locationBias: circle(lat, lng, biasRadius) } : {}),
+        ...(lat !== null && lng !== null
+          ? { locationBias: circle(lat, lng, biasRadius) }
+          : {}),
       },
-      "places.id,places.location"
+      "places.id,places.location",
     );
     const r = places[0];
     if (!r?.location) return null;
     if (
       lat !== null &&
       lng !== null &&
-      haversineMeters({ lat, lng }, { lat: r.location.latitude, lng: r.location.longitude }) > biasRadius
+      haversineMeters(
+        { lat, lng },
+        { lat: r.location.latitude, lng: r.location.longitude },
+      ) > biasRadius
     )
       return null;
-    return { placeId: r.id, lat: r.location.latitude, lng: r.location.longitude };
+    return {
+      placeId: r.id,
+      lat: r.location.latitude,
+      lng: r.location.longitude,
+    };
   } catch {
     return null;
   }
@@ -322,7 +364,9 @@ export async function findPlaceFromText(
  * Fetch Place Details for a known placeId.
  * Returns null on failure — never throws.
  */
-export async function getPlaceDetails(placeId: string): Promise<PlaceDetails | null> {
+export async function getPlaceDetails(
+  placeId: string,
+): Promise<PlaceDetails | null> {
   try {
     const res = await fetch(`${PLACES_BASE}/places/${placeId}`, {
       headers: {

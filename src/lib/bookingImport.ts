@@ -6,12 +6,27 @@
  * and reports clearly when it can't, rather than guessing silently.
  */
 
-export type ParsedBooking = { property: string; checkInDate: string; checkOutDate: string };
-export type ParseResult = { ok: true; booking: ParsedBooking } | { ok: false; error: string };
+export type ParsedBooking = {
+  property: string;
+  checkInDate: string;
+  checkOutDate: string;
+};
+export type ParseResult =
+  { ok: true; booking: ParsedBooking } | { ok: false; error: string };
 
 const MONTHS: Record<string, number> = {
-  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
-  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+  jan: 1,
+  feb: 2,
+  mar: 3,
+  apr: 4,
+  may: 5,
+  jun: 6,
+  jul: 7,
+  aug: 8,
+  sep: 9,
+  oct: 10,
+  nov: 11,
+  dec: 12,
 };
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -51,7 +66,11 @@ function allDates(lines: string[]): string[] {
   return lines.map(parseDate).filter((d): d is string => d !== null);
 }
 
-const tidy = (s: string) => s.trim().replace(/\s+/g, " ").replace(/[.,;]+$/, "");
+const tidy = (s: string) =>
+  s
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[.,;]+$/, "");
 
 function findProperty(text: string): string | null {
   const m =
@@ -75,13 +94,21 @@ export function parseBookingConfirmation(text: string): ParseResult {
   const property = findProperty(text);
 
   if (!checkInDate || !checkOutDate) {
-    return { ok: false, error: "Couldn't find a check-in and check-out date in that confirmation." };
+    return {
+      ok: false,
+      error:
+        "Couldn't find a check-in and check-out date in that confirmation.",
+    };
   }
   if (checkInDate >= checkOutDate) {
     return { ok: false, error: "Check-in date must be before check-out date." };
   }
   if (!property) {
-    return { ok: false, error: "Couldn't find the property name. Add a line like \"Property: <name>\"." };
+    return {
+      ok: false,
+      error:
+        'Couldn\'t find the property name. Add a line like "Property: <name>".',
+    };
   }
   return { ok: true, booking: { property, checkInDate, checkOutDate } };
 }

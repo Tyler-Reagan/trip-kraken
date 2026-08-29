@@ -16,7 +16,7 @@ import { journeyCost, type HealedPair } from "@/types/path";
  */
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: Promise<{ id: string; placementId: string }> }
+  { params }: { params: Promise<{ id: string; placementId: string }> },
 ) {
   const { id: tripId, placementId } = await params;
 
@@ -32,16 +32,25 @@ export async function DELETE(
   // here would be worse than one during optimize. The registry's decline chain guarantees a
   // haversine answer at worst, visibly stamped `basisOfCost: straightLine` — nothing here needs
   // its own try/catch.
-  const paths = await describeJourney(pair.from, pair.to, healKinds(before, pair.from.locationId, pair.to.locationId), {
-    departureTime: new Date(`${pair.date}T09:00:00`),
-  });
+  const paths = await describeJourney(
+    pair.from,
+    pair.to,
+    healKinds(before, pair.from.locationId, pair.to.locationId),
+    {
+      departureTime: new Date(`${pair.date}T09:00:00`),
+    },
+  );
   // The whole chain's cost, not its first Path's (ADR-0032): a decomposed rail Journey now starts
   // with its access walk, so `paths[0]` would report the stroll to the station as the cost of the
   // ride.
   const travelCost = paths ? journeyCost(paths) : undefined;
 
   const healedPair: HealedPair | null = travelCost
-    ? { fromLocationId: pair.from.locationId, toLocationId: pair.to.locationId, travelCost }
+    ? {
+        fromLocationId: pair.from.locationId,
+        toLocationId: pair.to.locationId,
+        travelCost,
+      }
     : null;
 
   return NextResponse.json({ healedPair });

@@ -19,29 +19,50 @@ process.env.GOOGLE_MAPS_API_KEY = "test-key";
 async function main() {
   // ── Registry ──
   assert.equal(getDiscoveryProvider("google")?.id, "google", "google resolves");
-  assert.equal(getDiscoveryProvider("nope"), undefined, "unknown source → undefined");
+  assert.equal(
+    getDiscoveryProvider("nope"),
+    undefined,
+    "unknown source → undefined",
+  );
   assert.deepEqual(
-    listDiscoveryProviders().map((p) => p.id).sort(),
+    listDiscoveryProviders()
+      .map((p) => p.id)
+      .sort(),
     ["google"],
-    "registry lists the google provider"
+    "registry lists the google provider",
   );
 
   // ── Scope kind ↔ mode mapping (what routes gate on) ──
   assert.equal(modeForScope({ kind: "anchor", lat: 1, lng: 2 }), "anchored");
   assert.equal(modeForScope({ kind: "none" }), "unanchored");
-  assert.equal(modeForScope({ kind: "route", polyline: "abc", origin: { lat: 1, lng: 2 } }), "alongRoute");
+  assert.equal(
+    modeForScope({
+      kind: "route",
+      polyline: "abc",
+      origin: { lat: 1, lng: 2 },
+    }),
+    "alongRoute",
+  );
 
   // ── Declared modes ──
   const google = getDiscoveryProvider("google")!;
   assert.deepEqual(
     [...google.modes].sort(),
     ["alongRoute", "anchored", "unanchored"],
-    "google serves all three scopes"
+    "google serves all three scopes",
   );
 
   // ── Applicability ──
-  assert.equal(google.applies({ kind: "anchor", lat: 48.85, lng: 2.35 }), true, "google applies anywhere (Paris)");
-  assert.equal(google.applies({ kind: "none" }), true, "google applies with no scope coords");
+  assert.equal(
+    google.applies({ kind: "anchor", lat: 48.85, lng: 2.35 }),
+    true,
+    "google applies anywhere (Paris)",
+  );
+  assert.equal(
+    google.applies({ kind: "none" }),
+    true,
+    "google applies with no scope coords",
+  );
 
   // ── Search dispatch (mocked fetch) ──
   const originalFetch = global.fetch;
@@ -67,49 +88,76 @@ async function main() {
   }) as typeof fetch;
 
   // anchor scope, no query → nearby browse, with anchor→place distance computed in-process
-  const anchored = await google.search({ scope: { kind: "anchor", lat: 35, lng: 139, radius: 800 } });
-  assert.ok(lastUrl.endsWith("places:searchNearby"), "anchor browse hits searchNearby");
+  const anchored = await google.search({
+    scope: { kind: "anchor", lat: 35, lng: 139, radius: 800 },
+  });
+  assert.ok(
+    lastUrl.endsWith("places:searchNearby"),
+    "anchor browse hits searchNearby",
+  );
   assert.ok(
     anchored[0].distanceMeters! > 0 && anchored[0].distanceMeters! < 100,
-    "anchor distance computed from coords"
+    "anchor distance computed from coords",
   );
 
   // anchor scope + query → free-text search biased to the anchor
-  await google.search({ query: "ramen", scope: { kind: "anchor", lat: 35, lng: 139 } });
-  assert.ok(lastUrl.endsWith("places:searchText"), "anchor + query routes through text search");
+  await google.search({
+    query: "ramen",
+    scope: { kind: "anchor", lat: 35, lng: 139 },
+  });
+  assert.ok(
+    lastUrl.endsWith("places:searchText"),
+    "anchor + query routes through text search",
+  );
   assert.equal(lastBody.textQuery, "ramen", "query becomes textQuery");
   assert.ok(lastBody.locationBias, "anchor becomes a location bias");
 
   // none scope → bare text search; openNow honored; missing query fails loud
-  await google.search({ query: "kissaten in Tokyo", scope: { kind: "none" }, limit: 3, openNow: true });
-  assert.ok(lastUrl.endsWith("places:searchText"), "none scope hits searchText");
+  await google.search({
+    query: "kissaten in Tokyo",
+    scope: { kind: "none" },
+    limit: 3,
+    openNow: true,
+  });
+  assert.ok(
+    lastUrl.endsWith("places:searchText"),
+    "none scope hits searchText",
+  );
   assert.equal(lastBody.locationBias, undefined, "unanchored has no bias");
   assert.equal(lastBody.openNow, true, "openNow passes through to text search");
   await assert.rejects(
     () => google.search({ scope: { kind: "none" } }),
     /query is required/,
-    "none scope without query rejects"
+    "none scope without query rejects",
   );
 
   // route scope → text search with searchAlongRouteParameters + routingParameters; missing query fails loud
   const origin = { lat: 35.71, lng: 139.79 };
-  await google.search({ query: "bakery", scope: { kind: "route", polyline: "abc123", origin }, limit: 5 });
-  assert.ok(lastUrl.endsWith("places:searchText"), "route scope hits searchText");
+  await google.search({
+    query: "bakery",
+    scope: { kind: "route", polyline: "abc123", origin },
+    limit: 5,
+  });
+  assert.ok(
+    lastUrl.endsWith("places:searchText"),
+    "route scope hits searchText",
+  );
   assert.equal(lastBody.textQuery, "bakery", "query becomes textQuery");
   assert.deepEqual(
     lastBody.searchAlongRouteParameters,
     { polyline: { encodedPolyline: "abc123" } },
-    "polyline becomes searchAlongRouteParameters"
+    "polyline becomes searchAlongRouteParameters",
   );
   assert.deepEqual(
     lastBody.routingParameters,
     { origin: { latitude: 35.71, longitude: 139.79 } },
-    "scope origin becomes routingParameters"
+    "scope origin becomes routingParameters",
   );
   await assert.rejects(
-    () => google.search({ scope: { kind: "route", polyline: "abc123", origin } }),
+    () =>
+      google.search({ scope: { kind: "route", polyline: "abc123", origin } }),
     /query is required/,
-    "route scope without query rejects"
+    "route scope without query rejects",
   );
 
   global.fetch = originalFetch;
@@ -117,49 +165,89 @@ async function main() {
   // ── Ranking (caller-side by contract — #102) ──
   function place(over: Partial<NearbyPlace>): NearbyPlace {
     return {
-      placeId: "x", name: "x", address: "", lat: null, lng: null,
-      rating: null, reviewCount: null, categories: [], priceLevel: null, distanceMeters: null,
+      placeId: "x",
+      name: "x",
+      address: "",
+      lat: null,
+      lng: null,
+      rating: null,
+      reviewCount: null,
+      categories: [],
+      priceLevel: null,
+      distanceMeters: null,
       detourMeters: null,
       ...over,
     };
   }
   const ranked = scoreAndSort([
-    place({ placeId: "low",  rating: 3.0, reviewCount: 10 }),
+    place({ placeId: "low", rating: 3.0, reviewCount: 10 }),
     place({ placeId: "high", rating: 4.8, reviewCount: 5000 }),
   ]);
-  assert.deepEqual(ranked.map((p) => p.placeId), ["high", "low"], "higher rating + reviews ranks first");
+  assert.deepEqual(
+    ranked.map((p) => p.placeId),
+    ["high", "low"],
+    "higher rating + reviews ranks first",
+  );
 
   // Diversity bonus lifts a place whose category is new to the day.
   const dayCats = new Set(["restaurant"]);
-  const diverse = scoreAndSort([
-    place({ placeId: "same",  rating: 4.0, categories: ["restaurant"] }),
-    place({ placeId: "novel", rating: 4.0, categories: ["museum"] }),
-  ], dayCats);
-  assert.deepEqual(diverse.map((p) => p.placeId), ["novel", "same"], "novel category gets the diversity bonus");
+  const diverse = scoreAndSort(
+    [
+      place({ placeId: "same", rating: 4.0, categories: ["restaurant"] }),
+      place({ placeId: "novel", rating: 4.0, categories: ["museum"] }),
+    ],
+    dayCats,
+  );
+  assert.deepEqual(
+    diverse.map((p) => p.placeId),
+    ["novel", "same"],
+    "novel category gets the diversity bonus",
+  );
 
   // ── #107: detourMeters spreads results along the corridor instead of clustering at the origin ──
   // 9 places, all top-rated, 7 of them clustered in the first 10% of a corridor (the reproduction
   // in #107 itself) and 2 spread further out. A flat rating sort would put all 9 origin-clustered
   // places first; stratifying by position must surface at least one of the far ones early.
   const clustered = [
-    ...Array.from({ length: 7 }, (_, i) => place({ placeId: `origin-${i}`, rating: 4.9, reviewCount: 2000, detourMeters: 50 + i })),
-    place({ placeId: "mid", rating: 4.0, reviewCount: 100, detourMeters: 5000 }),
-    place({ placeId: "far", rating: 4.0, reviewCount: 100, detourMeters: 9500 }),
+    ...Array.from({ length: 7 }, (_, i) =>
+      place({
+        placeId: `origin-${i}`,
+        rating: 4.9,
+        reviewCount: 2000,
+        detourMeters: 50 + i,
+      }),
+    ),
+    place({
+      placeId: "mid",
+      rating: 4.0,
+      reviewCount: 100,
+      detourMeters: 5000,
+    }),
+    place({
+      placeId: "far",
+      rating: 4.0,
+      reviewCount: 100,
+      detourMeters: 9500,
+    }),
   ];
   const spread = scoreAndSort(clustered);
   assert.equal(spread.length, 9, "no places dropped");
   const top3Ids = spread.slice(0, 3).map((p) => p.placeId);
   assert.ok(
     top3Ids.includes("mid") || top3Ids.includes("far"),
-    "top results are not all clustered at the corridor origin"
+    "top results are not all clustered at the corridor origin",
   );
 
   // Places with no detourMeters (anchor/unanchored scope) are untouched by stratification.
   const noDetour = scoreAndSort([
-    place({ placeId: "low",  rating: 3.0, reviewCount: 10 }),
+    place({ placeId: "low", rating: 3.0, reviewCount: 10 }),
     place({ placeId: "high", rating: 4.8, reviewCount: 5000 }),
   ]);
-  assert.deepEqual(noDetour.map((p) => p.placeId), ["high", "low"], "null detourMeters → unchanged rating sort");
+  assert.deepEqual(
+    noDetour.map((p) => p.placeId),
+    ["high", "low"],
+    "null detourMeters → unchanged rating sort",
+  );
 
   console.log("✓ discovery.test.ts passed");
 }

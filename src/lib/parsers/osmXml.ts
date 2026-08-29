@@ -16,7 +16,12 @@
  */
 
 import { XMLParser } from "fast-xml-parser";
-import type { OsmNode, OsmRelation, OsmMember, OsmWay } from "@/lib/transitGraphIngest";
+import type {
+  OsmNode,
+  OsmRelation,
+  OsmMember,
+  OsmWay,
+} from "@/lib/transitGraphIngest";
 
 function toArray<T>(value: T | T[] | undefined): T[] {
   if (value === undefined) return [];
@@ -25,7 +30,9 @@ function toArray<T>(value: T | T[] | undefined): T[] {
 
 function tagsOf(raw: Record<string, unknown>): Record<string, string> {
   const tags: Record<string, string> = {};
-  for (const tag of toArray(raw.tag as Record<string, string> | Record<string, string>[] | undefined)) {
+  for (const tag of toArray(
+    raw.tag as Record<string, string> | Record<string, string>[] | undefined,
+  )) {
     const k = tag["@_k"];
     const v = tag["@_v"];
     if (typeof k === "string" && typeof v === "string") tags[k] = v;
@@ -33,17 +40,25 @@ function tagsOf(raw: Record<string, unknown>): Record<string, string> {
   return tags;
 }
 
-export function parseOsmXml(xml: string): { nodes: OsmNode[]; ways: OsmWay[]; relations: OsmRelation[] } {
+export function parseOsmXml(xml: string): {
+  nodes: OsmNode[];
+  ways: OsmWay[];
+  relations: OsmRelation[];
+} {
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "@_",
-    isArray: (name) => ["node", "way", "relation", "nd", "member", "tag"].includes(name),
+    isArray: (name) =>
+      ["node", "way", "relation", "nd", "member", "tag"].includes(name),
     // fast-xml-parser's entity-expansion guard defaults to 1000 total expansions — a billion-laughs
     // safeguard sized for arbitrary untrusted input. A nationwide rail extract is neither untrusted
     // nor small: station/line names routinely carry `&amp;`/`&apos;` entities, easily exceeding the
     // default across hundreds of thousands of tags. This is our own pinned, trusted Geofabrik
     // extract (never user-supplied XML), so raising the ceiling is safe, not a security regression.
-    processEntities: { maxTotalExpansions: 5_000_000, maxExpandedLength: 50_000_000 },
+    processEntities: {
+      maxTotalExpansions: 5_000_000,
+      maxExpandedLength: 50_000_000,
+    },
   });
 
   let parsed: unknown;
@@ -53,22 +68,31 @@ export function parseOsmXml(xml: string): { nodes: OsmNode[]; ways: OsmWay[]; re
     throw new Error(`OSM XML parse error: ${(err as Error).message}`);
   }
 
-  const osm = (parsed as Record<string, unknown>).osm as Record<string, unknown> | undefined;
+  const osm = (parsed as Record<string, unknown>).osm as
+    Record<string, unknown> | undefined;
   if (!osm) throw new Error("OSM XML parse error: no <osm> root element");
 
-  const nodes: OsmNode[] = toArray(osm.node as Record<string, unknown>[] | undefined).map((n) => ({
+  const nodes: OsmNode[] = toArray(
+    osm.node as Record<string, unknown>[] | undefined,
+  ).map((n) => ({
     id: String(n["@_id"]),
     lat: Number(n["@_lat"]),
     lon: Number(n["@_lon"]),
     tags: tagsOf(n),
   }));
 
-  const ways: OsmWay[] = toArray(osm.way as Record<string, unknown>[] | undefined).map((w) => ({
+  const ways: OsmWay[] = toArray(
+    osm.way as Record<string, unknown>[] | undefined,
+  ).map((w) => ({
     id: String(w["@_id"]),
-    nodeRefs: toArray(w.nd as Record<string, unknown>[] | undefined).map((nd) => String(nd["@_ref"])),
+    nodeRefs: toArray(w.nd as Record<string, unknown>[] | undefined).map((nd) =>
+      String(nd["@_ref"]),
+    ),
   }));
 
-  const relations: OsmRelation[] = toArray(osm.relation as Record<string, unknown>[] | undefined).map((r) => ({
+  const relations: OsmRelation[] = toArray(
+    osm.relation as Record<string, unknown>[] | undefined,
+  ).map((r) => ({
     id: String(r["@_id"]),
     tags: tagsOf(r),
     members: toArray(r.member as Record<string, unknown>[] | undefined).map(
@@ -76,7 +100,7 @@ export function parseOsmXml(xml: string): { nodes: OsmNode[]; ways: OsmWay[]; re
         type: m["@_type"] as OsmMember["type"],
         ref: String(m["@_ref"]),
         role: (m["@_role"] as string) ?? "",
-      })
+      }),
     ),
   }));
 

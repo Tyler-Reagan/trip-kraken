@@ -23,35 +23,44 @@ export default function AddLocationModal() {
 
   // Mirror in-trip placeIds so already-added places show as "Added".
   useEffect(() => {
-    setAddedIds(new Set(
-      (trip?.locations ?? []).map((l) => l.placeId).filter(Boolean) as string[]
-    ));
+    setAddedIds(
+      new Set(
+        (trip?.locations ?? [])
+          .map((l) => l.placeId)
+          .filter(Boolean) as string[],
+      ),
+    );
   }, [trip?.locations]);
 
-  const search = useCallback(async (q: string) => {
-    if (!q.trim()) {
-      setResults(null);
-      setError(null);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/trips/${tripId}/locations/search?q=${encodeURIComponent(q.trim())}`);
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Search failed.");
+  const search = useCallback(
+    async (q: string) => {
+      if (!q.trim()) {
         setResults(null);
-      } else {
-        setResults(data as NearbyPlace[]);
+        setError(null);
+        return;
       }
-    } catch {
-      setError("Network error. Check your connection.");
-      setResults(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [tripId]);
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(
+          `/api/trips/${tripId}/locations/search?q=${encodeURIComponent(q.trim())}`,
+        );
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error ?? "Search failed.");
+          setResults(null);
+        } else {
+          setResults(data as NearbyPlace[]);
+        }
+      } catch {
+        setError("Network error. Check your connection.");
+        setResults(null);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [tripId],
+  );
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -107,7 +116,9 @@ export default function AddLocationModal() {
         className="card w-full max-w-md flex flex-col max-h-[80vh] shadow-xl"
       >
         <div className="flex items-center justify-between p-6 pb-4">
-          <h2 id="add-location-modal-title" className="text-section text-ink">Add a place</h2>
+          <h2 id="add-location-modal-title" className="text-section text-ink">
+            Add a place
+          </h2>
           <button
             onClick={() => setShowAddLocation(false)}
             className="tap-target text-faint hover:text-sub transition-colors"
@@ -127,7 +138,8 @@ export default function AddLocationModal() {
             className="input"
           />
           <p className="mt-2 text-xs text-sub">
-            Added places appear in the sidebar. Re-optimize to include them in the schedule.
+            Added places appear in the sidebar. Re-optimize to include them in
+            the schedule.
           </p>
         </div>
 
@@ -161,28 +173,35 @@ export default function AddLocationModal() {
               {results.map((place) => {
                 const isAdded = addedIds.has(place.placeId);
                 const isAdding = addingId === place.placeId;
-                const displayTypes = place.categories.slice(0, 2).map((t) => t.replace(/_/g, " "));
+                const displayTypes = place.categories
+                  .slice(0, 2)
+                  .map((t) => t.replace(/_/g, " "));
                 return (
                   <li key={place.placeId} className="px-6 py-3 space-y-1.5">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className="text-body truncate text-ink">{place.name}</p>
+                          <p className="text-body truncate text-ink">
+                            {place.name}
+                          </p>
                           {place.priceLevel !== null && (
                             <span className="text-meta text-sub shrink-0">
                               {PRICE_LABELS[place.priceLevel]}
                             </span>
                           )}
                         </div>
-                        <p className="text-meta text-faint truncate">{place.address}</p>
+                        <p className="text-meta text-faint truncate">
+                          {place.address}
+                        </p>
                       </div>
                       <button
                         onClick={() => handleAdd(place)}
                         disabled={isAdded || isAdding}
                         className={`text-xs px-3 py-1.5 rounded-lg font-medium shrink-0 transition-colors
-                          ${isAdded
-                            ? "bg-surface-2 text-faint cursor-default"
-                            : "bg-brand-600 dark:bg-brand-500 text-white hover:bg-brand-700 dark:hover:bg-brand-400 disabled:opacity-50"
+                          ${
+                            isAdded
+                              ? "bg-surface-2 text-faint cursor-default"
+                              : "bg-brand-600 dark:bg-brand-500 text-white hover:bg-brand-700 dark:hover:bg-brand-400 disabled:opacity-50"
                           }`}
                       >
                         {isAdding ? "…" : isAdded ? "Added" : "Add"}
@@ -192,11 +211,17 @@ export default function AddLocationModal() {
                       {place.rating !== null && (
                         <span className="inline-flex items-center gap-0.5 text-numeral text-sub">
                           <Star className="w-3 h-3 fill-current" />
-                          {place.rating}{place.reviewCount !== null ? ` (${place.reviewCount.toLocaleString()})` : ""}
+                          {place.rating}
+                          {place.reviewCount !== null
+                            ? ` (${place.reviewCount.toLocaleString()})`
+                            : ""}
                         </span>
                       )}
                       {displayTypes.map((t) => (
-                        <span key={t} className="bg-surface-2 text-sub px-1.5 py-0.5 rounded capitalize">
+                        <span
+                          key={t}
+                          className="bg-surface-2 text-sub px-1.5 py-0.5 rounded capitalize"
+                        >
                           {t}
                         </span>
                       ))}
@@ -209,7 +234,10 @@ export default function AddLocationModal() {
         </div>
 
         <div className="p-4 border-t border-line">
-          <button onClick={() => setShowAddLocation(false)} className="btn-secondary w-full">
+          <button
+            onClick={() => setShowAddLocation(false)}
+            className="btn-secondary w-full"
+          >
             Done
           </button>
         </div>

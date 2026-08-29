@@ -104,7 +104,12 @@ export interface DayPlan {
  * - `day-too-short`  — the Day would need `seconds` more hours than it has to absorb it
  */
 export interface UnplacedDiagnosis {
-  cause: "day-full" | "out-of-reach" | "after-closing" | "before-opening" | "day-too-short";
+  cause:
+    | "day-full"
+    | "out-of-reach"
+    | "after-closing"
+    | "before-opening"
+    | "day-too-short";
   /** Seconds past the limit. Only the two time-based causes carry one — VROOM reports `skills`
    * and `max_tasks` as a bare cause with no magnitude. */
   seconds?: number;
@@ -115,7 +120,12 @@ export interface UnplacedDiagnosis {
  * "excluded", which is the user's own `Location.excluded` flag and means something different. */
 export interface Unplaced {
   locationId: string;
-  code: "ungeocoded-pending" | "ungeocoded-failed" | "no-lodging-coverage" | "closed-all-days" | "solver";
+  code:
+    | "ungeocoded-pending"
+    | "ungeocoded-failed"
+    | "no-lodging-coverage"
+    | "closed-all-days"
+    | "solver";
   reason: string;
   /** Present only on a `code: "solver"` entry the plan-mode pass could diagnose (ADR-0023 §8).
    * The pre-flight codes already know their own reason and are never probed. Absent whenever the
@@ -162,7 +172,11 @@ export interface OptimizationProblem {
    * Only meaningful for a pair present in `locations`; a choice whose Location(s) aren't in this
    * run (excluded, or dropped since) is silently a no-op — the choice persists regardless (#217),
    * stale-choice surfacing is #219's territory. */
-  journeyRoadKinds?: { locationAId: string; locationBId: string; kind: RoadProfile }[];
+  journeyRoadKinds?: {
+    locationAId: string;
+    locationBId: string;
+    kind: RoadProfile;
+  }[];
 }
 
 export interface Itinerary {
@@ -205,11 +219,13 @@ async function applyJourneyRoadKinds(
   journeyRoadKinds: NonNullable<OptimizationProblem["journeyRoadKinds"]>,
   kinds: PathKind[],
   departureTime: Date | undefined,
-  hasJrPass: boolean | undefined
+  hasJrPass: boolean | undefined,
 ): Promise<void> {
   if (journeyRoadKinds.length === 0) return;
 
-  const defaultRoadKind = kinds.find((k): k is RoadProfile => k === "walking" || k === "driving");
+  const defaultRoadKind = kinds.find(
+    (k): k is RoadProfile => k === "walking" || k === "driving",
+  );
   const indexOf = new Map(matrixPoints.map((p, i) => [p.id, i]));
 
   for (const chosen of journeyRoadKinds) {
@@ -218,11 +234,14 @@ async function applyJourneyRoadKinds(
     const j = indexOf.get(chosen.locationBId);
     if (i === undefined || j === undefined || i === j) continue;
 
-    const subMatrix = await buildTravelMatrix([matrixPoints[i], matrixPoints[j]], {
-      kinds: withJourneyRoadKind(kinds, chosen),
-      departureTime,
-      hasJrPass,
-    });
+    const subMatrix = await buildTravelMatrix(
+      [matrixPoints[i], matrixPoints[j]],
+      {
+        kinds: withJourneyRoadKind(kinds, chosen),
+        departureTime,
+        hasJrPass,
+      },
+    );
     matrix[i][j] = subMatrix[0][1];
     matrix[j][i] = subMatrix[1][0];
   }
@@ -245,7 +264,11 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
   if (locations.length === 0) return { days: [], unplaced: [], warnings: [] };
 
   const days = numDays > 0 ? numDays : 1;
-  const emptyDays = (): DayPlan[] => Array.from({ length: days }, (_, i) => ({ dayNumber: i + 1, locationIds: [] }));
+  const emptyDays = (): DayPlan[] =>
+    Array.from({ length: days }, (_, i) => ({
+      dayNumber: i + 1,
+      locationIds: [],
+    }));
 
   // Only an Activity is ever *placed* (CONTEXT.md: "the only kind the optimizer places"). Lodging
   // and trip-edge Transit are both Anchors — held out of the candidate pool, never emitted as a
@@ -254,15 +277,26 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
   const lodgings = locations.filter((l) => l.kind === "lodging");
   const transitEdges = locations.filter((l) => l.kind === "transit");
 
-  const arrivalLoc = edges?.arrivalId ? transitEdges.find((l) => l.id === edges.arrivalId) : undefined;
-  const departureLoc = edges?.departureId ? transitEdges.find((l) => l.id === edges.departureId) : undefined;
+  const arrivalLoc = edges?.arrivalId
+    ? transitEdges.find((l) => l.id === edges.arrivalId)
+    : undefined;
+  const departureLoc = edges?.departureId
+    ? transitEdges.find((l) => l.id === edges.departureId)
+    : undefined;
 
-  const tripDates: IsoDate[] = startDate ? Array.from({ length: days }, (_, i) => addDaysIso(startDate, i)) : [];
+  const tripDates: IsoDate[] = startDate
+    ? Array.from({ length: days }, (_, i) => addDaysIso(startDate, i))
+    : [];
 
-  const { placeable, unplaced, warnings, metroOf, lodgingMetros } = preflight(activities, lodgings, tripDates, {
-    arrival: arrivalLoc,
-    departure: departureLoc,
-  });
+  const { placeable, unplaced, warnings, metroOf, lodgingMetros } = preflight(
+    activities,
+    lodgings,
+    tripDates,
+    {
+      arrival: arrivalLoc,
+      departure: departureLoc,
+    },
+  );
 
   if (placeable.length === 0) return { days: emptyDays(), unplaced, warnings };
 
@@ -275,10 +309,27 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
   // Transit Location (Anchors) — one bijection (index in this array) reused for
   // `location_index`/`start_index`/`end_index`/`job.id`, so there is no second id↔index map to
   // keep in sync.
-  const matrixPoints = [...placeable, ...lodgings.filter(hasValidCoords), ...transitEdges.filter(hasValidCoords)];
-  const departureTime = startDate ? new Date(Date.parse(startDate + "T00:00:00Z") + dayStartMins * 60000) : undefined;
-  const matrix = await buildTravelMatrix(matrixPoints, { kinds, departureTime, hasJrPass });
-  await applyJourneyRoadKinds(matrix, matrixPoints, journeyRoadKinds, kinds, departureTime, hasJrPass);
+  const matrixPoints = [
+    ...placeable,
+    ...lodgings.filter(hasValidCoords),
+    ...transitEdges.filter(hasValidCoords),
+  ];
+  const departureTime = startDate
+    ? new Date(Date.parse(startDate + "T00:00:00Z") + dayStartMins * 60000)
+    : undefined;
+  const matrix = await buildTravelMatrix(matrixPoints, {
+    kinds,
+    departureTime,
+    hasJrPass,
+  });
+  await applyJourneyRoadKinds(
+    matrix,
+    matrixPoints,
+    journeyRoadKinds,
+    kinds,
+    departureTime,
+    hasJrPass,
+  );
 
   const request = buildVroomRequest({
     placeable,
@@ -299,18 +350,33 @@ export async function solve(problem: OptimizationProblem): Promise<Itinerary> {
     },
   });
   const solution = await postVroom(request);
-  const { days: solvedDays, unplaced: solverUnplaced } = parseVroomSolution(solution, matrixPoints);
+  const { days: solvedDays, unplaced: solverUnplaced } = parseVroomSolution(
+    solution,
+    matrixPoints,
+  );
 
   // Every Day 1..numDays appears in the result, even one VROOM's response omitted for carrying no
   // Placements — an empty Day is still a Day, not a gap in the array.
   const byDayNumber = new Map(solvedDays.map((d) => [d.dayNumber, d]));
-  const resolvedDays = Array.from({ length: days }, (_, i) => byDayNumber.get(i + 1) ?? { dayNumber: i + 1, locationIds: [] });
+  const resolvedDays = Array.from(
+    { length: days },
+    (_, i) => byDayNumber.get(i + 1) ?? { dayNumber: i + 1, locationIds: [] },
+  );
 
   // The plan-mode pass (ADR-0023 §8) — diagnosis only, and strictly after the Plan is settled.
   // It asks what would break if a dropped Activity were scheduled anyway; its answer enriches an
   // `Unplaced` reason and can never become a Placement. Best-effort by construction: it returns
   // `solverUnplaced` unchanged rather than throwing, so a solve that succeeded stays succeeded.
-  const diagnosed = await diagnoseUnplaced(request, solution, solverUnplaced, matrixPoints);
+  const diagnosed = await diagnoseUnplaced(
+    request,
+    solution,
+    solverUnplaced,
+    matrixPoints,
+  );
 
-  return { days: resolvedDays, unplaced: [...unplaced, ...diagnosed], warnings };
+  return {
+    days: resolvedDays,
+    unplaced: [...unplaced, ...diagnosed],
+    warnings,
+  };
 }

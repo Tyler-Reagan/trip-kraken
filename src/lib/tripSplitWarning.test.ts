@@ -8,7 +8,12 @@ import { detectUncoveredSplit } from "./tripSplitWarning";
 import type { Activity, Lodging, TripWithDetails } from "@/types";
 
 let n = 0;
-const activity = (name: string, lat: number, lng: number, extra: Partial<Activity> = {}): Activity => ({
+const activity = (
+  name: string,
+  lat: number,
+  lng: number,
+  extra: Partial<Activity> = {},
+): Activity => ({
   id: `a${n++}`,
   tripId: "t1",
   name,
@@ -67,7 +72,11 @@ const OSAKA: [number, number] = [34.6937, 135.5023];
     activity("Ueno Park", 35.7138, 139.7745),
     lodging("Hotel", ...TOKYO),
   ]);
-  assert.equal(detectUncoveredSplit(t), null, "one cluster never warns, regardless of spread");
+  assert.equal(
+    detectUncoveredSplit(t),
+    null,
+    "one cluster never warns, regardless of spread",
+  );
 }
 
 // ── two clusters, one with no covering lodging → warns, naming only the uncovered one ──
@@ -91,7 +100,11 @@ const OSAKA: [number, number] = [34.6937, 135.5023];
     lodging("Tokyo Hotel", ...TOKYO),
     lodging("Osaka Hotel", ...OSAKA),
   ]);
-  assert.equal(detectUncoveredSplit(t), null, "every cluster explained by its own lodging → no warning");
+  assert.equal(
+    detectUncoveredSplit(t),
+    null,
+    "every cluster explained by its own lodging → no warning",
+  );
 }
 
 // ── an excluded Activity never forms or breaks a cluster on its own ──
@@ -101,7 +114,11 @@ const OSAKA: [number, number] = [34.6937, 135.5023];
     activity("Osaka Castle", ...OSAKA, { excluded: true }),
     lodging("Tokyo Hotel", ...TOKYO),
   ]);
-  assert.equal(detectUncoveredSplit(t), null, "an excluded Activity is not \"included\" — no second cluster to warn about");
+  assert.equal(
+    detectUncoveredSplit(t),
+    null,
+    'an excluded Activity is not "included" — no second cluster to warn about',
+  );
 }
 
 // ── not yet geocoded → no cluster, no false split ──
@@ -111,7 +128,11 @@ const OSAKA: [number, number] = [34.6937, 135.5023];
     activity("Somewhere pending", 0, 0, { enrichmentStatus: "pending" }),
     lodging("Tokyo Hotel", ...TOKYO),
   ]);
-  assert.equal(detectUncoveredSplit(t), null, "an ungeocoded Activity carries no geography to split on");
+  assert.equal(
+    detectUncoveredSplit(t),
+    null,
+    "an ungeocoded Activity carries no geography to split on",
+  );
 }
 
 // ── no Activities at all → nothing to warn about ──

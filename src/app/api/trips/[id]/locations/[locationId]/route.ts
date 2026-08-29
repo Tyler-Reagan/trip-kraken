@@ -24,20 +24,36 @@ import {
  */
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string; locationId: string }> }
+  { params }: { params: Promise<{ id: string; locationId: string }> },
 ) {
   const { id: tripId, locationId } = await params;
   const body = await req.json();
-  const { excluded, note, name, visitDuration, checkInDate, checkOutDate, arriveAt, departAt } = body;
+  const {
+    excluded,
+    note,
+    name,
+    visitDuration,
+    checkInDate,
+    checkOutDate,
+    arriveAt,
+    departAt,
+  } = body;
 
   // A pure range check with no DB lookup — the wrong weight for LodgingValidationError/
   // TransitValidationError's throw/catch machinery below, which backs multi-rule DB-backed
   // validation. Returns directly rather than throwing, so it doesn't need the try/catch boundary.
   if (visitDuration !== undefined && visitDuration !== null) {
-    if (!Number.isInteger(visitDuration) || visitDuration < 15 || visitDuration > 1440) {
+    if (
+      !Number.isInteger(visitDuration) ||
+      visitDuration < 15 ||
+      visitDuration > 1440
+    ) {
       return NextResponse.json(
-        { error: "visitDuration must be an integer between 15 and 1440 minutes, or null." },
-        { status: 400 }
+        {
+          error:
+            "visitDuration must be an integer between 15 and 1440 minutes, or null.",
+        },
+        { status: 400 },
       );
     }
   }
@@ -51,27 +67,43 @@ export async function PATCH(
     if (arriveAt === null) {
       await clearTripEdge(tripId, locationId, "arrival");
     } else if (arriveAt !== undefined) {
-      await setTripArrival(tripId, locationId, arriveAt === "" ? null : arriveAt);
+      await setTripArrival(
+        tripId,
+        locationId,
+        arriveAt === "" ? null : arriveAt,
+      );
     }
     if (departAt === null) {
       await clearTripEdge(tripId, locationId, "departure");
     } else if (departAt !== undefined) {
-      await setTripDeparture(tripId, locationId, departAt === "" ? null : departAt);
+      await setTripDeparture(
+        tripId,
+        locationId,
+        departAt === "" ? null : departAt,
+      );
     }
   } catch (err) {
-    if (err instanceof LodgingValidationError || err instanceof TransitValidationError) {
+    if (
+      err instanceof LodgingValidationError ||
+      err instanceof TransitValidationError
+    ) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
     throw err;
   }
 
-  await updateLocation(tripId, locationId, { excluded, note, name, visitDuration });
+  await updateLocation(tripId, locationId, {
+    excluded,
+    note,
+    name,
+    visitDuration,
+  });
   return NextResponse.json(await getLocation(locationId));
 }
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: Promise<{ id: string; locationId: string }> }
+  { params }: { params: Promise<{ id: string; locationId: string }> },
 ) {
   const { locationId } = await params;
   await deleteLocation(locationId);

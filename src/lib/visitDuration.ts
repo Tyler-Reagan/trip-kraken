@@ -25,7 +25,10 @@ export const VISIT_DURATION_STEP_MINUTES = 15;
 export const VISIT_DURATION_MAX_MINUTES = 720;
 
 export function clampVisitDuration(mins: number): number {
-  return Math.max(VISIT_DURATION_STEP_MINUTES, Math.min(VISIT_DURATION_MAX_MINUTES, mins));
+  return Math.max(
+    VISIT_DURATION_STEP_MINUTES,
+    Math.min(VISIT_DURATION_MAX_MINUTES, mins),
+  );
 }
 
 /**
@@ -40,15 +43,20 @@ export function clampVisitDuration(mins: number): number {
  */
 export const VISIT_DURATION_LADDER: number[] = (() => {
   const out: number[] = [];
-  for (let m = VISIT_DURATION_STEP_MINUTES; m <= VISIT_DURATION_MAX_MINUTES;
-       m += m < 60 ? 15 : m < 120 ? 30 : 60) out.push(m);
+  for (
+    let m = VISIT_DURATION_STEP_MINUTES;
+    m <= VISIT_DURATION_MAX_MINUTES;
+    m += m < 60 ? 15 : m < 120 ? 30 : 60
+  )
+    out.push(m);
   return out;
 })();
 
 export function nextVisitDuration(mins: number, direction: 1 | -1): number {
-  const stop = direction > 0
-    ? VISIT_DURATION_LADDER.find((v) => v > mins)
-    : [...VISIT_DURATION_LADDER].reverse().find((v) => v < mins);
+  const stop =
+    direction > 0
+      ? VISIT_DURATION_LADDER.find((v) => v > mins)
+      : [...VISIT_DURATION_LADDER].reverse().find((v) => v < mins);
   return stop ?? clampVisitDuration(mins);
 }
 
@@ -69,7 +77,9 @@ export function nearestVisitDurationIndex(mins: number): number {
 }
 
 /** What the optimizer and the UI both use in place of an unset `visitDuration`. */
-export function resolveVisitDuration(visitDuration: number | null | undefined): number {
+export function resolveVisitDuration(
+  visitDuration: number | null | undefined,
+): number {
   return visitDuration ?? DEFAULT_VISIT_MINUTES;
 }
 

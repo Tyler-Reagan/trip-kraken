@@ -1,9 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDownToLine, ArrowUpFromLine, X, type LucideIcon } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
-import { isActivity, isTransit, type IsoDate, type Location, type Transit, type TripWithDetails } from "@/types";
+import {
+  isActivity,
+  isTransit,
+  type IsoDate,
+  type Location,
+  type Transit,
+  type TripWithDetails,
+} from "@/types";
 import { AssignExisting } from "./LodgingNightStrip";
 
 /**
@@ -28,7 +40,11 @@ import { AssignExisting } from "./LodgingNightStrip";
  */
 
 const fmtEdgeDate = (d: IsoDate) =>
-  new Date(d + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  new Date(d + "T00:00:00").toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 
 /** The "HH:MM" portion of a stored edge value, or "" for a bare date / no time known. */
 function timeOf(value: string | null): string {
@@ -76,7 +92,9 @@ function EdgeRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
           <p className="text-meta text-faint">{label}</p>
-          <span className="text-[11px] text-faint tabular-nums">{fmtEdgeDate(date)}</span>
+          <span className="text-[11px] text-faint tabular-nums">
+            {fmtEdgeDate(date)}
+          </span>
         </div>
 
         {assigning ? (
@@ -142,8 +160,14 @@ function EdgeRow({
 export function TransitSection({ trip }: { trip: TripWithDetails }) {
   const saveTransitEdge = useTripStore((s) => s.saveTransitEdge);
 
-  const arrival = trip.locations.find((l): l is Transit => isTransit(l) && l.arriveAt != null) ?? null;
-  const departure = trip.locations.find((l): l is Transit => isTransit(l) && l.departAt != null) ?? null;
+  const arrival =
+    trip.locations.find(
+      (l): l is Transit => isTransit(l) && l.arriveAt != null,
+    ) ?? null;
+  const departure =
+    trip.locations.find(
+      (l): l is Transit => isTransit(l) && l.departAt != null,
+    ) ?? null;
 
   // Excluded activities aren't offered — an edge, like a lodging booking, promotes a place *into*
   // active use (ADR-0015). A Location already holding the *other* edge is still a legitimate
@@ -162,7 +186,9 @@ export function TransitSection({ trip }: { trip: TripWithDetails }) {
         time={timeOf(arrival?.arriveAt ?? null)}
         candidates={arrivalCandidates}
         onAssign={(id) => saveTransitEdge(id, "arrival", "")}
-        onCommitTime={(time) => arrival && saveTransitEdge(arrival.id, "arrival", time)}
+        onCommitTime={(time) =>
+          arrival && saveTransitEdge(arrival.id, "arrival", time)
+        }
         onClear={() => arrival && saveTransitEdge(arrival.id, "arrival", null)}
       />
       <EdgeRow
@@ -173,8 +199,12 @@ export function TransitSection({ trip }: { trip: TripWithDetails }) {
         time={timeOf(departure?.departAt ?? null)}
         candidates={departureCandidates}
         onAssign={(id) => saveTransitEdge(id, "departure", "")}
-        onCommitTime={(time) => departure && saveTransitEdge(departure.id, "departure", time)}
-        onClear={() => departure && saveTransitEdge(departure.id, "departure", null)}
+        onCommitTime={(time) =>
+          departure && saveTransitEdge(departure.id, "departure", time)
+        }
+        onClear={() =>
+          departure && saveTransitEdge(departure.id, "departure", null)
+        }
       />
     </div>
   );

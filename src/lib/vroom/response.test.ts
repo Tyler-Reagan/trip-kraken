@@ -8,7 +8,12 @@ import { parseVroomSolution } from "./response";
 import type { LocationInput } from "@/lib/solver";
 import type { VroomSolution } from "./wire";
 
-const loc = (id: string): LocationInput => ({ id, lat: 0, lng: 0, kind: "activity" });
+const loc = (id: string): LocationInput => ({
+  id,
+  lat: 0,
+  lng: 0,
+  kind: "activity",
+});
 const matrixPoints: LocationInput[] = [loc("a1"), loc("a2"), loc("lodge")];
 
 // ── routes → days: job steps in order become locationIds; start/end steps are not Placements ──
@@ -20,8 +25,20 @@ const matrixPoints: LocationInput[] = [loc("a1"), loc("a2"), loc("lodge")];
         vehicle: 1,
         steps: [
           { type: "start", location_index: 2 },
-          { type: "job", id: 0, location_index: 0, arrival: 1000, waiting_time: 0 },
-          { type: "job", id: 1, location_index: 1, arrival: 1200, waiting_time: 30 },
+          {
+            type: "job",
+            id: 0,
+            location_index: 0,
+            arrival: 1000,
+            waiting_time: 0,
+          },
+          {
+            type: "job",
+            id: 1,
+            location_index: 1,
+            arrival: 1200,
+            waiting_time: 30,
+          },
           { type: "end", location_index: 2 },
         ],
       },
@@ -31,7 +48,11 @@ const matrixPoints: LocationInput[] = [loc("a1"), loc("a2"), loc("lodge")];
   const { days, unplaced } = parseVroomSolution(solution, matrixPoints);
   assert.equal(days.length, 1);
   assert.equal(days[0].dayNumber, 1, "route.vehicle becomes the Day number");
-  assert.deepEqual(days[0].locationIds, ["a1", "a2"], "only job steps become Placements, in order");
+  assert.deepEqual(
+    days[0].locationIds,
+    ["a1", "a2"],
+    "only job steps become Placements, in order",
+  );
   assert.deepEqual(days[0].timing, [
     { arrival: 1000, waitingSeconds: 0 },
     { arrival: 1200, waitingSeconds: 30 },

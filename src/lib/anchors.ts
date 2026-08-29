@@ -19,17 +19,30 @@ export function anchorsOnDate(input: {
   arrivalId: string | null;
   departureId: string | null;
 }): { startId: string | null; endId: string | null } {
-  const { dayNumber, numDays, wokeLodgingId, sleepLodgingId, arrivalId, departureId } = input;
+  const {
+    dayNumber,
+    numDays,
+    wokeLodgingId,
+    sleepLodgingId,
+    arrivalId,
+    departureId,
+  } = input;
 
   // Day 1 starts at the arrival when one is designated — filling a slot that is otherwise always
   // empty, since no Lodging night covers "the night before day 1".
-  const startId = dayNumber === 1 && arrivalId != null ? arrivalId : wokeLodgingId;
+  const startId =
+    dayNumber === 1 && arrivalId != null ? arrivalId : wokeLodgingId;
 
   // The last Day ends at the departure when one is designated. Otherwise, the pre-existing
   // travel-day condition: an end anchor only when the Lodging you sleep at differs from the one
   // you woke at (mid-trip nights when they match produce no end anchor at all).
   const travelled = sleepLodgingId != null && sleepLodgingId !== wokeLodgingId;
-  const endId = dayNumber === numDays && departureId != null ? departureId : travelled ? sleepLodgingId : null;
+  const endId =
+    dayNumber === numDays && departureId != null
+      ? departureId
+      : travelled
+        ? sleepLodgingId
+        : null;
 
   return { startId, endId };
 }

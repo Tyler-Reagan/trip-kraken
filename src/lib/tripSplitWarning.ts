@@ -25,7 +25,9 @@ export interface UncoveredMetro {
  * hotel booked in each city is not a problem, and warning about it would be noise (#110's
  * suppression criterion).
  */
-export function detectUncoveredSplit(trip: TripWithDetails): UncoveredMetro[] | null {
+export function detectUncoveredSplit(
+  trip: TripWithDetails,
+): UncoveredMetro[] | null {
   const activities = trip.locations.filter((l) => isActivity(l) && !l.excluded);
   const lodgings = trip.locations.filter(isLodging);
   const clusters = clusterByMetro(activities, lodgings);
@@ -34,5 +36,8 @@ export function detectUncoveredSplit(trip: TripWithDetails): UncoveredMetro[] | 
   const uncovered = clusters.filter((c) => c.lodgings.length === 0);
   if (uncovered.length === 0) return null;
 
-  return uncovered.map((c) => ({ label: metroLabel(c), activityCount: c.activities.length }));
+  return uncovered.map((c) => ({
+    label: metroLabel(c),
+    activityCount: c.activities.length,
+  }));
 }

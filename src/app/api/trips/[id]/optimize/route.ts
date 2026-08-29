@@ -9,17 +9,20 @@ import { optimizeTrip } from "@/lib/optimize";
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: tripId } = await params;
-  if (!(await tripExists(tripId))) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+  if (!(await tripExists(tripId)))
+    return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
   const body = await req.json().catch(() => ({}));
   const { dayBudgetHours } = body ?? {};
 
   try {
     const { trip, unplaced, warnings } = await optimizeTrip(tripId, {
-      ...(typeof dayBudgetHours === "number" && dayBudgetHours > 0 ? { dayBudgetHours } : {}),
+      ...(typeof dayBudgetHours === "number" && dayBudgetHours > 0
+        ? { dayBudgetHours }
+        : {}),
     });
     // unplaced (ADR-0023 §7) and warnings (#152) ride along on the response — #120's Unassigned
     // tray reads unplaced to show why an Activity has no Placement; OptimizeModal reads warnings.

@@ -8,7 +8,9 @@ import VisitDurationEditor from "@/components/VisitDurationEditor";
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Mon–Sun display order
 
-function timeStr(entry: { open: string; close: string | null } | undefined): string {
+function timeStr(
+  entry: { open: string; close: string | null } | undefined,
+): string {
   if (!entry) return "Closed";
   if (entry.open === "00:00" && entry.close === "23:59") return "Open 24h";
   return `${entry.open}–${entry.close ?? "?"}`;
@@ -16,9 +18,12 @@ function timeStr(entry: { open: string; close: string | null } | undefined): str
 
 /** Collapse consecutive days with identical hours into ranges like "Mon–Wed". */
 function groupHours(
-  hoursJson: Record<string, { open: string; close: string | null }>
+  hoursJson: Record<string, { open: string; close: string | null }>,
 ): Array<{ label: string; hours: string }> {
-  const days = DAY_ORDER.map((d) => ({ day: d, hours: timeStr(hoursJson[String(d)]) }));
+  const days = DAY_ORDER.map((d) => ({
+    day: d,
+    hours: timeStr(hoursJson[String(d)]),
+  }));
 
   const groups: Array<{ label: string; hours: string }> = [];
   let i = 0;
@@ -50,11 +55,16 @@ function HoursDisplay({ loc }: { loc: Location }) {
       </div>
     );
   }
-  if (!loc.openTime && !loc.closeTime) return <p className="text-xs">No hours set</p>;
-  if (loc.openTime === "00:00" && loc.closeTime === "23:59") return <p className="text-xs">Always open</p>;
-  return <p className="text-xs">{loc.openTime ?? "?"}–{loc.closeTime ?? "?"}</p>;
+  if (!loc.openTime && !loc.closeTime)
+    return <p className="text-xs">No hours set</p>;
+  if (loc.openTime === "00:00" && loc.closeTime === "23:59")
+    return <p className="text-xs">Always open</p>;
+  return (
+    <p className="text-xs">
+      {loc.openTime ?? "?"}–{loc.closeTime ?? "?"}
+    </p>
+  );
 }
-
 
 export default function LocationInspector() {
   const inspectedLocationId = useTripStore((s) => s.inspectedLocationId);
@@ -97,7 +107,9 @@ export function LocationInspectorContent({ loc }: { loc: Location }) {
           {loc.rating !== null && (
             <>
               <Star className="w-4 h-4 text-amber-500 fill-current" />
-              <span className="font-medium text-ink">{loc.rating.toFixed(1)}</span>
+              <span className="font-medium text-ink">
+                {loc.rating.toFixed(1)}
+              </span>
             </>
           )}
           {loc.reviewCount !== null && (
@@ -146,7 +158,9 @@ export function LocationInspectorContent({ loc }: { loc: Location }) {
         <p className="text-xs text-faint animate-pulse">Fetching details…</p>
       )}
       {loc.enrichmentStatus === "failed" && (
-        <p className="text-xs text-amber-500 dark:text-amber-400">Details unavailable</p>
+        <p className="text-xs text-amber-500 dark:text-amber-400">
+          Details unavailable
+        </p>
       )}
     </>
   );

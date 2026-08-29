@@ -10,7 +10,10 @@ export default function HelpButton() {
   useEffect(() => {
     if (!open) return;
     function handleClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     }
@@ -29,17 +32,23 @@ export default function HelpButton() {
   }, [open]);
 
   return (
-    <div ref={containerRef} className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+    <div
+      ref={containerRef}
+      className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3"
+    >
       {/* Floating instructions panel */}
       <div
         className={`w-80 card p-5 space-y-3 shadow-xl transition-all duration-200
-          ${open
-            ? "opacity-100 translate-y-0 pointer-events-auto"
-            : "opacity-0 translate-y-2 pointer-events-none"
+          ${
+            open
+              ? "opacity-100 translate-y-0 pointer-events-auto"
+              : "opacity-0 translate-y-2 pointer-events-none"
           }`}
         aria-hidden={!open}
       >
-        <h3 className="font-semibold text-ink text-sm">How to get your map link</h3>
+        <h3 className="font-semibold text-ink text-sm">
+          How to get your map link
+        </h3>
         <ol className="list-decimal list-inside space-y-2 text-sm text-sub">
           <li>
             Go to{" "}
@@ -56,13 +65,17 @@ export default function HelpButton() {
           </li>
           <li>Add placemarks for all the locations you want to visit.</li>
           <li>
-            Click <strong className="text-ink">Share</strong> and set
-            access to <strong className="text-ink">Anyone with the link can view</strong>.
+            Click <strong className="text-ink">Share</strong> and set access to{" "}
+            <strong className="text-ink">Anyone with the link can view</strong>.
           </li>
-          <li>Copy the URL from your browser&apos;s address bar and paste it in the import field.</li>
+          <li>
+            Copy the URL from your browser&apos;s address bar and paste it in
+            the import field.
+          </li>
         </ol>
         <p className="text-xs text-faint">
-          The map must be public for import to work. Coordinates are read directly from the map — no extra steps needed.
+          The map must be public for import to work. Coordinates are read
+          directly from the map — no extra steps needed.
         </p>
       </div>
 

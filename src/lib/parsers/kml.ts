@@ -25,8 +25,7 @@ export function parseKml(text: string): KmlPlace[] {
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "@_",
-    isArray: (name) =>
-      ["Placemark", "Folder", "Document"].includes(name),
+    isArray: (name) => ["Placemark", "Folder", "Document"].includes(name),
   });
 
   let parsed: unknown;
@@ -76,12 +75,9 @@ function extractPlacemarks(node: unknown): KmlPlace[] {
   return results;
 }
 
-function placemarkToPlace(
-  pm: Record<string, unknown>
-): KmlPlace | null {
+function placemarkToPlace(pm: Record<string, unknown>): KmlPlace | null {
   // Name
-  const name =
-    typeof pm["name"] === "string" ? pm["name"].trim() : null;
+  const name = typeof pm["name"] === "string" ? pm["name"].trim() : null;
   if (!name) return null;
 
   // Coordinates live in <Point><coordinates>lng,lat,alt</coordinates></Point>
@@ -111,9 +107,7 @@ function placemarkToPlace(
  * Multiple coordinate pairs are space-separated (for LineString/Polygon),
  * but a Point always has exactly one.
  */
-function parseKmlCoordinates(
-  raw: string
-): { lat: number; lng: number } | null {
+function parseKmlCoordinates(raw: string): { lat: number; lng: number } | null {
   // Take the first coordinate tuple (Points have only one)
   const first = raw.split(/\s+/)[0];
   const parts = first.split(",").map(Number);

@@ -22,13 +22,13 @@ export async function fetchKml(mid: string): Promise<string> {
   const res = await fetch(kmlUrl);
   if (!res.ok) {
     throw new Error(
-      `Google My Maps returned ${res.status}. Make sure the map is set to public ("Anyone with the link can view").`
+      `Google My Maps returned ${res.status}. Make sure the map is set to public ("Anyone with the link can view").`,
     );
   }
   const text = await res.text();
   if (!text.trim().startsWith("<")) {
     throw new Error(
-      "Unexpected response from Google My Maps. The map may not be set to public."
+      "Unexpected response from Google My Maps. The map may not be set to public.",
     );
   }
   return text;

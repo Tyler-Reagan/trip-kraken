@@ -9,7 +9,12 @@ import type { Path, PathEndpoint, WalkingPath, RailPath } from "@/types/path";
 
 const TRIP_ID = "trip-1";
 
-const point = (lat: number, lng: number, stationName?: string, locationId?: string): PathEndpoint => ({
+const point = (
+  lat: number,
+  lng: number,
+  stationName?: string,
+  locationId?: string,
+): PathEndpoint => ({
   lat,
   lng,
   ...(stationName !== undefined ? { stationName } : {}),
@@ -23,7 +28,11 @@ const walk = (from: PathEndpoint, to: PathEndpoint): WalkingPath => ({
   travelCost: makeTravelCost(100, 60, "straightLine", "osm-japan"),
 });
 
-const rail = (from: PathEndpoint, to: PathEndpoint, lineName = "Test Line"): RailPath => ({
+const rail = (
+  from: PathEndpoint,
+  to: PathEndpoint,
+  lineName = "Test Line",
+): RailPath => ({
   kind: "rail",
   from,
   to,
@@ -38,7 +47,11 @@ const rail = (from: PathEndpoint, to: PathEndpoint, lineName = "Test Line"): Rai
   const chain: Path[] = [walk(hotel, activity)];
 
   const surfaced = surfacedTransitOf(chain, TRIP_ID);
-  assert.equal(surfaced.length, 0, "a walk-only Journey with no station surfaces nothing");
+  assert.equal(
+    surfaced.length,
+    0,
+    "a walk-only Journey with no station surfaces nothing",
+  );
 }
 
 // ── One rail leg, no transfer: boarding and alighting stations both surface ───────────────────
@@ -47,18 +60,34 @@ const rail = (from: PathEndpoint, to: PathEndpoint, lineName = "Test Line"): Rai
   const shibuya = point(35.1, 139.1, "Shibuya");
   const yoyogi = point(35.2, 139.2, "Yoyogi");
   const meijiJingu = point(35.3, 139.3, undefined, "meiji-jingu");
-  const chain: Path[] = [walk(hotel, shibuya), rail(shibuya, yoyogi), walk(yoyogi, meijiJingu)];
+  const chain: Path[] = [
+    walk(hotel, shibuya),
+    rail(shibuya, yoyogi),
+    walk(yoyogi, meijiJingu),
+  ];
 
   const surfaced = surfacedTransitOf(chain, TRIP_ID);
   const names = surfaced.map((t) => t.name).sort();
-  assert.deepEqual(names, ["Shibuya", "Yoyogi"], "boarding and alighting stations surface, journey ends do not");
+  assert.deepEqual(
+    names,
+    ["Shibuya", "Yoyogi"],
+    "boarding and alighting stations surface, journey ends do not",
+  );
   for (const t of surfaced) {
     assert.equal(t.kind, "transit", "surfaced entries are kind: transit");
     assert.equal(t.authored, false, "surfaced entries are never authored");
     assert.equal(t.tripId, TRIP_ID);
-    assert.equal(t.enrichmentStatus, "done", "sentinel enrichment status — never actually enriched");
+    assert.equal(
+      t.enrichmentStatus,
+      "done",
+      "sentinel enrichment status — never actually enriched",
+    );
     assert.equal(t.arriveAt, null);
-    assert.equal(t.placeId, null, "no place metadata for a station never searched");
+    assert.equal(
+      t.placeId,
+      null,
+      "no place metadata for a station never searched",
+    );
   }
 }
 
@@ -70,7 +99,11 @@ const rail = (from: PathEndpoint, to: PathEndpoint, lineName = "Test Line"): Rai
   const chain: Path[] = [rail(tokyo, shinOsaka, "Shinkansen")];
 
   const surfaced = surfacedTransitOf(chain, TRIP_ID);
-  assert.equal(surfaced.length, 0, "a single-Path chain's own from/to are the journey's ends, excluded by position");
+  assert.equal(
+    surfaced.length,
+    0,
+    "a single-Path chain's own from/to are the journey's ends, excluded by position",
+  );
 }
 
 // ── A transfer with a real walk between two different platforms: the transfer's own cluster ───
@@ -95,9 +128,21 @@ const rail = (from: PathEndpoint, to: PathEndpoint, lineName = "Test Line"): Rai
 
   const surfaced = surfacedTransitOf(chain, TRIP_ID);
   const byCoord = new Map(surfaced.map((t) => [`${t.lat},${t.lng}`, t.name]));
-  assert.equal(surfaced.length, 3, "Akihabara-side, Iwamotocho-side, and Asakusa all surface");
-  assert.equal(byCoord.get("35.1,139.1"), "Akihabara Iwamotocho", "cluster name wins on the boarding side of the transfer");
-  assert.equal(byCoord.get("35.15,139.15"), "Akihabara Iwamotocho", "cluster name wins on the alighting side of the transfer");
+  assert.equal(
+    surfaced.length,
+    3,
+    "Akihabara-side, Iwamotocho-side, and Asakusa all surface",
+  );
+  assert.equal(
+    byCoord.get("35.1,139.1"),
+    "Akihabara Iwamotocho",
+    "cluster name wins on the boarding side of the transfer",
+  );
+  assert.equal(
+    byCoord.get("35.15,139.15"),
+    "Akihabara Iwamotocho",
+    "cluster name wins on the alighting side of the transfer",
+  );
   assert.equal(byCoord.get("35.2,139.2"), "Asakusa");
 }
 
@@ -118,9 +163,21 @@ const rail = (from: PathEndpoint, to: PathEndpoint, lineName = "Test Line"): Rai
   ];
 
   const surfaced = surfacedTransitOf(chain, TRIP_ID);
-  assert.equal(surfaced.length, 1, "one physical point surfaces once, not twice, despite two names");
-  assert.equal(surfaced[0].name, "Yoyogi (transfer)", "the transfer walk's cluster name wins the collision");
-  assert.equal(surfaced[0].id, surfaced[0].id, "id is present and deterministic");
+  assert.equal(
+    surfaced.length,
+    1,
+    "one physical point surfaces once, not twice, despite two names",
+  );
+  assert.equal(
+    surfaced[0].name,
+    "Yoyogi (transfer)",
+    "the transfer walk's cluster name wins the collision",
+  );
+  assert.equal(
+    surfaced[0].id,
+    surfaced[0].id,
+    "id is present and deterministic",
+  );
 }
 
 // ── Two Journeys through the same physical station produce the same id ────────────────────────
@@ -129,9 +186,19 @@ const rail = (from: PathEndpoint, to: PathEndpoint, lineName = "Test Line"): Rai
   const shibuya = point(35.5, 139.5, "Shibuya");
   const b = point(35.9, 139.9, undefined, "b");
 
-  const first = surfacedTransitOf([walk(a, shibuya), walk(shibuya, b)], TRIP_ID);
-  const second = surfacedTransitOf([walk(a, shibuya), rail(shibuya, b)], TRIP_ID);
-  assert.equal(first[0].id, second[0].id, "the same coordinate always produces the same id");
+  const first = surfacedTransitOf(
+    [walk(a, shibuya), walk(shibuya, b)],
+    TRIP_ID,
+  );
+  const second = surfacedTransitOf(
+    [walk(a, shibuya), rail(shibuya, b)],
+    TRIP_ID,
+  );
+  assert.equal(
+    first[0].id,
+    second[0].id,
+    "the same coordinate always produces the same id",
+  );
 }
 
 console.log("✓ surfacedTransit.test.ts passed");

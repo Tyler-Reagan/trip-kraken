@@ -72,7 +72,10 @@ export function decodeLineString(buffer: Buffer): GeoJSON.LineString {
     let result = 0;
     let shift = 0;
     for (;;) {
-      if (offset >= buffer.length) throw new Error("geometryCodec: varint runs past the end of the buffer");
+      if (offset >= buffer.length)
+        throw new Error(
+          "geometryCodec: varint runs past the end of the buffer",
+        );
       const byte = buffer[offset++];
       result |= (byte & 0x7f) << shift;
       if ((byte & 0x80) === 0) return result >>> 0;
