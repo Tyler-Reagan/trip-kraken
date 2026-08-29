@@ -31,6 +31,7 @@ import {
 import { dayDropId } from "./DayNavigator";
 import { useJourneyGap } from "@/lib/usePathGeometry";
 import { dayChainEntries } from "@/lib/pathPairs";
+import { anchorSubtext } from "@/lib/anchors";
 import PathShiftRows from "./PathShiftRows";
 
 interface Props {
@@ -286,15 +287,7 @@ function AnchorRow({
   );
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
   const isEdge = loc.kind === "transit";
-  const subtext = isEdge
-    ? role === "start"
-      ? "Arrive"
-      : "Depart"
-    : role === "checkin"
-      ? "Check-in · drop bags"
-      : role === "start"
-        ? "Start of day"
-        : "Overnight";
+  const subtext = anchorSubtext(role, loc);
   const badge = isEdge
     ? role === "start"
       ? "Arrival"

@@ -4,7 +4,8 @@
  */
 
 import assert from "node:assert/strict";
-import { anchorsOnDate } from "./anchors";
+import { anchorsOnDate, anchorSubtext } from "./anchors";
+import type { Location } from "@/types";
 
 const base = {
   wokeLodgingId: null,
@@ -155,6 +156,23 @@ const base = {
     "airport",
     "and still ends at the departure — the round-trip-through-one-airport case",
   );
+}
+
+// ── anchorSubtext: one wording, shared by DayCard's sidebar and MapView's StopPanel ──
+
+{
+  const lodging = { kind: "lodging" } as Location;
+  const transit = { kind: "transit" } as Location;
+
+  assert.equal(
+    anchorSubtext("checkin", lodging),
+    "Check-in · drop bags",
+    "checkin reads the same regardless of kind",
+  );
+  assert.equal(anchorSubtext("start", transit), "Arrive");
+  assert.equal(anchorSubtext("end", transit), "Depart");
+  assert.equal(anchorSubtext("start", lodging), "Start of day");
+  assert.equal(anchorSubtext("end", lodging), "Overnight");
 }
 
 console.log("✓ anchors.test.ts passed");

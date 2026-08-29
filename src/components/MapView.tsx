@@ -44,6 +44,7 @@ import {
 } from "@/lib/pathPairs";
 import { haversineMeters } from "@/lib/geo";
 import { useJourneyGap, usePathGeometryContext } from "@/lib/usePathGeometry";
+import { anchorSubtext } from "@/lib/anchors";
 import PathShiftRows from "./PathShiftRows";
 
 // #145: CARTO's keyless basemap endpoint is outside its published license (enterprise/grant-only,
@@ -944,7 +945,7 @@ function StopPanel({
             ) : (
               <PanelAnchorRow
                 loc={entry.location}
-                label={panelAnchorLabel(entry.role, entry.location)}
+                label={anchorSubtext(entry.role, entry.location)}
                 onFocus={onFocus}
               />
             )}
@@ -1056,19 +1057,6 @@ function PanelStopRow({
       )}
     </button>
   );
-}
-
-/** The subtext for one anchor row, matching `DayCard`'s `AnchorRow` convention (ADR-0036) —
- *  "checkin" has no prior precedent in this panel, since it never rendered a check-in waypoint row
- *  at all until this change. */
-function panelAnchorLabel(
-  role: "start" | "checkin" | "end",
-  loc: Location,
-): string {
-  if (role === "checkin") return "Check-in · drop bags";
-  const isEdge = loc.kind === "transit";
-  if (role === "start") return isEdge ? "Arrived here" : "Woke here";
-  return isEdge ? "Departs from here" : "Overnight";
 }
 
 /** An Anchor bookend — a Lodging (the surviving "gray dot = lodging" key from the old legend) or,

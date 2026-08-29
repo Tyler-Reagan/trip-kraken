@@ -11,6 +11,24 @@
  * `arriveAt`, one carries `departAt` — so there is no earliest/latest tie-break to get wrong, only
  * a question of which day the edge applies to.
  */
+
+import type { Location } from "@/types";
+
+/** How an Anchor row is labeled for display — `DayCard`'s sidebar and `MapView`'s `StopPanel` both
+ *  render one row per `dayChainEntries` anchor entry (ADR-0036) and used to word it independently,
+ *  landing on different phrasing for the same fact ("Arrived here" vs "Arrive"). One wording now:
+ *  a Lodging you woke at or return to overnight, or the Trip's designated arrival/departure edge
+ *  (ADR-0028) reads by whichever of the two it is, never both. */
+export function anchorSubtext(
+  role: "start" | "checkin" | "end",
+  loc: Location,
+): string {
+  if (role === "checkin") return "Check-in · drop bags";
+  const isEdge = loc.kind === "transit";
+  if (role === "start") return isEdge ? "Arrive" : "Start of day";
+  return isEdge ? "Depart" : "Overnight";
+}
+
 export function anchorsOnDate(input: {
   dayNumber: number;
   numDays: number;
