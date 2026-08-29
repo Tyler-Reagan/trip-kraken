@@ -17,6 +17,6 @@ export async function PATCH(
     return NextResponse.json({ error: "date (YYYY-MM-DD) is required" }, { status: 400 });
   }
 
-  const trip = setDayLabel(tripId, date, typeof label === "string" ? label : null);
+  const trip = await setDayLabel(tripId, date, typeof label === "string" ? label : null);
   return NextResponse.json(trip);
 }

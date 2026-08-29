@@ -1,0 +1,10 @@
+# Multi-GB local artifacts that must never be uploaded in a `vercel deploy` — these are gigabytes
+# larger than anything Vercel's build needs and aren't even git-tracked (.gitignore already
+# excludes them; the CLI's local-file upload doesn't consult .gitignore, so this exists too).
+db/osrm/
+osrm-graphs-*.tar.zst
+node_modules/
+.next/
+db/dev.db
+db/dev.db-wal
+db/dev.db-shm

@@ -19,11 +19,11 @@ export async function POST(
 
   try {
     if (locationId) {
-      const trip = addPlacement(tripId, locationId, date, typeof order === "number" ? order : undefined);
+      const trip = await addPlacement(tripId, locationId, date, typeof order === "number" ? order : undefined);
       return NextResponse.json(trip, { status: 201 });
     }
     if (placementId && typeof order === "number") {
-      const trip = movePlacement(tripId, placementId, date, order);
+      const trip = await movePlacement(tripId, placementId, date, order);
       return NextResponse.json(trip);
     }
     return NextResponse.json(

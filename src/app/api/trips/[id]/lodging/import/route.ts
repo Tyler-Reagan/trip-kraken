@@ -19,7 +19,7 @@ export async function POST(
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
 
   try {
-    const trip = importBookingLodging(tripId, parsed.booking);
+    const trip = await importBookingLodging(tripId, parsed.booking);
     return NextResponse.json(trip);
   } catch (err) {
     if (err instanceof LodgingValidationError) {

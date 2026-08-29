@@ -6,7 +6,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const trip = getTripWithDetails(id);
+  const trip = await getTripWithDetails(id);
   if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   return NextResponse.json(trip);
 }
@@ -19,7 +19,7 @@ export async function PATCH(
   const body = await req.json();
   const { name, startDate, endDate, dayLabels, roadProfile, transitCaveatDismissed, hasJrPass } = body;
 
-  const trip = updateTrip(id, {
+  const trip = await updateTrip(id, {
     ...(name !== undefined ? { name } : {}),
     ...(startDate !== undefined ? { startDate } : {}),
     ...(endDate !== undefined ? { endDate } : {}),
@@ -36,6 +36,6 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  deleteTrip(id);
+  await deleteTrip(id);
   return new NextResponse(null, { status: 204 });
 }

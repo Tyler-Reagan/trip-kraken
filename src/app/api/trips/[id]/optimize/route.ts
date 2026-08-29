@@ -12,7 +12,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: tripId } = await params;
-  if (!tripExists(tripId)) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+  if (!(await tripExists(tripId))) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
   const body = await req.json().catch(() => ({}));
   const { dayBudgetHours } = body ?? {};
