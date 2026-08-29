@@ -8,6 +8,7 @@
 
 import { anchorsOnDate } from "@/lib/anchors";
 import type { RoadProfile } from "@/types/path";
+import type { ActivityCategory } from "@/lib/activityCategory";
 
 /** A calendar date "YYYY-MM-DD". A plain string, never a `Date` — date-only facts must not drift
  *  across timezones, and ISO date strings sort and compare chronologically as-is. */
@@ -34,6 +35,9 @@ type LocationBase = {
   rating: number | null;
   reviewCount: number | null;
   categories: string[] | null; // Places types[], enrichment metadata — never the authority for kind
+  // Small domain-facing vocabulary derived from `categories` (issue #153, `activityCategory.ts`) —
+  // what a VROOM capacity dimension keys off. Null means "not yet derived", not "other".
+  category: ActivityCategory | null;
   visitDuration: number | null; // estimated visit time in minutes
   openTime: string | null; // "HH:MM" 24-hour — Monday representative, used by optimizer
   closeTime: string | null;

@@ -34,6 +34,7 @@
  */
 
 import { addDaysIso, type IsoDate } from "@/types";
+import type { ActivityCategory } from "@/lib/activityCategory";
 import type { PathKind, RoadProfile, TravelCost } from "@/types/path";
 import { hasValidCoords } from "@/lib/geo";
 import { buildTravelMatrix } from "@/lib/travelCostRegistry";
@@ -53,6 +54,9 @@ export interface LocationInput {
   lat: number;
   lng: number;
   visitDuration?: number;
+  /** ADR-0023 §4, issue #153 — the small domain-facing vocabulary a VROOM capacity dimension keys
+   * off. Absent for a non-activity kind or a not-yet-derived Activity. */
+  category?: ActivityCategory;
   openTime?: string;
   closeTime?: string;
   hoursJson?: Record<string, { open: string; close: string | null }> | null;
@@ -98,13 +102,14 @@ export interface DayPlan {
  *
  * Causes are ours, not VROOM's (#155: "mapped to domain language, not passed through raw"):
  * - `day-full`       — the Day already carries its maximum Placements
+ * - `category-full`  — the Day already carries its maximum of this Activity's category (#153)
  * - `out-of-reach`   — no Day serving this Location's area had room for it
  * - `after-closing`  — it would arrive `seconds` after the Location stops admitting visitors
  * - `before-opening` — it would have to be visited `seconds` before the Location opens
  * - `day-too-short`  — the Day would need `seconds` more hours than it has to absorb it
  */
 export interface UnplacedDiagnosis {
-  cause: "day-full" | "out-of-reach" | "after-closing" | "before-opening" | "day-too-short";
+  cause: "day-full" | "category-full" | "out-of-reach" | "after-closing" | "before-opening" | "day-too-short";
   /** Seconds past the limit. Only the two time-based causes carry one — VROOM reports `skills`
    * and `max_tasks` as a bare cause with no magnitude. */
   seconds?: number;

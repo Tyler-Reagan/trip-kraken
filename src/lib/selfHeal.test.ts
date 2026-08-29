@@ -21,6 +21,7 @@ const activity = (name: string, lat: number | null = 35 + n, lng: number | null 
   rating: null,
   reviewCount: null,
   categories: null,
+  category: null,
   visitDuration: null,
   openTime: null,
   closeTime: null,

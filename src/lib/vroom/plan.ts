@@ -196,6 +196,14 @@ export function parseVroomViolations(solution: VroomPlanSolution, round: PlanPro
       continue;
     }
 
+    // A `load` violation (#153's capacity axis) is a fact about the whole Day, not the probe's own
+    // step — verified live against the running container, and why it's read off `route.violations`
+    // rather than `ownStep`, unlike `skills`/`max_tasks` above.
+    if (route.violations?.some((v) => v.cause === "load")) {
+      found.set(probe.jobId, { cause: "category-full", dayNumber: route.vehicle });
+      continue;
+    }
+
     const spillAt = (type: "start" | "end", cause: string) =>
       route.steps.find((s) => s.type === type)?.violations?.find((v) => v.cause === cause)?.duration ?? 0;
     const shortfall = spillAt("start", "lead_time") + spillAt("end", "delay");
@@ -205,9 +213,11 @@ export function parseVroomViolations(solution: VroomPlanSolution, round: PlanPro
   return found;
 }
 
-/** VROOM's step-level causes, narrowed to the ones our own request can actually provoke. We set
- * `skills`, `max_tasks` and `time_windows`; we set no capacity, no precedence, no breaks and no
- * travel caps, so their causes are unreachable and deliberately unmapped rather than guessed at. */
+/** VROOM's job-step-level causes, narrowed to the ones our own request can actually provoke. We
+ * set `skills`, `max_tasks` and `time_windows` on jobs/vehicles; we set no precedence, no breaks
+ * and no travel caps, so their causes are unreachable and deliberately unmapped rather than
+ * guessed at. `load` (#153's capacity axis) is real but never appears here — see the
+ * `route.violations` check above, not this function. */
 function ownCause(cause: string): UnplacedDiagnosis["cause"] | null {
   switch (cause) {
     case "delay":
@@ -231,6 +241,8 @@ export function diagnosisReason(d: UnplacedDiagnosis): string {
   switch (d.cause) {
     case "day-full":
       return `Every day that reaches this is already full — day ${d.dayNumber} has no room left.`;
+    case "category-full":
+      return `Day ${d.dayNumber} already has as many activities like this as it can take.`;
     case "out-of-reach":
       return "No day of the trip is based near enough to reach this.";
     case "after-closing":

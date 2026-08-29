@@ -74,6 +74,7 @@ export function surfacedTransitOf(paths: Path[], tripId: string): Transit[] {
     rating: null,
     reviewCount: null,
     categories: null,
+    category: null,
     visitDuration: null,
     openTime: null,
     closeTime: null,

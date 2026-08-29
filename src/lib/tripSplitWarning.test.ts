@@ -21,6 +21,7 @@ const activity = (name: string, lat: number, lng: number, extra: Partial<Activit
   rating: null,
   reviewCount: null,
   categories: null,
+  category: null,
   visitDuration: null,
   openTime: null,
   closeTime: null,

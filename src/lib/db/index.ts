@@ -8,6 +8,7 @@ import type { ParsedBooking } from "@/lib/bookingImport";
 import type { RoadProfile } from "@/types/path";
 import { reorderPlacements, insertPlacement } from "@/lib/placementOrdering";
 import { dedupeName } from "@/lib/dedupeName";
+import { deriveActivityCategory } from "@/lib/activityCategory";
 
 /**
  * Repository layer (ADR-0008, reshaped by ADR-0015). The schema lives in ./schema.ts and is applied
@@ -729,6 +730,7 @@ export function createLocation(tripId: string, data: NewLocationInput): Location
       rating: data.rating ?? null,
       reviewCount: data.reviewCount ?? null,
       categories: data.categories ?? null,
+      category: deriveActivityCategory(data.categories) ?? null,
       phone: data.phone ?? null,
       openTime: data.openTime ?? null,
       closeTime: data.closeTime ?? null,
@@ -842,7 +844,10 @@ export function applyEnrichment(locationId: string, e: Partial<LocationEnrichmen
   if (e.address != null) set.address = e.address;
   if (e.rating != null) set.rating = e.rating;
   if (e.reviewCount != null) set.reviewCount = e.reviewCount;
-  if (e.categories != null) set.categories = e.categories;
+  if (e.categories != null) {
+    set.categories = e.categories;
+    set.category = deriveActivityCategory(e.categories) ?? null;
+  }
   if (e.phone != null) set.phone = e.phone;
   if (e.openTime != null) set.openTime = e.openTime;
   if (e.closeTime != null) set.closeTime = e.closeTime;

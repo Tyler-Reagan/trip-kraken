@@ -45,6 +45,7 @@ function toInput(l: Location): LocationInput {
     kind: l.kind,
     enrichmentStatus: l.enrichmentStatus,
     ...(l.visitDuration != null ? { visitDuration: l.visitDuration } : {}),
+    ...(l.category != null ? { category: l.category } : {}),
     ...(l.openTime != null ? { openTime: l.openTime } : {}),
     ...(l.closeTime != null ? { closeTime: l.closeTime } : {}),
     ...(l.hoursJson != null ? { hoursJson: l.hoursJson } : {}),

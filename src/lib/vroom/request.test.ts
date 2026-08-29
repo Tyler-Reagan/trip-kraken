@@ -52,6 +52,33 @@ function vehicleById(req: VroomRequest, id: number) {
   for (const v of req.vehicles) assert.equal(v.max_tasks, undefined, "no per-day task cap is ever sent");
 }
 
+// ── Category capacity axis (ADR-0023 §4, #153): every vehicle carries the same cap, and a job's
+//    delivery is 1 for "food", 0 for every other category (including unset) ──
+{
+  const placeable = [
+    loc({ id: "a1", category: "food" }),
+    loc({ id: "a2", category: "sight" }),
+    loc({ id: "a3" }), // no category derived yet
+  ];
+  const matrixPoints = placeable;
+  const req = buildVroomRequest({
+    placeable,
+    stays: [],
+    matrixPoints,
+    matrix: fakeMatrix(3),
+    tripDates: [],
+    numDays: 2,
+    dayStartMins: 9 * 60,
+    dayBudgetMinutes: 480,
+    metroOf: new Map(),
+    lodgingMetros: new Map(),
+  });
+  for (const v of req.vehicles) assert.deepEqual(v.capacity, [3], "every day-vehicle carries the same generous cap");
+  assert.deepEqual(jobById(req, 0).delivery, [1], "a food Activity draws 1 from the axis");
+  assert.deepEqual(jobById(req, 1).delivery, [0], "a non-food Activity draws 0");
+  assert.deepEqual(jobById(req, 2).delivery, [0], "an Activity with no derived category draws 0, not undefined — VROOM requires every job's delivery arity to match capacity's");
+}
+
 // ── Per-day start_index/end_index, differing on a travel day; same-lodging days omit end_index ──
 {
   const a1 = loc({ id: "a1", lat: 35, lng: 139 });
