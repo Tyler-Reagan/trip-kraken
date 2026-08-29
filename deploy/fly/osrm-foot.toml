@@ -1,0 +1,26 @@
+# ADR-0037: osrm-foot on Fly.io, scale-to-zero — the walking mirror of osrm-car.toml. See that
+# file's header for the shared reasoning (published image, --mmap, volume-seeded graph).
+app = "trip-kraken-osrm-foot"
+primary_region = "sjc"
+
+[build]
+  image = "ghcr.io/project-osrm/osrm-backend:26.4.1-debian"
+
+[processes]
+  app = "osrm-routed --algorithm mld --mmap --max-table-size 1000 -p 5002 /data/road.osrm"
+
+[[mounts]]
+  source = "osrm_foot_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 5002
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"
