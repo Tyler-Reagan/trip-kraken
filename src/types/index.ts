@@ -183,6 +183,22 @@ export const rolesOf = (location: Location): LocationRole[] => {
   return roles;
 };
 
+/** The Trip's two edges (ADR-0028) — at most one Location carries `arriveAt`, one carries
+ *  `departAt`, by construction (a partial unique index backs it). Either may be the same
+ *  Location (a round trip through one airport), and either may be absent. */
+export const tripEdgesOf = (
+  trip: TripWithDetails,
+): { arrival: Transit | null; departure: Transit | null } => ({
+  arrival:
+    trip.locations.find(
+      (l): l is Transit => isTransit(l) && l.arriveAt != null,
+    ) ?? null,
+  departure:
+    trip.locations.find(
+      (l): l is Transit => isTransit(l) && l.departAt != null,
+    ) ?? null,
+});
+
 // ─── The Timeline projection (ADR-0015: day-presence is derived, never stored) ──
 
 /** A placed activity, joined to its Location for rendering. */
@@ -216,14 +232,7 @@ export type DerivedDay = {
 export function deriveTripPlanDays(trip: TripWithDetails): DerivedDay[] {
   const lodgings = trip.locations.filter(isLodging);
   const byId = new Map(trip.locations.map((l) => [l.id, l]));
-  const arrival =
-    trip.locations.find(
-      (l): l is Transit => isTransit(l) && l.arriveAt != null,
-    ) ?? null;
-  const departure =
-    trip.locations.find(
-      (l): l is Transit => isTransit(l) && l.departAt != null,
-    ) ?? null;
+  const { arrival, departure } = tripEdgesOf(trip);
   const numDays = numDaysOf(trip.startDate, trip.endDate);
   const resolveAnchor = (id: string | null): Lodging | Transit | null =>
     id != null
