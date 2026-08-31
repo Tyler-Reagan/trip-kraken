@@ -196,8 +196,11 @@ plan-mode requests and silently ignores them, which only a check like this one c
 
 ### 4. Set a site password
 
-The app is gated behind a single shared password (ADR-0037) — there are no user accounts. Add to
-`.env.local`:
+The app is gated behind a single shared password (ADR-0037) — there are no user accounts. The
+gate only applies on Vercel (`src/proxy.ts` checks `process.env.VERCEL`, set on every Vercel
+deployment and nowhere else) — `pnpm dev` and `pnpm start` on localhost skip it entirely, so
+`SITE_PASSWORD` is optional for local work. On Vercel, add it as a Preview+Production environment
+variable:
 
 ```env
 SITE_PASSWORD=choose_something_not_guessable

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { Star, X } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 import { isActivity, type Location } from "@/types";
@@ -7,6 +8,7 @@ import VisitDurationEditor from "@/components/VisitDurationEditor";
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Mon–Sun display order
+const NOTE_COMMIT_DEBOUNCE_MS = 600;
 
 function timeStr(
   entry: { open: string; close: string | null } | undefined,
@@ -39,6 +41,60 @@ function groupHours(
     i = j;
   }
   return groups;
+}
+
+/** Free-text notes (`loc.note`) — debounced on the same shape as {@link VisitDurationEditor}: this
+ *  mounts in both the Places panel and the itinerary's popover, so a pending edit must survive
+ *  whichever one closes first, hence the flush-on-unmount rather than a plain onBlur commit. */
+function NotesEditor({ loc }: { loc: Location }) {
+  const updateLocation = useTripStore((s) => s.updateLocation);
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? loc.note ?? "";
+
+  const locRef = useRef(loc);
+  locRef.current = loc;
+  const updateRef = useRef(updateLocation);
+  updateRef.current = updateLocation;
+  const pendingRef = useRef<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function writePending() {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    const next = pendingRef.current;
+    pendingRef.current = null;
+    if (next !== null && next !== (locRef.current.note ?? "")) {
+      updateRef.current(locRef.current.id, { note: next === "" ? null : next });
+    }
+  }
+  const writeRef = useRef(writePending);
+  writeRef.current = writePending;
+
+  useEffect(() => () => writeRef.current(), []);
+
+  function schedule(next: string) {
+    setDraft(next);
+    pendingRef.current = next;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      writeRef.current();
+      setDraft(null);
+    }, NOTE_COMMIT_DEBOUNCE_MS);
+  }
+
+  return (
+    <div className="text-xs text-sub space-y-0.5">
+      <p className="font-medium text-sub text-xs">Notes</p>
+      <textarea
+        value={value}
+        onChange={(e) => schedule(e.target.value)}
+        onBlur={() => writeRef.current()}
+        placeholder="Add a note…"
+        rows={3}
+        className="input text-xs w-full resize-none"
+      />
+    </div>
+  );
 }
 
 function HoursDisplay({ loc }: { loc: Location }) {
@@ -162,6 +218,9 @@ export function LocationInspectorContent({ loc }: { loc: Location }) {
           Details unavailable
         </p>
       )}
+
+      {/* Notes */}
+      <NotesEditor loc={loc} />
     </>
   );
 }

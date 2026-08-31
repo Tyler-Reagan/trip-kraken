@@ -52,7 +52,7 @@ instant you merge, with no additional step.
 | **Env vars come from** | `.env.local` (hand-maintained, gitignored)               | Vercel dashboard, "Preview" scope     | Vercel dashboard, "Production" scope |
 | **VROOM/OSRM**         | `docker compose up -d`, localhost                        | **Same Fly.io apps as Production**    | Fly.io (`deploy/fly/*.toml`)         |
 | **Database**           | `db/dev.db` (local SQLite file, no Turso account needed) | **Same Turso database as Production** | Turso                                |
-| **Password gate**      | Same `SITE_PASSWORD` mechanism, your own local value     | Same secret as Production             | `SITE_PASSWORD`                      |
+| **Password gate**      | Skipped — `src/proxy.ts` checks `process.env.VERCEL`     | Same secret as Production             | `SITE_PASSWORD`                      |
 
 The two **bolded** rows are the one deliberate risk accepted in this setup, spelled out in §3 —
 everything else is exactly the isolation you'd expect (separate app builds, separate URLs).

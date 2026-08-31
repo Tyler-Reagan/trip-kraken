@@ -78,6 +78,12 @@ interface TripStore {
   /** Non-fatal conditions from the last optimize run (#152), e.g. a pending lodging with no Anchor
    *  yet — surfaced in `OptimizeModal`, not per-Activity. */
   optimizeWarnings: string[];
+  /** Whether the user has dismissed {@link EnrichmentFailureNotice} for the current optimize run.
+   *  Sticky across re-renders and across the failed set shrinking/changing (a retry that fixes some
+   *  but not all of the dismissed places shouldn't resurface the notice for the rest) — the notice
+   *  should need dismissing once per optimize, not once per distinct failure signature. Reset by
+   *  `optimize()` itself, the same "property of the last run" lifetime `unplaced` already has. */
+  enrichmentNoticeDismissed: boolean;
   /** ADR-0026's self-heal (#171): the one new pair the last `removePlacement` call made adjacent,
    *  and what it costs to travel between them — `null` when that removal had nothing to heal
    *  (ADR-0026 §4's scope limits) or hasn't happened yet. A property of that one call, the same way
@@ -106,6 +112,7 @@ interface TripStore {
   closeDiscovery: () => void;
   setShowOptimize: (v: boolean) => void;
   setShowAddLocation: (v: boolean) => void;
+  dismissEnrichmentNotice: () => void;
 
   // Async mutations — use get().tripId internally
   reload: () => Promise<void>;
@@ -213,6 +220,7 @@ export const useTripStore = create<TripStore>()((set, get) => {
     showAddLocation: false,
     unplaced: [],
     optimizeWarnings: [],
+    enrichmentNoticeDismissed: false,
     healedPair: null,
     isEnriching: false,
     enrichProgress: null,
@@ -297,6 +305,7 @@ export const useTripStore = create<TripStore>()((set, get) => {
       }),
     setShowOptimize: (v) => set({ showOptimize: v }),
     setShowAddLocation: (v) => set({ showAddLocation: v }),
+    dismissEnrichmentNotice: () => set({ enrichmentNoticeDismissed: true }),
 
     reload: async () => {
       const tripId = get().tripId;
@@ -333,7 +342,8 @@ export const useTripStore = create<TripStore>()((set, get) => {
       if (!tripId) return;
       // A full re-solve can rearrange or discard the healed pair's two Placements entirely — never
       // leave a stale self-heal label pointing at stops that may not even be adjacent any more.
-      set({ healedPair: null });
+      // Re-arm the enrichment notice too: a fresh optimize is the one event that should resurface it.
+      set({ healedPair: null, enrichmentNoticeDismissed: false });
       // fetch only rejects on a network failure — an HTTP 500 (e.g. an unreachable VROOM, which
       // fails loudly by design) resolves with ok: false. Throw on it so callers surface the error
       // instead of silently reloading an unchanged plan.
