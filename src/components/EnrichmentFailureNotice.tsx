@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 
@@ -13,32 +12,25 @@ import { useTripStore } from "@/store/tripStore";
  * portability principle rules out hover-only paths outright, so on touch the button said "Retry
  * (1)" and nothing else, ever. Naming the places in the DOM fixes both at once.
  *
- * Dismissal is session-local and keyed to *which* places are failing, the same shape
- * {@link DistantMetroWarning} uses and for the same reason: a bare boolean would go permanently
- * silent, so a later import failing a different place would never be surfaced. Retrying and failing
- * again on the same set stays dismissed; a changed set reappears. Nothing here is persisted — a
- * reload is a fresh look at the trip.
+ * Dismissal (`enrichmentNoticeDismissed`) lives in the store, not component state, and isn't keyed
+ * to which places are currently failing: it should take exactly one dismissal to quiet this notice
+ * for the rest of the current optimize run, even as retries fix some of the named places but not
+ * others. The store resets the flag only from `optimize()` — a fresh optimize is the one event that
+ * should resurface it. Nothing here is persisted beyond that — a page reload is a fresh look.
  */
 export default function EnrichmentFailureNotice() {
   const trip = useTripStore((s) => s.trip);
   const isEnriching = useTripStore((s) => s.isEnriching);
   const enrichProgress = useTripStore((s) => s.enrichProgress);
   const enrich = useTripStore((s) => s.enrich);
-  const [dismissedSignature, setDismissedSignature] = useState<string | null>(
-    null,
+  const dismissed = useTripStore((s) => s.enrichmentNoticeDismissed);
+  const dismissEnrichmentNotice = useTripStore(
+    (s) => s.dismissEnrichmentNotice,
   );
-  if (!trip) return null;
+  if (!trip || dismissed) return null;
 
   const failed = trip.locations.filter((l) => l.enrichmentStatus === "failed");
   if (failed.length === 0) return null;
-
-  // Keyed on ids, not the count: swapping one failed place for another leaves the count identical
-  // while the thing the user dismissed is no longer what's on screen.
-  const signature = failed
-    .map((l) => l.id)
-    .sort()
-    .join("|");
-  if (signature === dismissedSignature) return null;
 
   const one = failed.length === 1;
 
@@ -93,7 +85,7 @@ export default function EnrichmentFailureNotice() {
             : "Retry"}
         </button>
         <button
-          onClick={() => setDismissedSignature(signature)}
+          onClick={dismissEnrichmentNotice}
           className="tap-target shrink-0 text-faint hover:text-ink"
           aria-label="Dismiss"
         >

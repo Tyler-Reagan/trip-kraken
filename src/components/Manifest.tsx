@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 // `Map` is aliased: the icon would otherwise shadow the global Map constructor used below.
-import { ChevronRight, Map as MapIcon, Star } from "lucide-react";
+import { ChevronRight, Map as MapIcon, Star, Trash2 } from "lucide-react";
 import { useTripStore } from "@/store/tripStore";
 import { clusterByMetro } from "@/lib/metroCluster";
 import { localityOf, metroKey, metroLabel } from "@/lib/tripMetros";
@@ -63,13 +63,22 @@ function LodgingSection({
 }
 
 function ActivityRow({ loc, metro }: { loc: Location; metro: string }) {
+  const tripId = useTripStore((s) => s.tripId);
+  const reload = useTripStore((s) => s.reload);
   const updateLocation = useTripStore((s) => s.updateLocation);
   const setInspectedLocationId = useTripStore((s) => s.setInspectedLocationId);
   const locality = localityOf(loc.address, metro);
 
+  async function doRemoveLocation() {
+    await fetch(`/api/trips/${tripId}/locations/${loc.id}`, {
+      method: "DELETE",
+    });
+    reload();
+  }
+
   return (
     <div
-      className={`card p-3 flex items-center gap-3 ${loc.excluded ? "opacity-50" : ""}`}
+      className={`group card p-3 flex items-center gap-3 ${loc.excluded ? "opacity-50" : ""}`}
     >
       <input
         type="checkbox"
@@ -124,6 +133,17 @@ function ActivityRow({ loc, metro }: { loc: Location; metro: string }) {
       {loc.enrichmentStatus === "pending" && (
         <span className="text-xs text-faint animate-pulse shrink-0">…</span>
       )}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          doRemoveLocation();
+        }}
+        title="Remove location from trip"
+        aria-label="Remove location"
+        className="hover-reveal w-7 h-7 shrink-0 flex items-center justify-center rounded text-faint hover:text-danger-500 dark:hover:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-950/30 transition-colors"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
     </div>
   );
 }
