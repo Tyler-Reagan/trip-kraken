@@ -17,7 +17,8 @@
     "ingest:transit-graph": "./scripts/ingest-transit-graph.sh",
     "build:osrm-graphs": "./scripts/build-osrm-graphs.sh",
     "transfer:osrm-graphs": "./scripts/transfer-osrm-graphs.sh",
-    "infra:verify": "./scripts/verify-infra.sh"
+    "infra:verify": "./scripts/verify-infra.sh",
+    "db:sync": "tsx --env-file-if-exists=.env.local scripts/db-sync.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

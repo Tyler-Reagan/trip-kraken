@@ -26,6 +26,10 @@ dev.log
 # extract; *.db above doesn't match .osrm.* so this needs its own rule.
 db/osrm/
 
+# db-sync merge-base snapshots — per-machine sync bookkeeping (which state each side last agreed
+# on), not shared data.
+db/.sync/
+
 # Debug artifacts
 debug-screenshot.png
 debug-page.html
