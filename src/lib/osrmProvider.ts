@@ -114,13 +114,27 @@ interface OsrmTableResponse {
  * milliseconds — this bound is for the pathological case, not the slow one. */
 const OSRM_TIMEOUT_MS = 5000;
 
+/** The container didn't answer at all — unreachable, timed out, or errored below the OSRM protocol
+ * layer (Fly's scale-to-zero cold start, ADR-0037, is the expected source of this in production).
+ * Distinct from a plain `Error`, which means OSRM *did* answer, just with a non-`Ok` code (`NoRoute`
+ * among them) — a real content decline, not an infrastructure hiccup. Callers that cache "no path"
+ * answers must not cache this one; the honest state is "not yet answered," not "no route exists." */
+export class OsrmUnavailableError extends Error {}
+
 async function fetchOsrmJson<T>(url: string, profile: Profile): Promise<T> {
-  const res = await fetch(url, {
-    signal: AbortSignal.timeout(OSRM_TIMEOUT_MS),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(OSRM_TIMEOUT_MS) });
+  } catch (err) {
+    throw new OsrmUnavailableError(
+      `osrmProvider (${profile}): unreachable — ${err instanceof Error ? err.message : err}`,
+    );
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`osrmProvider (${profile}): HTTP ${res.status} ${text}`);
+    throw new OsrmUnavailableError(
+      `osrmProvider (${profile}): HTTP ${res.status} ${text}`,
+    );
   }
   const data = (await res.json()) as T & { code: string; message?: string };
   if (data.code !== "Ok") {

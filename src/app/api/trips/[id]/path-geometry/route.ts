@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTripWithDetails } from "@/lib/db";
 import { describeJourney } from "@/lib/travelCostRegistry";
 import { journeyRoadKindFor, withJourneyRoadKind } from "@/lib/pathPairs";
+import { OsrmUnavailableError } from "@/lib/osrmProvider";
 import type { Path, PathEndpoint } from "@/types/path";
 
 /**
@@ -95,13 +96,13 @@ function parsePairs(value: unknown): PairRequest[] | null {
 async function mapWithConcurrency<T, R>(
   items: T[],
   limit: number,
-  fn: (item: T) => Promise<R>,
+  fn: (item: T, index: number) => Promise<R>,
 ): Promise<R[]> {
   const results = new Array<R>(items.length);
   let cursor = 0;
   const worker = async () => {
     for (let i = cursor++; i < items.length; i = cursor++) {
-      results[i] = await fn(items[i]);
+      results[i] = await fn(items[i], i);
     }
   };
   await Promise.all(
@@ -140,12 +141,19 @@ export async function POST(
     );
   }
 
+  // Indices whose pair could not be answered because a provider was unreachable (Fly's scale-to-zero
+  // cold start, ADR-0037, is the expected source of this in production) rather than because it
+  // genuinely answered "no route." The client must not cache `results[i]` at these indices as a
+  // real "no geometry" answer — the honest state is "not yet answered," and it should ask again once
+  // the provider has had a chance to warm up.
+  const retry: number[] = [];
+
   const results = await mapWithConcurrency(
     pairs,
     CONCURRENCY,
-    async (pair): Promise<Path[] | null> => {
+    async (pair, i): Promise<Path[] | null> => {
       // A *declined* pair already resolves to a terminal `haversine` answer, so nothing here needs a
-      // catch for that. This catch is for a pair OSRM refuses outright — it throws rather than
+      // catch for that. This catch is for a pair a provider refuses outright — it throws rather than
       // declines on a non-`Ok` response code, `NoRoute` among them (two points with no road path
       // between them at all). One such pair must not fail the batch: `null` means "no geometry", the
       // map draws that pair straight and dashed, and the honest reading is unchanged.
@@ -165,11 +173,12 @@ export async function POST(
             : undefined;
         const kinds = withJourneyRoadKind(["rail", trip.roadProfile], chosen);
         return await describeJourney(pair.from, pair.to, kinds);
-      } catch {
+      } catch (err) {
+        if (err instanceof OsrmUnavailableError) retry.push(i);
         return null;
       }
     },
   );
 
-  return NextResponse.json({ results });
+  return NextResponse.json({ results, retry });
 }
