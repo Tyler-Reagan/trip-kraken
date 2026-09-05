@@ -21,6 +21,7 @@ import { metrosOf } from "@/lib/tripMetros";
 import { formatDuration, resolveVisitDuration } from "@/lib/visitDuration";
 import {
   Crosshair,
+  ExternalLink,
   GripVertical,
   MapPin,
   Route,
@@ -32,6 +33,7 @@ import { dayDropId } from "./DayNavigator";
 import { useJourneyGap } from "@/lib/usePathGeometry";
 import { dayChainEntries } from "@/lib/pathPairs";
 import { anchorSubtext } from "@/lib/anchors";
+import { googleMapsDirectionsUrl } from "@/lib/googleMapsDirections";
 import PathShiftRows from "./PathShiftRows";
 
 interface Props {
@@ -392,6 +394,19 @@ function RouteConnector({
         <Route className="w-3.5 h-3.5" />
         Along the way
       </button>
+      <a
+        href={googleMapsDirectionsUrl(
+          { lat: from.lat!, lng: from.lng! },
+          { lat: to.lat!, lng: to.lng! },
+        )}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Open this route in Google Maps"
+        aria-label={`Open route from ${from.name} to ${to.name} in Google Maps`}
+        className="w-6 h-6 flex items-center justify-center rounded-full text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+      >
+        <ExternalLink className="w-3.5 h-3.5" />
+      </a>
     </span>
   );
 

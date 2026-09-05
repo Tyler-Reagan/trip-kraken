@@ -20,11 +20,13 @@ import type { FeatureCollection, LineString, Point } from "geojson";
 import {
   ChevronRight,
   Crosshair,
+  ExternalLink,
   Globe,
   MapPin,
   PanelLeftClose,
   TrainFront,
 } from "lucide-react";
+import { googleMapsDirectionsUrl } from "@/lib/googleMapsDirections";
 import { useTripStore, type FocusTarget } from "@/store/tripStore";
 import { deriveTripPlanDays, type DerivedDay, type Location } from "@/types";
 import type { PathEndpoint } from "@/types/path";
@@ -998,6 +1000,21 @@ function StopPanelGap({
       chain={gap.chain}
       tripId={trip.id}
       pairKey={gap.key}
+      trailing={
+        <a
+          href={googleMapsDirectionsUrl(
+            { lat: from.lat!, lng: from.lng! },
+            { lat: to.lat!, lng: to.lng! },
+          )}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Open this route in Google Maps"
+          aria-label={`Open route from ${from.name} to ${to.name} in Google Maps`}
+          className="w-6 h-6 flex items-center justify-center rounded-full text-faint hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 shrink-0"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+        </a>
+      }
       onStationClick={(t) =>
         onFocus({ tier: "point", lat: t.lat!, lng: t.lng! })
       }
