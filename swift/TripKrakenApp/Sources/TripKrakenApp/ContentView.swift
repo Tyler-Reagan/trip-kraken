@@ -26,6 +26,7 @@ struct ContentView: View {
             }
         }
         .onAppear { selectedDayNumber = days.first?.dayNumber }
+        .frame(minWidth: 700, minHeight: 450)
     }
 }
 
