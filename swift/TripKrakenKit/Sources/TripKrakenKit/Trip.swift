@@ -186,6 +186,15 @@ public enum Anchor: Sendable, Hashable {
         case .transit(let t): t.base
         }
     }
+
+    /// Widens back to the general `Location` union — for a render surface (`pathPairs.ts`'s
+    /// `dayChainEntries`) that wants one uniform type across Anchors and Placements alike.
+    public var asLocation: Location {
+        switch self {
+        case .lodging(let l): .lodging(l)
+        case .transit(let t): .transit(t)
+        }
+    }
 }
 
 /// A placed activity, joined to its Location for rendering.
