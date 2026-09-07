@@ -12,7 +12,7 @@ struct ContentView: View {
             List(days, id: \.dayNumber, selection: $selectedDayNumber) { day in
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Day \(day.dayNumber)").font(.headline)
-                    Text(day.label ?? day.date).font(.caption).foregroundStyle(.secondary)
+                    Text(day.label ?? formatted(day.date)).font(.caption).foregroundStyle(.secondary)
                 }
                 .tag(day.dayNumber)
             }
