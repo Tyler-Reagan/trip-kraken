@@ -31,6 +31,30 @@ struct TripEdgesOfTests {
     }
 }
 
+// Ported from `getEnrichableLocations` (`src/lib/db/index.ts`) — ADR-0044.
+@Suite("enrichableLocations")
+struct EnrichableLocationsTests {
+    private func activity(id: String, status: EnrichmentStatus) -> Location {
+        .activity(Activity(base: LocationBase(id: id, tripId: "t1", name: "Loc \(id)", enrichmentStatus: status)))
+    }
+
+    @Test("pending and failed are eligible; done is not")
+    func filtersByStatus() {
+        let trip = makeTrip(locations: [
+            activity(id: "a", status: .pending),
+            activity(id: "b", status: .failed),
+            activity(id: "c", status: .done),
+        ])
+        #expect(enrichableLocations(trip).map(\.base.id) == ["a", "b"])
+    }
+
+    @Test("no eligible locations answers empty, not every location")
+    func noneEligible() {
+        let trip = makeTrip(locations: [activity(id: "a", status: .done)])
+        #expect(enrichableLocations(trip).isEmpty)
+    }
+}
+
 @Suite("date helpers")
 struct DateHelperTests {
     @Test func addDays() {

@@ -8,6 +8,7 @@ import TripKrakenStore
 struct TripKrakenApp: App {
     private let store: TripStore
     private let geometryCache: PathGeometryCache
+    private let placesProvider: MapKitPlacesProvider
 
     init() {
         do {
@@ -18,6 +19,7 @@ struct TripKrakenApp: App {
             fatalError("Failed to open the TripKraken store: \(error)")
         }
         self.geometryCache = PathGeometryCache(provider: TripKrakenApp.makeGeometryProvider())
+        self.placesProvider = MapKitPlacesProvider()
     }
 
     /// `TRIPKRAKEN_API_BASE_URL` lets a dev point this at a non-default server; defaults to the
@@ -30,7 +32,7 @@ struct TripKrakenApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(placesProvider: placesProvider)
                 .environment(store)
                 .environment(geometryCache)
         }

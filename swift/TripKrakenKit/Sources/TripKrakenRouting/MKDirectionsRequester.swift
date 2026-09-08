@@ -11,8 +11,8 @@ public struct MKDirectionsRequester: DirectionsRequesting {
 
     public func route(from: Point, to: Point, transportType: RoadProfile) async throws -> RouteResult? {
         let request = MKDirections.Request()
-        request.source = MKMapItem(placemark: MKPlacemark(coordinate: from.coordinate))
-        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: to.coordinate))
+        request.source = MKMapItem(location: CLLocation(latitude: from.lat, longitude: from.lng), address: nil)
+        request.destination = MKMapItem(location: CLLocation(latitude: to.lat, longitude: to.lng), address: nil)
         request.transportType = transportType == .driving ? .automobile : .walking
 
         do {
@@ -29,10 +29,6 @@ public struct MKDirectionsRequester: DirectionsRequesting {
             throw DirectionsRequestError.throttled
         }
     }
-}
-
-private extension Point {
-    var coordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: lat, longitude: lng) }
 }
 
 private extension MKPolyline {

@@ -1,8 +1,10 @@
 import SwiftUI
 import TripKrakenKit
+import TripKrakenRouting
 import TripKrakenStore
 
 struct ContentView: View {
+    let placesProvider: MapKitPlacesProvider
     @Environment(TripStore.self) private var store
     @State private var selectedDayNumber: Int?
     /// A one-shot "fly the camera here" request, set only by an explicit button in
@@ -11,6 +13,7 @@ struct ContentView: View {
     /// every other stop outside the viewport with no annotation left to click to get back out.
     /// The external button has no such dead end, since it's a list item, not a map pin.
     @State private var focusedLocationId: String?
+    @State private var isEnriching = false
 
     var body: some View {
         NavigationSplitView {
@@ -38,13 +41,32 @@ struct ContentView: View {
             }
         }
         .onAppear { selectedDayNumber = store.days.first?.dayNumber }
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    isEnriching = true
+                    Task {
+                        await enrichPendingLocations(store: store, provider: placesProvider)
+                        isEnriching = false
+                    }
+                } label: {
+                    if isEnriching {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Enrich", systemImage: "sparkles")
+                    }
+                }
+                .disabled(isEnriching)
+                .help("Look up address/phone/category for any location missing them")
+            }
+        }
         .frame(minWidth: 900, minHeight: 500)
     }
 }
 
 #Preview {
     let store = try! makePreviewStore()
-    return ContentView()
+    return ContentView(placesProvider: MapKitPlacesProvider())
         .environment(store)
 }
 

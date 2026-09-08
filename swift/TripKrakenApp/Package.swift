@@ -1,10 +1,11 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
     name: "TripKrakenApp",
+    // Matches TripKrakenKit's floor (ADR-0044: MKMapItem.address/.location need macOS 26.0+).
     platforms: [
-        .macOS(.v14)
+        .macOS(.v26)
     ],
     dependencies: [
         .package(path: "../TripKrakenKit")

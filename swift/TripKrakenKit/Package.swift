@@ -1,11 +1,14 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
     name: "TripKrakenKit",
+    // Raised from iOS 17/macOS 14 to 26 for ADR-0044: MKMapItem's `address`/`location` properties
+    // (used by MKLocalSearchRequester) are macOS/iOS 26.0+ only — a genuinely new-this-cycle API,
+    // not an oversight. No back-compat obligation exists pre-launch (no users, not deployed).
     platforms: [
-        .iOS(.v17),
-        .macOS(.v14),
+        .iOS(.v26),
+        .macOS(.v26),
     ],
     products: [
         .library(name: "TripKrakenKit", targets: ["TripKrakenKit"]),

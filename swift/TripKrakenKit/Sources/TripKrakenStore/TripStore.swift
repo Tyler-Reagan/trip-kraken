@@ -141,6 +141,33 @@ public final class TripStore {
         try refresh()
     }
 
+    /// Writes a successful enrichment match — address/phone/categories are only overwritten when
+    /// the provider actually supplied a value, so a partial match (e.g. no phone number on file)
+    /// never clobbers a field the location already had. Always clears any prior failure.
+    public func applyEnrichment(locationId: String, address: String?, phone: String?, categories: [String]?) throws {
+        guard let record else { return }
+        guard let locationRecord = (record.locations ?? []).first(where: { $0.id == locationId }) else { return }
+        if let address { locationRecord.address = address }
+        if let phone { locationRecord.phone = phone }
+        if let categories { locationRecord.categories = categories }
+        locationRecord.enrichmentStatus = .done
+        locationRecord.enrichmentError = nil
+        try context.save()
+        try refresh()
+    }
+
+    /// Records a terminal enrichment failure (no match found, or the request itself errored) —
+    /// mirrors `markEnrichmentFailed` (`src/lib/db/index.ts`). This is the state `.pending`/`.done`
+    /// can both fall back into; a Location can be re-enriched later without any special-casing.
+    public func markEnrichmentFailed(locationId: String, error: String) throws {
+        guard let record else { return }
+        guard let locationRecord = (record.locations ?? []).first(where: { $0.id == locationId }) else { return }
+        locationRecord.enrichmentStatus = .failed
+        locationRecord.enrichmentError = error
+        try context.save()
+        try refresh()
+    }
+
     /// Free-text notes on any Location, regardless of kind. `nil`/empty clears them.
     public func setLocationNote(locationId: String, note: String?) throws {
         guard let record else { return }

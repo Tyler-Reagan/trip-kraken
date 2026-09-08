@@ -170,6 +170,13 @@ public func tripEdgesOf(_ trip: TripWithDetails) -> (arrival: Transit?, departur
     )
 }
 
+/// Locations eligible for (re-)enrichment (ADR-0044) — pending at creation, or failed on a prior
+/// attempt. Mirrors `getEnrichableLocations` (`src/lib/db/index.ts`); `.done` locations are never
+/// re-enriched automatically, only via an explicit per-Location retry.
+public func enrichableLocations(_ trip: TripWithDetails) -> [Location] {
+    trip.locations.filter { $0.base.enrichmentStatus == .pending || $0.base.enrichmentStatus == .failed }
+}
+
 // ─── The Timeline projection (ADR-0015: day-presence is derived, never stored) ──
 
 /// A Location that bookends a Day (ADR-0028, CONTEXT.md's "Anchor") — projected from a constraint
