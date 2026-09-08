@@ -19,7 +19,7 @@ struct DayDetailView: View {
         List {
             ForEach(leadingEntries, id: \.self) { row(for: $0) }
             ForEach(Array(day.stops.enumerated()), id: \.element.placement.id) { index, stop in
-                row(for: ChainEntry(role: .stop, location: .activity(stop.location), stop: stop, index: index))
+                row(for: ChainEntry(role: .stop, location: .activity(stop.location), stop: stop, index: index), toggle: journeyToggle(beforeStopAt: index))
             }
             .onMove(perform: moveStops)
             ForEach(trailingEntries, id: \.self) { row(for: $0) }
@@ -27,7 +27,7 @@ struct DayDetailView: View {
         .navigationTitle("Day \(day.dayNumber) · \(formatted(day.date))")
     }
 
-    private func row(for entry: ChainEntry) -> some View {
+    private func row(for entry: ChainEntry, toggle: JourneyKindToggle? = nil) -> some View {
         HStack(spacing: 12) {
             Image(systemName: symbolName(for: entry))
                 .foregroundStyle(.secondary)
@@ -40,11 +40,43 @@ struct DayDetailView: View {
 
             Spacer()
 
+            if let toggle {
+                Picker("", selection: Binding(get: { toggle.kind }, set: { toggle.onKindChange($0) })) {
+                    Image(systemName: "figure.walk").tag(RoadProfile.walking)
+                    Image(systemName: "car.fill").tag(RoadProfile.driving)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 76)
+            }
+
             if entry.role == .stop, let minutes = entry.location.base.visitDuration {
                 Text(formatDuration(minutes)).font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 4)
+    }
+
+    /// The walk/drive control for the gap immediately before one stop — governs the Journey from
+    /// whichever chain entry precedes it (the prior stop, or the check-in waypoint/start Anchor for
+    /// the first stop). Anchors themselves don't get a toggle; only stop-to-stop and
+    /// anchor(or-waypoint)-to-first-stop gaps are shown, which covers every real gap a Day's plan
+    /// can have a choice about.
+    private func journeyToggle(beforeStopAt index: Int) -> JourneyKindToggle? {
+        guard let trip = store.trip else { return nil }
+        let previousId: String?
+        if index == 0 {
+            previousId = day.checkInWaypoint?.base.id ?? day.startAnchor?.base.id
+        } else {
+            previousId = day.stops[index - 1].location.base.id
+        }
+        guard let previousId else { return nil }
+        let toId = day.stops[index].location.base.id
+        return resolveJourneyKindToggle(
+            journeyRoadKinds: trip.journeyRoadKinds, roadProfile: trip.roadProfile, fromId: previousId, toId: toId
+        ) { newKind in
+            try? store.setJourneyRoadKind(from: previousId, to: toId, kind: newKind)
+        }
     }
 
     /// `List`'s move semantics (`Array.move(fromOffsets:toOffset:)`) already account for the

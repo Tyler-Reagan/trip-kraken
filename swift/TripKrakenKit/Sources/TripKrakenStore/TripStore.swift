@@ -218,6 +218,32 @@ public final class TripStore {
         try refresh()
     }
 
+    // MARK: - Journey road-kind mutations
+
+    /// Sets or clears a Journey's chosen walk/drive kind. `planJourneyRoadKindWrite` (already
+    /// tested) decides the canonicalized pair, which row to update/insert/delete; this method only
+    /// persists that plan — including the duplicate-collapse case the old DB uniqueness index used
+    /// to make impossible (ADR-0040).
+    public func setJourneyRoadKind(from: String, to: String, kind: RoadProfile?) throws {
+        guard let trip, let record else { throw StoreMappingError.tripNotFound("") }
+        let plan = planJourneyRoadKindWrite(trip.journeyRoadKinds, tripId: trip.id, newId: UUID().uuidString, from: from, to: to, kind: kind)
+
+        let existingById = Dictionary(uniqueKeysWithValues: (record.journeyRoadKinds ?? []).map { ($0.id, $0) })
+        for id in plan.deleteIds {
+            if let toDelete = existingById[id] { context.delete(toDelete) }
+        }
+        if let updateId = plan.updateId, let kind, let toUpdate = existingById[updateId] {
+            toUpdate.kind = kind
+        }
+        if let insert = plan.insert {
+            let newRecord = makeJourneyRoadKindRecord(from: insert)
+            newRecord.trip = record
+            context.insert(newRecord)
+        }
+        try context.save()
+        try refresh()
+    }
+
     // MARK: - Private
 
     /// Reconciles `record.placements` toward `next`: existing rows are updated in place, new ids
