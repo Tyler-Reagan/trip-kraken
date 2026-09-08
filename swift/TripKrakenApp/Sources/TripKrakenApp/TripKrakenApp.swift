@@ -9,6 +9,7 @@ struct TripKrakenApp: App {
     private let store: TripStore
     private let geometryCache: PathGeometryCache
     private let placesProvider: MapKitPlacesProvider
+    private let optimizeProvider: OptimizeProviding
 
     init() {
         do {
@@ -20,19 +21,23 @@ struct TripKrakenApp: App {
         }
         self.geometryCache = PathGeometryCache(provider: TripKrakenApp.makeGeometryProvider())
         self.placesProvider = MapKitPlacesProvider()
+        self.optimizeProvider = HTTPOptimizeProvider(endpoint: TripKrakenApp.apiBaseURL.appending(path: "api/optimize"))
     }
 
     /// `TRIPKRAKEN_API_BASE_URL` lets a dev point this at a non-default server; defaults to the
     /// local Next.js dev server's own default port.
+    private static var apiBaseURL: URL {
+        URL(string: ProcessInfo.processInfo.environment["TRIPKRAKEN_API_BASE_URL"] ?? "http://localhost:3000")!
+    }
+
     private static func makeGeometryProvider() -> PathGeometryProviding {
-        let base = ProcessInfo.processInfo.environment["TRIPKRAKEN_API_BASE_URL"] ?? "http://localhost:3000"
-        let endpoint = URL(string: base)!.appending(path: "api/path-geometry")
+        let endpoint = apiBaseURL.appending(path: "api/path-geometry")
         return CompositeGeometryProvider(onDevice: MapKitGeometryProvider(), server: HTTPPathGeometryProvider(endpoint: endpoint))
     }
 
     var body: some Scene {
         WindowGroup {
-            ContentView(placesProvider: placesProvider)
+            ContentView(placesProvider: placesProvider, optimizeProvider: optimizeProvider)
                 .environment(store)
                 .environment(geometryCache)
         }

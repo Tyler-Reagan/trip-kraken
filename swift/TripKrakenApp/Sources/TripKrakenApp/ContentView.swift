@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     let placesProvider: MapKitPlacesProvider
+    let optimizeProvider: OptimizeProviding
     @Environment(TripStore.self) private var store
     @Environment(PathGeometryCache.self) private var geometryCache
     @State private var selectedDayNumber: Int?
@@ -19,9 +20,11 @@ struct ContentView: View {
     @State private var isAddingLocation = false
     @State private var isCreatingTrip = false
     @State private var isImportingTurso = false
-    @State private var importAlert: ImportAlert?
+    @State private var isOptimizing = false
+    @State private var importAlert: SimpleAlert?
+    @State private var optimizeAlert: SimpleAlert?
 
-    private struct ImportAlert: Identifiable {
+    private struct SimpleAlert: Identifiable {
         let id = UUID()
         let message: String
     }
@@ -108,6 +111,23 @@ struct ContentView: View {
                 .disabled(isEnriching)
                 .help("Look up address/phone/category for any location missing them")
             }
+            ToolbarItem {
+                Button {
+                    isOptimizing = true
+                    Task {
+                        await runOptimize()
+                        isOptimizing = false
+                    }
+                } label: {
+                    if isOptimizing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Optimize", systemImage: "wand.and.stars")
+                    }
+                }
+                .disabled(isOptimizing || store.trip == nil)
+                .help("Re-plan every day's order with VROOM (ADR-0045) — replaces the current plan wholesale")
+            }
         }
         .sheet(isPresented: $isAddingLocation) {
             LocationSearchView(near: tripCentroid, provider: placesProvider)
@@ -120,13 +140,39 @@ struct ContentView: View {
             case .success(let url):
                 importTursoExport(from: url)
             case .failure(let error):
-                importAlert = ImportAlert(message: "Couldn't open that file: \(error.localizedDescription)")
+                importAlert = SimpleAlert(message: "Couldn't open that file: \(error.localizedDescription)")
             }
         }
         .alert(item: $importAlert) { alert in
             Alert(title: Text("Import"), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
+        .alert(item: $optimizeAlert) { alert in
+            Alert(title: Text("Optimize"), message: Text(alert.message), dismissButton: .default(Text("OK")))
+        }
         .frame(minWidth: 900, minHeight: 500)
+    }
+
+    /// ADR-0045: shapes the current trip into an `OptimizeProblem`, calls the trip-less
+    /// `/api/optimize` endpoint, and persists the result wholesale. `unplaced`/`warnings` have no
+    /// dedicated UI yet (the web app's "Unassigned tray," #120, is out of scope for this first
+    /// cut) — surfaced in the completion alert instead, so nothing about a run is silently lost.
+    private func runOptimize() async {
+        guard let trip = store.trip else { return }
+        let problem = optimizationProblem(for: trip)
+        do {
+            let itinerary = try await optimizeProvider.optimize(problem)
+            try store.applyOptimizedPlacements(itinerary)
+            var message = "Re-planned \(itinerary.days.count) day\(itinerary.days.count == 1 ? "" : "s")."
+            if !itinerary.unplaced.isEmpty {
+                message += " \(itinerary.unplaced.count) location\(itinerary.unplaced.count == 1 ? "" : "s") couldn't be placed."
+            }
+            if !itinerary.warnings.isEmpty {
+                message += " " + itinerary.warnings.joined(separator: " ")
+            }
+            optimizeAlert = SimpleAlert(message: message)
+        } catch {
+            optimizeAlert = SimpleAlert(message: "Optimize failed: \(error.localizedDescription)")
+        }
     }
 
     /// One-time migration from a Turso/libSQL SQLite export (ADR-0038 keeps Turso itself out of
@@ -139,9 +185,9 @@ struct ContentView: View {
         defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
         do {
             let ids = try store.importFromTursoExport(path: url.path)
-            importAlert = ImportAlert(message: "Imported \(ids.count) trip\(ids.count == 1 ? "" : "s").")
+            importAlert = SimpleAlert(message: "Imported \(ids.count) trip\(ids.count == 1 ? "" : "s").")
         } catch {
-            importAlert = ImportAlert(message: "Import failed: \(error.localizedDescription)")
+            importAlert = SimpleAlert(message: "Import failed: \(error.localizedDescription)")
         }
     }
 
@@ -172,8 +218,9 @@ struct ContentView: View {
 
 #Preview {
     let store = try! makePreviewStore()
-    return ContentView(placesProvider: MapKitPlacesProvider())
+    return ContentView(placesProvider: MapKitPlacesProvider(), optimizeProvider: HTTPOptimizeProvider(endpoint: URL(string: "http://localhost:3000/api/optimize")!))
         .environment(store)
+        .environment(PathGeometryCache(provider: NoGeometryProvider()))
 }
 
 @MainActor

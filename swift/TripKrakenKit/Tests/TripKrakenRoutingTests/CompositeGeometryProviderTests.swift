@@ -44,7 +44,7 @@ struct CompositeGeometryProviderTests {
         let server = StubProvider(batch: PathGeometryBatch(results: [[railPath()]], retryIndices: []))
         let composite = CompositeGeometryProvider(onDevice: onDevice, server: server)
 
-        let batch = try await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
+        let batch = await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
 
         #expect(batch.results[0]?.first?.kind == .rail)
     }
@@ -55,7 +55,7 @@ struct CompositeGeometryProviderTests {
         let server = StubProvider(batch: PathGeometryBatch(results: [[walkingPath()]], retryIndices: []))
         let composite = CompositeGeometryProvider(onDevice: onDevice, server: server)
 
-        let batch = try await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
+        let batch = await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
 
         #expect(batch.results[0]?.first?.base.travelCost.answeredBy == .mapKit, "the on-device answer is used, not discarded for an equally-valid server one")
     }
@@ -66,7 +66,7 @@ struct CompositeGeometryProviderTests {
         let server = StubProvider(batch: PathGeometryBatch(results: [[walkingPath()]], retryIndices: []))
         let composite = CompositeGeometryProvider(onDevice: onDevice, server: server)
 
-        let batch = try await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
+        let batch = await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
 
         #expect(batch.results[0] != nil)
     }
@@ -77,7 +77,7 @@ struct CompositeGeometryProviderTests {
         let server = StubProvider(batch: PathGeometryBatch(results: [nil], retryIndices: []))
         let composite = CompositeGeometryProvider(onDevice: onDevice, server: server)
 
-        let batch = try await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
+        let batch = await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
 
         #expect(batch.results == [nil])
     }
@@ -88,7 +88,7 @@ struct CompositeGeometryProviderTests {
         let server = StubProvider(batch: PathGeometryBatch(results: [nil], retryIndices: []))
         let composite = CompositeGeometryProvider(onDevice: onDevice, server: server)
 
-        let batch = try await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
+        let batch = await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
 
         #expect(batch.retryIndices == [0])
     }
@@ -99,7 +99,7 @@ struct CompositeGeometryProviderTests {
         let server = StubProvider(batch: PathGeometryBatch(results: [], retryIndices: []))
         let composite = CompositeGeometryProvider(onDevice: onDevice, server: server)
 
-        let batch = try await composite.geometry(for: [], profile: .walking, journeyRoadKinds: [])
+        let batch = await composite.geometry(for: [], profile: .walking, journeyRoadKinds: [])
 
         #expect(batch.results.isEmpty)
     }
@@ -110,7 +110,7 @@ struct CompositeGeometryProviderTests {
         let server = ThrowingProvider()
         let composite = CompositeGeometryProvider(onDevice: onDevice, server: server)
 
-        let batch = try await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
+        let batch = await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
 
         #expect(batch.results[0]?.first?.base.travelCost.answeredBy == .mapKit)
     }
@@ -121,7 +121,7 @@ struct CompositeGeometryProviderTests {
         let server = StubProvider(batch: PathGeometryBatch(results: [[railPath()]], retryIndices: []))
         let composite = CompositeGeometryProvider(onDevice: onDevice, server: server)
 
-        let batch = try await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
+        let batch = await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
 
         #expect(batch.results[0]?.first?.kind == .rail)
     }
@@ -132,7 +132,7 @@ struct CompositeGeometryProviderTests {
         let server = ThrowingProvider()
         let composite = CompositeGeometryProvider(onDevice: onDevice, server: server)
 
-        let batch = try await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
+        let batch = await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
 
         #expect(batch.results == [nil])
         #expect(batch.retryIndices == [0])

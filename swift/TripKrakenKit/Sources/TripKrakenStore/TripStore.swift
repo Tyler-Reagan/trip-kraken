@@ -144,6 +144,29 @@ public final class TripStore {
         try refresh()
     }
 
+    /// Replaces the trip's whole Placement set from a solved `Itinerary` (ADR-0045) — mirrors
+    /// `setPlacements` (`src/lib/db`)'s own "replace, not diff" semantics (ADR-0015 §5): no locks,
+    /// no reconciliation against what was there before. `Itinerary.unplaced`/`.warnings` are the
+    /// caller's (UI's) concern to surface, not this method's — it only persists `days`.
+    public func applyOptimizedPlacements(_ itinerary: Itinerary) throws {
+        guard let trip, let record else { return }
+        for existing in record.placements ?? [] {
+            context.delete(existing)
+        }
+        for day in itinerary.days {
+            let date = addDaysIso(trip.startDate, day.dayNumber - 1)
+            for (order, locationId) in day.locationIds.enumerated() {
+                let placementRecord = PlacementRecord(
+                    id: UUID().uuidString, tripId: trip.id, locationId: locationId, date: date, order: order
+                )
+                placementRecord.trip = record
+                context.insert(placementRecord)
+            }
+        }
+        try context.save()
+        try refresh()
+    }
+
     public func setDayLabel(date: IsoDate, label: String?) throws {
         guard let record else { return }
         var labels = record.dayLabels ?? [:]

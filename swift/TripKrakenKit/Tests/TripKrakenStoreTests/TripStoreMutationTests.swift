@@ -4,6 +4,45 @@ import TripKrakenKit
 @testable import TripKrakenStore
 
 @MainActor
+@Suite("TripStore.applyOptimizedPlacements")
+struct ApplyOptimizedPlacementsTests {
+    @Test("replaces the whole placement set from an Itinerary's days")
+    func replacesWholesale() throws {
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip(
+            locations: [.activity(makeActivity(id: "a")), .activity(makeActivity(id: "b"))],
+            startDate: "2026-09-01", endDate: "2026-09-03"
+        ))
+        try store.placeActivity(locationId: "a", date: "2026-09-01")
+
+        let itinerary = Itinerary(
+            days: [
+                OptimizeDayPlan(dayNumber: 1, locationIds: ["b"]),
+                OptimizeDayPlan(dayNumber: 2, locationIds: ["a"]),
+            ],
+            unplaced: [], warnings: []
+        )
+        try store.applyOptimizedPlacements(itinerary)
+
+        let placements = store.trip?.placements ?? []
+        #expect(placements.count == 2)
+        #expect(placements.first { $0.locationId == "b" }?.date == "2026-09-01")
+        #expect(placements.first { $0.locationId == "a" }?.date == "2026-09-02")
+    }
+
+    @Test("an empty itinerary clears every existing placement")
+    func emptyItineraryClears() throws {
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip(locations: [.activity(makeActivity(id: "a"))]))
+        try store.placeActivity(locationId: "a", date: "2026-09-01")
+
+        try store.applyOptimizedPlacements(Itinerary(days: [], unplaced: [], warnings: []))
+
+        #expect(store.trip?.placements.isEmpty == true)
+    }
+}
+
+@MainActor
 @Suite("TripStore.movePlacement")
 struct MovePlacementTests {
     @Test("reorder persists across reload")
