@@ -32,6 +32,32 @@ public actor MapKitPlacesProvider {
         try await searchWithRetry(query: name, near: near).first
     }
 
+    /// Along-route search — the deferred third discovery mode named in ADR-0044, picked back up:
+    /// finds places near the *corridor* between two Locations rather than near one point.
+    /// `MKLocalSearch` has no polyline-region option, so this samples several points along
+    /// `route` (`samplePoints`, `TripKrakenKit`) — typically the map's own already-fetched Path
+    /// geometry for that gap — searches near each in turn (still one request at a time, via this
+    /// same actor's serialized retry), merges/dedupes what comes back, and ranks by actual
+    /// distance to the whole route rather than to whichever sample happened to find it.
+    public func searchAlongRoute(
+        query: String, route: [Point], sampleEveryMeters: Double = 2000, maxSamples: Int = 6, limit: Int = 20
+    ) async throws -> [PlaceSearchResult] {
+        let samples = samplePoints(along: route, everyMeters: sampleEveryMeters, maxSamples: maxSamples)
+        var seen: Set<PlaceSearchResult> = []
+        var merged: [PlaceSearchResult] = []
+        for sample in samples {
+            let results = try await searchWithRetry(query: query, near: sample)
+            for result in results where seen.insert(result).inserted {
+                merged.append(result)
+            }
+        }
+        let ranked = merged.sorted {
+            distanceToRoute(Point(lat: $0.lat, lng: $0.lng), route: route)
+                < distanceToRoute(Point(lat: $1.lat, lng: $1.lng), route: route)
+        }
+        return Array(ranked.prefix(limit))
+    }
+
     private func searchWithRetry(query: String, near: Point?) async throws -> [PlaceSearchResult] {
         var attempt = 0
         var backoff = initialBackoff

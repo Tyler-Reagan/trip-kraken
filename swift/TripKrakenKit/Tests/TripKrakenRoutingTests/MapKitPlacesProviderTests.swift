@@ -104,3 +104,64 @@ struct MapKitPlacesProviderTests {
         #expect(calls == 1, "only throttling is retried — any other error fails fast")
     }
 }
+
+@Suite("MapKitPlacesProvider.searchAlongRoute")
+struct SearchAlongRouteTests {
+    private func place(name: String, lat: Double, lng: Double) -> PlaceSearchResult {
+        PlaceSearchResult(name: name, lat: lat, lng: lng)
+    }
+
+    @Test("merges results across every sampled point along the route")
+    func mergesAcrossSamples() async throws {
+        let route = [Point(lat: 0, lng: 0), Point(lat: 0, lng: 0.1)]
+        let requester = FakeRequester(answers: [
+            .results([place(name: "near start", lat: 0, lng: 0.01)]),
+            .results([place(name: "near end", lat: 0, lng: 0.09)]),
+        ])
+        let provider = MapKitPlacesProvider(requester: requester, maxRetries: 1, initialBackoff: .milliseconds(1))
+
+        let results = try await provider.searchAlongRoute(query: "coffee", route: route, sampleEveryMeters: 5000, maxSamples: 2)
+
+        #expect(results.map(\.name).sorted() == ["near end", "near start"])
+    }
+
+    @Test("the same result found at two samples is not duplicated")
+    func dedupesAcrossSamples() async throws {
+        let route = [Point(lat: 0, lng: 0), Point(lat: 0, lng: 0.1)]
+        let same = place(name: "seen twice", lat: 0, lng: 0.05)
+        let requester = FakeRequester(answers: [.results([same]), .results([same])])
+        let provider = MapKitPlacesProvider(requester: requester, maxRetries: 1, initialBackoff: .milliseconds(1))
+
+        let results = try await provider.searchAlongRoute(query: "coffee", route: route, sampleEveryMeters: 5000, maxSamples: 2)
+
+        #expect(results.count == 1)
+    }
+
+    @Test("results are ranked by distance to the route, not by which sample found them")
+    func ranksByDistanceToRoute() async throws {
+        let route = [Point(lat: 0, lng: 0), Point(lat: 0, lng: 1)]
+        let far = place(name: "far", lat: 5, lng: 0.5)
+        let near = place(name: "near", lat: 0.001, lng: 0.5)
+        // The far result is returned first (by the earlier sample) but should still rank behind
+        // the near one once every sample's results are merged and re-ranked.
+        let requester = FakeRequester(answers: [.results([far]), .results([near])])
+        let provider = MapKitPlacesProvider(requester: requester, maxRetries: 1, initialBackoff: .milliseconds(1))
+
+        let results = try await provider.searchAlongRoute(query: "coffee", route: route, sampleEveryMeters: 5000, maxSamples: 2)
+
+        #expect(results.map(\.name) == ["near", "far"])
+    }
+
+    @Test("results are truncated to limit")
+    func truncatesToLimit() async throws {
+        let route = [Point(lat: 0, lng: 0), Point(lat: 0, lng: 0.1)]
+        let requester = FakeRequester(answers: [
+            .results([place(name: "a", lat: 0, lng: 0.01), place(name: "b", lat: 0, lng: 0.02)]),
+        ])
+        let provider = MapKitPlacesProvider(requester: requester, maxRetries: 1, initialBackoff: .milliseconds(1))
+
+        let results = try await provider.searchAlongRoute(query: "coffee", route: route, sampleEveryMeters: 5000, maxSamples: 1, limit: 1)
+
+        #expect(results.count == 1)
+    }
+}

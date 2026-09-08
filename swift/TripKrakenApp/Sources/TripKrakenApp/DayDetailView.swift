@@ -5,10 +5,17 @@ import TripKrakenStore
 
 struct DayDetailView: View {
     let day: DerivedDay
+    let placesProvider: MapKitPlacesProvider
     @Binding var focusedLocationId: String?
     @Environment(TripStore.self) private var store
     @Environment(PathGeometryCache.self) private var geometryCache
     @State private var detailLocation: TripKrakenKit.Location?
+    @State private var alongRouteSearch: AlongRouteSearch?
+
+    private struct AlongRouteSearch: Identifiable {
+        let id = UUID()
+        let route: [Point]
+    }
 
     /// Only stops are placed into the plan (ADR-0015 §2) — anchors and the check-in waypoint are
     /// derived, so they render but never move.
@@ -32,6 +39,9 @@ struct DayDetailView: View {
         .navigationTitle("Day \(day.dayNumber) · \(formatted(day.date))")
         .sheet(item: $detailLocation) { location in
             NavigationStack { LocationDetailView(location: location) }
+        }
+        .sheet(item: $alongRouteSearch) { search in
+            LocationSearchView(near: search.route.first, routePoints: search.route, provider: placesProvider)
         }
         .onAppear { loadGeometry() }
         .onChange(of: day.date) { loadGeometry() }
@@ -83,21 +93,33 @@ struct DayDetailView: View {
         }
     }
 
-    /// One gap's content — the held Path chain's shift rows, and the walk/drive kind toggle,
-    /// mirroring how the web app's `PathShiftRows` folds both onto the gap itself (`mergedEnd`)
-    /// rather than onto either endpoint's own row. Renders nothing when the gap has neither (no
-    /// geometry held yet and no real Journey to choose a kind for — a zero-length "same Location"
-    /// gap, per `resolveJourneyKindToggle`'s own guard).
+    /// One gap's content — the held Path chain's shift rows, the walk/drive kind toggle, and a
+    /// "find along the way" button (along-route discovery, ADR-0044's deferred third mode, picked
+    /// back up), mirroring how the web app's `PathShiftRows` folds all of this onto the gap itself
+    /// (`mergedEnd`) rather than onto either endpoint's own row. Renders nothing when the gap has
+    /// none of the three (no geometry held yet, no real Journey to choose a kind for, and neither
+    /// endpoint geocoded — a zero-length "same Location" gap, per `resolveJourneyKindToggle`'s own
+    /// guard, or `routePoints`' own).
     private func gapView(after entry: ChainEntry) -> some View {
         let shifts = shiftChain(after: entry) ?? []
         let toggle = journeyToggle(after: entry)
+        let route = routePoints(after: entry)
         return Group {
-            if !shifts.isEmpty || toggle != nil {
+            if !shifts.isEmpty || toggle != nil || route != nil {
                 HStack(alignment: .top, spacing: 8) {
                     VStack(alignment: .leading, spacing: 0) {
                         ShiftRowsView(chain: shifts, hasJrPass: store.trip?.hasJrPass ?? false)
                     }
                     Spacer(minLength: 0)
+                    if let route {
+                        Button {
+                            alongRouteSearch = AlongRouteSearch(route: route)
+                        } label: {
+                            Image(systemName: "mappin.and.ellipse")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Find something along the way")
+                    }
                     if let toggle {
                         Picker("", selection: Binding(get: { toggle.kind }, set: { toggle.onKindChange($0) })) {
                             Image(systemName: "figure.walk").tag(RoadProfile.walking)
@@ -111,6 +133,24 @@ struct DayDetailView: View {
                 .padding(.bottom, 4)
             }
         }
+    }
+
+    /// The along-route search seed for the gap after `entry` — the flattened corridor from the
+    /// held Path geometry when there is any (richer, real road/rail shape), else just the two
+    /// endpoints (still enough: `flattenPathGeometry`/`samplePoints` both treat a straight line
+    /// between two points as a legitimate, if less precise, route). `nil` exactly when
+    /// `shiftChain`'s own guard would be — either endpoint isn't geocoded, or there's no next
+    /// entry at all.
+    private func routePoints(after entry: ChainEntry) -> [Point]? {
+        guard let next = nextEntry(after: entry),
+            let fromLat = entry.location.base.lat, let fromLng = entry.location.base.lng,
+            let toLat = next.location.base.lat, let toLng = next.location.base.lng
+        else { return nil }
+        if let paths = shiftChain(after: entry), !paths.isEmpty {
+            let flattened = flattenPathGeometry(paths)
+            if flattened.count >= 2 { return flattened }
+        }
+        return [Point(lat: fromLat, lng: fromLng), Point(lat: toLat, lng: toLng)]
     }
 
     /// The next entry in the Day's chain after `entry`, if any.

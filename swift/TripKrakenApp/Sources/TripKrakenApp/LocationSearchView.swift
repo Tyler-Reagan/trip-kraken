@@ -3,15 +3,19 @@ import TripKrakenKit
 import TripKrakenRouting
 import TripKrakenStore
 
-/// Free-text place search to add a new Location (ADR-0044) — replaces the web app's unanchored
-/// `locations/search` and, via `near`, its anchored `nearby` variant too: both are the same
-/// `MapKitPlacesProvider.search` call, just biased differently. `near` defaults to the trip's own
-/// centroid when opened generally (`ContentView`) rather than truly unanchored, since an unbiased
-/// global text search is a worse default for a trip-planning search than "near where this trip
-/// already is." A future per-Location "find something nearby" entry point can pass that
-/// Location's own coordinates instead — the view itself doesn't care which.
+/// Free-text place search to add a new Location (ADR-0044) — covers all three of the web app's
+/// discovery modes in one view: unanchored `locations/search`, anchored `nearby` (via `near`), and
+/// along-route (via `routePoints`, picked back up after being deferred — see
+/// `MapKitPlacesProvider.searchAlongRoute`'s own doc comment for why it needed real work beyond
+/// "call search with a different point"). `near` defaults to the trip's own centroid when opened
+/// generally (`ContentView`) rather than truly unanchored, since an unbiased global text search is
+/// a worse default for a trip-planning search than "near where this trip already is."
 struct LocationSearchView: View {
     let near: Point?
+    /// When non-nil (and non-empty), search runs along this corridor instead of near a single
+    /// point — typically a gap's own flattened Path geometry (`DayDetailView`'s "Find along the
+    /// way" button). Takes priority over `near` when both are supplied.
+    var routePoints: [Point]? = nil
     let provider: MapKitPlacesProvider
     @Environment(TripStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -19,6 +23,8 @@ struct LocationSearchView: View {
     @State private var results: [PlaceSearchResult] = []
     @State private var isSearching = false
     @State private var errorMessage: String?
+
+    private var isAlongRoute: Bool { (routePoints?.count ?? 0) >= 2 }
 
     var body: some View {
         NavigationStack {
@@ -45,8 +51,8 @@ struct LocationSearchView: View {
                     ContentUnavailableView.search(text: query)
                 }
             }
-            .navigationTitle("Add a Location")
-            .searchable(text: $query, prompt: "Search for a place")
+            .navigationTitle(isAlongRoute ? "Find Along the Way" : "Add a Location")
+            .searchable(text: $query, prompt: isAlongRoute ? "Search along this route" : "Search for a place")
             .onSubmit(of: .search) { Task { await search() } }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -66,7 +72,11 @@ struct LocationSearchView: View {
         isSearching = true
         errorMessage = nil
         do {
-            results = try await provider.search(query: trimmed, near: near)
+            if let routePoints, isAlongRoute {
+                results = try await provider.searchAlongRoute(query: trimmed, route: routePoints)
+            } else {
+                results = try await provider.search(query: trimmed, near: near)
+            }
         } catch {
             errorMessage = error.localizedDescription
             results = []

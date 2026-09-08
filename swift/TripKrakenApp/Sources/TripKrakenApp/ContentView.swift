@@ -63,7 +63,7 @@ struct ContentView: View {
             .frame(minWidth: 180)
         } content: {
             if let day = store.days.first(where: { $0.dayNumber == selectedDayNumber }) {
-                DayDetailView(day: day, focusedLocationId: $focusedLocationId)
+                DayDetailView(day: day, placesProvider: placesProvider, focusedLocationId: $focusedLocationId)
                     .frame(minWidth: 260)
             } else {
                 ContentUnavailableView("Select a day", systemImage: "calendar")
