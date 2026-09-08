@@ -1,30 +1,63 @@
 import SwiftUI
 import TripKrakenKit
+import TripKrakenStore
 
 struct DayDetailView: View {
     let day: DerivedDay
+    @Environment(TripStore.self) private var store
+
+    /// Only stops are placed into the plan (ADR-0015 §2) — anchors and the check-in waypoint are
+    /// derived, so they render but never move.
+    private var leadingEntries: [ChainEntry] {
+        dayChainEntries(day).filter { $0.role == .start || $0.role == .checkin }
+    }
+    private var trailingEntries: [ChainEntry] {
+        dayChainEntries(day).filter { $0.role == .end }
+    }
 
     var body: some View {
-        List(dayChainEntries(day), id: \.self) { entry in
-            HStack(spacing: 12) {
-                Image(systemName: symbolName(for: entry))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.location.base.name).font(.body)
-                    Text(subtext(for: entry)).font(.caption).foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                if entry.role == .stop, let minutes = entry.location.base.visitDuration {
-                    Text(formatDuration(minutes)).font(.caption).foregroundStyle(.secondary)
-                }
+        List {
+            ForEach(leadingEntries, id: \.self) { row(for: $0) }
+            ForEach(Array(day.stops.enumerated()), id: \.element.placement.id) { index, stop in
+                row(for: ChainEntry(role: .stop, location: .activity(stop.location), stop: stop, index: index))
             }
-            .padding(.vertical, 4)
+            .onMove(perform: moveStops)
+            ForEach(trailingEntries, id: \.self) { row(for: $0) }
         }
         .navigationTitle("Day \(day.dayNumber) · \(formatted(day.date))")
+    }
+
+    private func row(for entry: ChainEntry) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbolName(for: entry))
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.location.base.name).font(.body)
+                Text(subtext(for: entry)).font(.caption).foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            if entry.role == .stop, let minutes = entry.location.base.visitDuration {
+                Text(formatDuration(minutes)).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// `List`'s move semantics (`Array.move(fromOffsets:toOffset:)`) already account for the
+    /// removal shift, so the moved placement's new index in the post-move id list is exactly the
+    /// `order` to persist — `reorderPlacements` (already tested on its own) handles shifting every
+    /// sibling around it.
+    private func moveStops(from indices: IndexSet, to newOffset: Int) {
+        guard let sourceIndex = indices.first else { return }
+        let placementId = day.stops[sourceIndex].placement.id
+        var ids = day.stops.map(\.placement.id)
+        ids.move(fromOffsets: indices, toOffset: newOffset)
+        guard let newIndex = ids.firstIndex(of: placementId) else { return }
+        try? store.movePlacement(placementId: placementId, date: day.date, order: newIndex)
     }
 
     /// System iconography per role rather than custom badge chrome — free, theme-aware, and reads
