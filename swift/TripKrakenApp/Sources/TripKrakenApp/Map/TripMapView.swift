@@ -2,10 +2,13 @@ import CoreLocation
 import MapKit
 import SwiftUI
 import TripKrakenKit
+import TripKrakenRouting
 
-/// The map column of the three-column `NavigationSplitView` (ADR-0039). Ships on straight lines —
-/// `geometry` is empty until slice 7/9 wire a real `PathGeometryProviding`; every day draws as a
-/// dashed day-colored chain until then, which is a real, honest state (ADR-0029 §7), not a stub.
+/// The map column of the three-column `NavigationSplitView` (ADR-0039). Walking/driving pairs are
+/// answered on-device by `MapKitGeometryProvider` (ADR-0042); rail pairs, and anything not yet
+/// answered, stay dashed straight lines — a real, honest state (ADR-0029 §7), not a stub. The
+/// per-pair cache/retry machinery (`PathGeometryCache`) is a later slice; this is a direct
+/// fetch-on-appear, which is all a single Day's ~5-10 pairs needs.
 struct TripMapView: View {
     let trip: TripWithDetails
     let days: [DerivedDay]
@@ -18,6 +21,10 @@ struct TripMapView: View {
     @State private var browsedMetroId: String?
     @State private var selectedLocationId: String?
     @State private var mapSize: CGSize = .zero
+    /// Keyed by `pairKey`, matching what `routeSegmentsOfDay` looks up.
+    @State private var heldGeometry: [String: [TripKrakenKit.Path]] = [:]
+
+    private let geometryProvider: PathGeometryProviding = MapKitGeometryProvider()
 
     /// The Metro tabs are browsed independently of the sidebar's active Day — overridden by an
     /// explicit tap, else falling back to whichever Metro contains the active Day. Mirrors
@@ -77,9 +84,11 @@ struct TripMapView: View {
             .onAppear {
                 mapSize = geo.size
                 fitSelectedDay()
+                loadGeometry()
             }
             .onChange(of: geo.size) { _, newSize in mapSize = newSize }
             .onChange(of: selectedDayNumber) { _, _ in fitSelectedDay() }
+            .onChange(of: trip.id) { _, _ in loadGeometry() }
             .toolbar {
                 if metros.count > 1 {
                     ToolbarItem {
@@ -111,6 +120,22 @@ struct TripMapView: View {
         }
         withAnimation(.easeInOut(duration: cameraAnimationDuration)) {
             position = cameraPosition(fitting: boundsOfDay(day), in: mapSize)
+        }
+    }
+
+    /// Best-effort, fire-and-forget: a failure here leaves pairs dashed, which is the correct
+    /// fallback state, not an error condition worth surfacing.
+    private func loadGeometry() {
+        let pairs = uniquePairsOfDays(days, profile: trip.roadProfile, journeyRoadKinds: trip.journeyRoadKinds)
+        guard !pairs.isEmpty else { return }
+        Task {
+            guard let batch = try? await geometryProvider.geometry(for: pairs, profile: trip.roadProfile, journeyRoadKinds: trip.journeyRoadKinds) else { return }
+            var next = heldGeometry
+            for (index, pair) in pairs.enumerated() {
+                guard let paths = batch.results[index] else { continue }
+                next[pairKey(profile: trip.roadProfile, pair: pair, journeyRoadKinds: trip.journeyRoadKinds)] = paths
+            }
+            heldGeometry = next
         }
     }
 
@@ -157,7 +182,7 @@ struct TripMapView: View {
 
     private var routeSegments: [RouteSegmentRow] {
         visibleDays.flatMap { day -> [RouteSegmentRow] in
-            routeSegmentsOfDay(day, profile: trip.roadProfile, journeyRoadKinds: trip.journeyRoadKinds, geometry: [:])
+            routeSegmentsOfDay(day, profile: trip.roadProfile, journeyRoadKinds: trip.journeyRoadKinds, geometry: heldGeometry)
                 .enumerated()
                 .map { index, segment in
                     RouteSegmentRow(id: "\(day.dayNumber)-\(index)", coordinates: segment.coordinates, dashed: segment.dashed, dayNumber: segment.dayNumber)

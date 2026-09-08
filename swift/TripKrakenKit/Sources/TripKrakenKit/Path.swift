@@ -48,6 +48,9 @@ public enum ProviderId: String, Sendable, Hashable, Codable {
     case osrm
     case google
     case haversine
+    /// `MKDirections`, on-device (ADR-0042) — walking/driving geometry only, never a cost source
+    /// for a pair the server's own matrix already priced.
+    case mapKit = "mapkit"
 }
 
 /// The entity operating a Path — whoever provides the travel *to* you rather than you providing it

@@ -15,6 +15,7 @@ let package = Package(
             dependencies: [
                 "TripKrakenKit",
                 .product(name: "TripKrakenStore", package: "TripKrakenKit"),
+                .product(name: "TripKrakenRouting", package: "TripKrakenKit"),
             ]
         )
     ]
