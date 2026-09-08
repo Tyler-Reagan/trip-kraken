@@ -148,6 +148,76 @@ public final class TripStore {
         try refresh()
     }
 
+    // MARK: - Anchor mutations
+
+    /// Elevates a Location to `kind: lodging` — the gesture that makes it a lodging is giving it
+    /// dates (ADR-0015 §2). `validateLodgingDates` (already tested on its own) is the only
+    /// invariant check; this method only persists once it passes.
+    public func setLodgingDates(locationId: String, checkInDate: IsoDate, checkOutDate: IsoDate) throws {
+        guard let trip, let record else { throw StoreMappingError.tripNotFound("") }
+        try validateLodgingDates(trip, locationId: locationId, checkInDate: checkInDate, checkOutDate: checkOutDate)
+        guard let locationRecord = (record.locations ?? []).first(where: { $0.id == locationId }) else { return }
+        locationRecord.kind = .lodging
+        locationRecord.checkInDate = checkInDate
+        locationRecord.checkOutDate = checkOutDate
+        try context.save()
+        try refresh()
+    }
+
+    /// Relegates a lodging back to a plain activity — removing the booking (its constraint) drops
+    /// the kind, mirroring `clearLodging` (`src/lib/db/index.ts`).
+    public func clearLodging(_ locationId: String) throws {
+        guard let record else { return }
+        guard let locationRecord = (record.locations ?? []).first(where: { $0.id == locationId }) else { return }
+        locationRecord.kind = .activity
+        locationRecord.checkInDate = nil
+        locationRecord.checkOutDate = nil
+        try context.save()
+        try refresh()
+    }
+
+    /// Designates `locationId` as the trip's arrival or departure. `planTripEdgeAssignment`
+    /// (already tested) decides the date/time and whoever must be released; this method persists
+    /// both sides of that plan in one save, so the two Locations can never disagree mid-write.
+    public func setTripEdge(_ edge: TripEdge, locationId: String, time: String?) throws {
+        guard let trip, let record else { throw StoreMappingError.tripNotFound("") }
+        let plan = try planTripEdgeAssignment(trip, edge: edge, locationId: locationId, time: time)
+
+        if let releasedId = plan.releasedLocationId,
+            let released = (record.locations ?? []).first(where: { $0.id == releasedId })
+        {
+            switch edge {
+            case .arrival: released.arriveAt = nil
+            case .departure: released.departAt = nil
+            }
+            if plan.releasedBecomesActivity { released.kind = .activity }
+        }
+
+        guard let target = (record.locations ?? []).first(where: { $0.id == locationId }) else { return }
+        target.kind = .transit
+        switch edge {
+        case .arrival: target.arriveAt = plan.isoDateTime
+        case .departure: target.departAt = plan.isoDateTime
+        }
+        try context.save()
+        try refresh()
+    }
+
+    /// Releases a Location from an edge role. Clearing the *last* of `arriveAt`/`departAt`
+    /// relegates it back to `kind: activity` — `planTripEdgeClear` decides which; this only acts.
+    public func clearTripEdge(_ edge: TripEdge, locationId: String) throws {
+        guard let trip, let record else { throw StoreMappingError.tripNotFound("") }
+        let plan = try planTripEdgeClear(trip, edge: edge, locationId: locationId)
+        guard let target = (record.locations ?? []).first(where: { $0.id == locationId }) else { return }
+        switch edge {
+        case .arrival: target.arriveAt = nil
+        case .departure: target.departAt = nil
+        }
+        if plan.relegateToActivity { target.kind = .activity }
+        try context.save()
+        try refresh()
+    }
+
     // MARK: - Private
 
     /// Reconciles `record.placements` toward `next`: existing rows are updated in place, new ids
@@ -169,6 +239,12 @@ public final class TripStore {
     private func refresh() throws {
         guard let record else { return }
         let mapped = try toTripWithDetails(record)
+        // The partial unique indexes that used to make two arrivals/departures unrepresentable are
+        // gone (ADR-0040) — `setTripEdge`/`clearTripEdge` are the only writers of these fields and
+        // are written to keep this true, so a violation here means a write-path bug, not a sync
+        // conflict. `tripEdgesOf` (Trip.swift) silently picks `.first` when this is false, so this
+        // assertion is what keeps that honest during development.
+        assert(tripEdgeViolations(mapped).isEmpty, "Trip edge invariant violated: \(tripEdgeViolations(mapped))")
         trip = mapped
         days = deriveTripPlanDays(mapped)
         metros = metrosOf(mapped)
