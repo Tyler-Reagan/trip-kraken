@@ -30,6 +30,21 @@ struct CheckTripNameCollisionTests {
     }
 }
 
+@Suite("validateTripDateRange")
+struct ValidateTripDateRangeTests {
+    @Test("a same-day trip is valid")
+    func sameDayIsValid() throws {
+        try validateTripDateRange(startDate: "2026-10-01", endDate: "2026-10-01")
+    }
+
+    @Test("start after end throws")
+    func startAfterEndThrows() {
+        #expect(throws: TripCreationError.invalidDateRange(startDate: "2026-10-05", endDate: "2026-10-01")) {
+            try validateTripDateRange(startDate: "2026-10-05", endDate: "2026-10-01")
+        }
+    }
+}
+
 @Suite("planTripEdgeAssignment")
 struct PlanTripEdgeAssignmentTests {
     @Test("no prior holder: dates from the trip, nothing released")

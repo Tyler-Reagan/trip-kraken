@@ -6,6 +6,7 @@ import TripKrakenStore
 struct ContentView: View {
     let placesProvider: MapKitPlacesProvider
     @Environment(TripStore.self) private var store
+    @Environment(PathGeometryCache.self) private var geometryCache
     @State private var selectedDayNumber: Int?
     /// A one-shot "fly the camera here" request, set only by an explicit button in
     /// `DayDetailView` — never by anything on the map itself. Clicking a map annotation only
@@ -15,6 +16,9 @@ struct ContentView: View {
     @State private var focusedLocationId: String?
     @State private var isEnriching = false
     @State private var isAddingLocation = false
+    @State private var isCreatingTrip = false
+
+    private var tripSummaries: [TripSummary] { (try? store.listTripSummaries()) ?? [] }
 
     /// The default search bias for the general "add a location" entry point — the average of
     /// every already-geocoded Location, so a search opened with no more specific anchor still
@@ -34,14 +38,17 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(store.days, id: \.dayNumber, selection: $selectedDayNumber) { day in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Day \(day.dayNumber)").font(.headline)
-                    Text(day.label ?? formatted(day.date)).font(.caption).foregroundStyle(.secondary)
+            VStack(spacing: 0) {
+                tripSwitcher
+                Divider()
+                List(store.days, id: \.dayNumber, selection: $selectedDayNumber) { day in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Day \(day.dayNumber)").font(.headline)
+                        Text(day.label ?? formatted(day.date)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .tag(day.dayNumber)
                 }
-                .tag(day.dayNumber)
             }
-            .navigationTitle(store.trip?.name ?? "Trip")
             .frame(minWidth: 180)
         } content: {
             if let day = store.days.first(where: { $0.dayNumber == selectedDayNumber }) {
@@ -58,6 +65,15 @@ struct ContentView: View {
             }
         }
         .onAppear { selectedDayNumber = store.days.first?.dayNumber }
+        .onChange(of: store.trip?.id) {
+            // Any trip switch — an explicit pick or a fresh `createTrip` — lands here, since both
+            // funnel through `store.trip` changing. `PathGeometryCache.held` is keyed by
+            // coordinate/profile, not trip id (its own doc comment says so), so it must be cleared
+            // by hand or a new trip's map would render stale geometry from the old one.
+            geometryCache.reset()
+            selectedDayNumber = store.days.first?.dayNumber
+            focusedLocationId = nil
+        }
         .toolbar {
             ToolbarItem {
                 Button {
@@ -88,7 +104,33 @@ struct ContentView: View {
         .sheet(isPresented: $isAddingLocation) {
             LocationSearchView(near: tripCentroid, provider: placesProvider)
         }
+        .sheet(isPresented: $isCreatingTrip) {
+            TripCreateView(existingTrips: tripSummaries) { _ in }
+        }
         .frame(minWidth: 900, minHeight: 500)
+    }
+
+    /// Sidebar-level trip switcher — sits above the day list rather than in the window's shared
+    /// toolbar, so it reads as part of the sidebar itself (ADR-0038-era "native ergonomics"
+    /// direction: a plain `Menu` here, not custom chrome). `TripStore.load`/`createTrip` already
+    /// do the actual switching; this is only the entry point plus, via `.onChange(of:
+    /// store.trip?.id)` above, the UI-state reset a switch needs.
+    private var tripSwitcher: some View {
+        Menu {
+            ForEach(tripSummaries, id: \.id) { summary in
+                Button(summary.name) { try? store.load(tripId: summary.id) }
+            }
+            Divider()
+            Button("New Trip…") { isCreatingTrip = true }
+        } label: {
+            HStack {
+                Text(store.trip?.name ?? "Trip").font(.headline)
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .padding(8)
     }
 }
 

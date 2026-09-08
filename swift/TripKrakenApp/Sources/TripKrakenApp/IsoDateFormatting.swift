@@ -21,3 +21,14 @@ func formatted(_ date: IsoDate) -> String {
     guard let parsed = parser.date(from: date) else { return date }
     return parsed.formatted(.dateTime.weekday(.wide).month(.wide).day())
 }
+
+/// The inverse of `formatted` above, for a `DatePicker`-driven form (`TripCreateView`) turning its
+/// `Date` selection into the domain's plain "YYYY-MM-DD" `IsoDate`. UTC, matching `formatted`'s own
+/// parser, so a date typed near midnight never rolls to the adjacent day depending on the device's
+/// local time zone.
+func isoDate(from date: Date) -> IsoDate {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "UTC")!
+    let components = calendar.dateComponents([.year, .month, .day], from: date)
+    return String(format: "%04d-%02d-%02d", components.year!, components.month!, components.day!)
+}

@@ -47,6 +47,30 @@ struct LoadTests {
 }
 
 @MainActor
+@Suite("TripStore.createTrip")
+struct CreateTripTests {
+    @Test("creates a blank-slate trip and switches to it")
+    func createsAndSwitches() throws {
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip(id: "existing"))
+        let id = try store.createTrip(name: "Kyoto", startDate: "2026-10-01", endDate: "2026-10-05")
+
+        #expect(store.trip?.id == id)
+        #expect(store.trip?.name == "Kyoto")
+        #expect(store.trip?.locations.isEmpty == true)
+        #expect((try store.listTripSummaries()).count == 2, "the existing trip is kept, not replaced")
+    }
+
+    @Test("rejects an end date before the start date")
+    func rejectsInvertedRange() throws {
+        let store = try makeInMemoryStore()
+        #expect(throws: TripCreationError.invalidDateRange(startDate: "2026-10-05", endDate: "2026-10-01")) {
+            try store.createTrip(name: "Kyoto", startDate: "2026-10-05", endDate: "2026-10-01")
+        }
+    }
+}
+
+@MainActor
 @Suite("TripStore.listTripSummaries")
 struct ListTripSummariesTests {
     @Test("counts locations per trip")

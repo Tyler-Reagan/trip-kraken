@@ -51,6 +51,19 @@ public func checkTripNameCollision(name: String, existing: [TripSummary]) -> Tri
     )
 }
 
+// MARK: - Trip creation (replaces the web app's `POST /api/trips` route-level checks)
+
+public enum TripCreationError: Error, Sendable, Hashable {
+    case invalidDateRange(startDate: IsoDate, endDate: IsoDate)
+}
+
+/// Port of the one invariant `POST /api/trips` (`src/app/api/trips/route.ts`) enforces beyond
+/// "both dates are required" — which `TripWithDetails`'s non-optional `startDate`/`endDate`
+/// already guarantees structurally (ADR-0015 §3), so there's nothing to check for that half.
+public func validateTripDateRange(startDate: IsoDate, endDate: IsoDate) throws(TripCreationError) {
+    guard startDate <= endDate else { throw .invalidDateRange(startDate: startDate, endDate: endDate) }
+}
+
 // MARK: - Trip edges (replaces `arrival_per_trip` / `departure_per_trip`, ADR-0028 §2)
 
 public enum TripEdge: String, Sendable, Hashable {

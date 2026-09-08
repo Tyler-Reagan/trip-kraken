@@ -59,6 +59,27 @@ public final class TripStore {
         try refresh()
     }
 
+    /// Blank-slate trip creation (ADR-0010), port of `POST /api/trips`. Loads the new trip
+    /// afterward, same as `seedIfEmpty` — creating a trip and not switching to it would leave the
+    /// caller looking at whatever was current before, which is never what "New Trip" means.
+    /// Duplicate names are legal (ADR-0040 dropped the DB uniqueness index) — callers wanting the
+    /// web app's advisory duplicate-name hint should check `checkTripNameCollision` against
+    /// `listTripSummaries()` themselves before calling this, not treated as this method's job.
+    @discardableResult
+    public func createTrip(name: String, startDate: IsoDate, endDate: IsoDate) throws -> String {
+        try validateTripDateRange(startDate: startDate, endDate: endDate)
+        let id = UUID().uuidString
+        let trip = TripWithDetails(
+            id: id, name: name, sourceUrl: nil, startDate: startDate, endDate: endDate,
+            dayLabels: nil, roadProfile: .walking, transitCaveatDismissed: false, hasJrPass: false,
+            createdAt: Date(), updatedAt: Date(), locations: [], placements: [], journeyRoadKinds: []
+        )
+        insertTripRecord(from: trip, into: context)
+        try context.save()
+        try load(tripId: id)
+        return id
+    }
+
     public func listTripSummaries() throws -> [TripSummary] {
         try context.fetch(FetchDescriptor<TripRecord>()).map { record in
             TripSummary(
