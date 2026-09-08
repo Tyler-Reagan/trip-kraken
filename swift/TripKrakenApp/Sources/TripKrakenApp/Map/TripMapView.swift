@@ -5,10 +5,10 @@ import TripKrakenKit
 import TripKrakenRouting
 
 /// The map column of the three-column `NavigationSplitView` (ADR-0039). Walking/driving pairs are
-/// answered on-device by `MapKitGeometryProvider` (ADR-0042); rail pairs, and anything not yet
-/// answered, stay dashed straight lines — a real, honest state (ADR-0029 §7), not a stub. The
-/// per-pair cache/retry machinery (`PathGeometryCache`) is a later slice; this is a direct
-/// fetch-on-appear, which is all a single Day's ~5-10 pairs needs.
+/// answered on-device by `MapKitGeometryProvider` (ADR-0042); rail pairs by the server's trip-less
+/// endpoint (ADR-0043) via `HTTPPathGeometryProvider`; `CompositeGeometryProvider` reconciles the
+/// two. Anything neither answers stays a dashed straight line — a real, honest state (ADR-0029
+/// §7), not a stub.
 struct TripMapView: View {
     let trip: TripWithDetails
     let days: [DerivedDay]
@@ -21,10 +21,15 @@ struct TripMapView: View {
     @State private var browsedMetroId: String?
     @State private var selectedLocationId: String?
     @State private var mapSize: CGSize = .zero
-    /// Keyed by `pairKey`, matching what `routeSegmentsOfDay` looks up.
-    @State private var heldGeometry: [String: [TripKrakenKit.Path]] = [:]
+    @State private var geometryCache = PathGeometryCache(provider: TripMapView.makeGeometryProvider())
 
-    private let geometryProvider: PathGeometryProviding = MapKitGeometryProvider()
+    /// `TRIPKRAKEN_API_BASE_URL` lets a dev point this at a non-default server; defaults to the
+    /// local Next.js dev server's own default port.
+    private static func makeGeometryProvider() -> PathGeometryProviding {
+        let base = ProcessInfo.processInfo.environment["TRIPKRAKEN_API_BASE_URL"] ?? "http://localhost:3000"
+        let endpoint = URL(string: base)!.appending(path: "api/path-geometry")
+        return CompositeGeometryProvider(onDevice: MapKitGeometryProvider(), server: HTTPPathGeometryProvider(endpoint: endpoint))
+    }
 
     /// The Metro tabs are browsed independently of the sidebar's active Day — overridden by an
     /// explicit tap, else falling back to whichever Metro contains the active Day. Mirrors
@@ -88,7 +93,10 @@ struct TripMapView: View {
             }
             .onChange(of: geo.size) { _, newSize in mapSize = newSize }
             .onChange(of: selectedDayNumber) { _, _ in fitSelectedDay() }
-            .onChange(of: trip.id) { _, _ in loadGeometry() }
+            .onChange(of: trip.id) { _, _ in
+                geometryCache.reset()
+                loadGeometry()
+            }
             .toolbar {
                 if metros.count > 1 {
                     ToolbarItem {
@@ -123,20 +131,12 @@ struct TripMapView: View {
         }
     }
 
-    /// Best-effort, fire-and-forget: a failure here leaves pairs dashed, which is the correct
-    /// fallback state, not an error condition worth surfacing.
+    /// Fire-and-forget: `PathGeometryCache` asks only for what's missing and lands answers into
+    /// `held` asynchronously; a failure leaves pairs dashed, the correct fallback, not an error
+    /// worth surfacing.
     private func loadGeometry() {
         let pairs = uniquePairsOfDays(days, profile: trip.roadProfile, journeyRoadKinds: trip.journeyRoadKinds)
-        guard !pairs.isEmpty else { return }
-        Task {
-            guard let batch = try? await geometryProvider.geometry(for: pairs, profile: trip.roadProfile, journeyRoadKinds: trip.journeyRoadKinds) else { return }
-            var next = heldGeometry
-            for (index, pair) in pairs.enumerated() {
-                guard let paths = batch.results[index] else { continue }
-                next[pairKey(profile: trip.roadProfile, pair: pair, journeyRoadKinds: trip.journeyRoadKinds)] = paths
-            }
-            heldGeometry = next
-        }
+        geometryCache.ensure(pairs: pairs, profile: trip.roadProfile, journeyRoadKinds: trip.journeyRoadKinds)
     }
 
     private func routeAlpha(for dayNumber: Int) -> Double {
@@ -182,7 +182,7 @@ struct TripMapView: View {
 
     private var routeSegments: [RouteSegmentRow] {
         visibleDays.flatMap { day -> [RouteSegmentRow] in
-            routeSegmentsOfDay(day, profile: trip.roadProfile, journeyRoadKinds: trip.journeyRoadKinds, geometry: heldGeometry)
+            routeSegmentsOfDay(day, profile: trip.roadProfile, journeyRoadKinds: trip.journeyRoadKinds, geometry: geometryCache.held)
                 .enumerated()
                 .map { index, segment in
                     RouteSegmentRow(id: "\(day.dayNumber)-\(index)", coordinates: segment.coordinates, dashed: segment.dashed, dayNumber: segment.dayNumber)
