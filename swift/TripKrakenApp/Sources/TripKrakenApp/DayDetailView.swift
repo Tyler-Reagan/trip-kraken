@@ -5,6 +5,7 @@ import TripKrakenStore
 
 struct DayDetailView: View {
     let day: DerivedDay
+    @Binding var focusedLocationId: String?
     @Environment(TripStore.self) private var store
     @Environment(PathGeometryCache.self) private var geometryCache
     @State private var detailLocation: TripKrakenKit.Location?
@@ -23,7 +24,7 @@ struct DayDetailView: View {
         List {
             ForEach(leadingEntries, id: \.self) { row(for: $0) }
             ForEach(Array(day.stops.enumerated()), id: \.element.placement.id) { index, stop in
-                row(for: ChainEntry(role: .stop, location: .activity(stop.location), stop: stop, index: index), toggle: journeyToggle(beforeStopAt: index))
+                row(for: ChainEntry(role: .stop, location: .activity(stop.location), stop: stop, index: index))
             }
             .onMove(perform: moveStops)
             ForEach(trailingEntries, id: \.self) { row(for: $0) }
@@ -34,9 +35,10 @@ struct DayDetailView: View {
         }
         .onAppear { loadGeometry() }
         .onChange(of: day.date) { loadGeometry() }
+        .onChange(of: store.trip?.journeyRoadKinds) { loadGeometry() }
     }
 
-    private func row(for entry: ChainEntry, toggle: JourneyKindToggle? = nil) -> some View {
+    private func row(for entry: ChainEntry) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 Image(systemName: symbolName(for: entry))
@@ -50,41 +52,84 @@ struct DayDetailView: View {
 
                 Spacer()
 
-                if let toggle {
-                    Picker("", selection: Binding(get: { toggle.kind }, set: { toggle.onKindChange($0) })) {
-                        Image(systemName: "figure.walk").tag(RoadProfile.walking)
-                        Image(systemName: "car.fill").tag(RoadProfile.driving)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: 76)
-                }
-
                 if entry.role == .stop, let minutes = entry.location.base.visitDuration {
                     Text(formatDuration(minutes)).font(.caption).foregroundStyle(.secondary)
                 }
+
+                locateButton(for: entry)
             }
             .padding(.vertical, 4)
             .contentShape(Rectangle())
             .onTapGesture { detailLocation = entry.location }
 
-            if let shifts = shiftChain(after: entry), !shifts.isEmpty {
-                ShiftRowsView(chain: shifts, hasJrPass: store.trip?.hasJrPass ?? false)
-                    .padding(.bottom, 4)
+            gapView(after: entry)
+        }
+    }
+
+    /// A "Show on map" button, external to the map itself (`ContentView`'s `focusedLocationId` doc
+    /// comment explains why) — the only way any location on this list flies the map's camera to
+    /// it. Hidden for an ungeocoded Location, since there's nowhere on the map to fly to.
+    private func locateButton(for entry: ChainEntry) -> some View {
+        Group {
+            if entry.location.base.lat != nil, entry.location.base.lng != nil {
+                Button {
+                    focusedLocationId = entry.location.base.id
+                } label: {
+                    Image(systemName: "location.fill")
+                }
+                .buttonStyle(.borderless)
+                .help("Show on map")
             }
         }
     }
 
-    /// The held Path chain for the gap from `entry` to whichever entry follows it in the Day's
-    /// chain — `nil` when either end isn't geocoded, or when nothing's been asked/answered yet
-    /// (`PathGeometryCache` fills this in asynchronously; an absent key just renders no shift rows,
-    /// the same way the map draws that gap as a plain dashed line until it resolves).
+    /// One gap's content — the held Path chain's shift rows, and the walk/drive kind toggle,
+    /// mirroring how the web app's `PathShiftRows` folds both onto the gap itself (`mergedEnd`)
+    /// rather than onto either endpoint's own row. Renders nothing when the gap has neither (no
+    /// geometry held yet and no real Journey to choose a kind for — a zero-length "same Location"
+    /// gap, per `resolveJourneyKindToggle`'s own guard).
+    private func gapView(after entry: ChainEntry) -> some View {
+        let shifts = shiftChain(after: entry) ?? []
+        let toggle = journeyToggle(after: entry)
+        return Group {
+            if !shifts.isEmpty || toggle != nil {
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ShiftRowsView(chain: shifts, hasJrPass: store.trip?.hasJrPass ?? false)
+                    }
+                    Spacer(minLength: 0)
+                    if let toggle {
+                        Picker("", selection: Binding(get: { toggle.kind }, set: { toggle.onKindChange($0) })) {
+                            Image(systemName: "figure.walk").tag(RoadProfile.walking)
+                            Image(systemName: "car.fill").tag(RoadProfile.driving)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(width: 76)
+                    }
+                }
+                .padding(.bottom, 4)
+            }
+        }
+    }
+
+    /// The next entry in the Day's chain after `entry`, if any.
+    private func nextEntry(after entry: ChainEntry) -> ChainEntry? {
+        guard let index = chainIndex(of: entry), index + 1 < chain.count else { return nil }
+        return chain[index + 1]
+    }
+
+    private func chainIndex(of entry: ChainEntry) -> Int? {
+        chain.firstIndex { $0.role == entry.role && $0.location.base.id == entry.location.base.id && $0.index == entry.index }
+    }
+
+    /// The held Path chain for the gap from `entry` to whichever entry follows it — `nil` when
+    /// either end isn't geocoded, or when nothing's been asked/answered yet (`PathGeometryCache`
+    /// fills this in asynchronously; an absent key just renders no shift rows, the same way the
+    /// map draws that gap as a plain dashed line until it resolves).
     private func shiftChain(after entry: ChainEntry) -> [TripKrakenKit.Path]? {
-        guard let index = chain.firstIndex(where: { $0.role == entry.role && $0.location.base.id == entry.location.base.id && $0.index == entry.index }),
-            index + 1 < chain.count
-        else { return nil }
-        let next = chain[index + 1]
-        guard let fromLat = entry.location.base.lat, let fromLng = entry.location.base.lng,
+        guard let next = nextEntry(after: entry),
+            let fromLat = entry.location.base.lat, let fromLng = entry.location.base.lng,
             let toLat = next.location.base.lat, let toLng = next.location.base.lng,
             let trip = store.trip
         else { return nil }
@@ -96,31 +141,25 @@ struct DayDetailView: View {
         return geometryCache.held[key]
     }
 
+    /// The walk/drive toggle for the gap from `entry` to whichever entry follows it —
+    /// `resolveJourneyKindToggle` (already tested) is the single place every surface resolves a
+    /// Journey's effective kind, so this never re-derives it. `nil` for a zero-length "same
+    /// Location" gap (that function's own guard), which covers e.g. a check-in waypoint that
+    /// happens to be the same Location as the day's start Anchor.
+    private func journeyToggle(after entry: ChainEntry) -> JourneyKindToggle? {
+        guard let next = nextEntry(after: entry), let trip = store.trip else { return nil }
+        let fromId = entry.location.base.id
+        let toId = next.location.base.id
+        return resolveJourneyKindToggle(
+            journeyRoadKinds: trip.journeyRoadKinds, roadProfile: trip.roadProfile, fromId: fromId, toId: toId
+        ) { newKind in
+            try? store.setJourneyRoadKind(from: fromId, to: toId, kind: newKind)
+        }
+    }
+
     private func loadGeometry() {
         guard let trip = store.trip else { return }
         geometryCache.ensure(pairs: pairsOfDay(day), profile: trip.roadProfile, journeyRoadKinds: trip.journeyRoadKinds)
-    }
-
-    /// The walk/drive control for the gap immediately before one stop — governs the Journey from
-    /// whichever chain entry precedes it (the prior stop, or the check-in waypoint/start Anchor for
-    /// the first stop). Anchors themselves don't get a toggle; only stop-to-stop and
-    /// anchor(or-waypoint)-to-first-stop gaps are shown, which covers every real gap a Day's plan
-    /// can have a choice about.
-    private func journeyToggle(beforeStopAt index: Int) -> JourneyKindToggle? {
-        guard let trip = store.trip else { return nil }
-        let previousId: String?
-        if index == 0 {
-            previousId = day.checkInWaypoint?.base.id ?? day.startAnchor?.base.id
-        } else {
-            previousId = day.stops[index - 1].location.base.id
-        }
-        guard let previousId else { return nil }
-        let toId = day.stops[index].location.base.id
-        return resolveJourneyKindToggle(
-            journeyRoadKinds: trip.journeyRoadKinds, roadProfile: trip.roadProfile, fromId: previousId, toId: toId
-        ) { newKind in
-            try? store.setJourneyRoadKind(from: previousId, to: toId, kind: newKind)
-        }
     }
 
     /// `List`'s move semantics (`Array.move(fromOffsets:toOffset:)`) already account for the

@@ -18,6 +18,10 @@ struct TripMapView: View {
     let days: [DerivedDay]
     let metros: [TripMetro]
     @Binding var selectedDayNumber: Int?
+    /// A one-shot "fly here" request set by an explicit button in `DayDetailView` — the only thing
+    /// that moves the camera to a single location. Selecting a map annotation directly only
+    /// highlights it; see `focusedLocationId`'s doc comment on `ContentView` for why.
+    @Binding var focusedLocationId: String?
     @Environment(PathGeometryCache.self) private var geometryCache
 
     @State private var position: MapCameraPosition = .region(
@@ -90,11 +94,12 @@ struct TripMapView: View {
             }
             .onChange(of: geo.size) { _, newSize in mapSize = newSize }
             .onChange(of: selectedDayNumber) { _, _ in fitSelectedDay() }
-            .onChange(of: selectedLocationId) { _, newValue in focusOnSelection(newValue) }
+            .onChange(of: focusedLocationId) { _, newValue in focusOnLocation(newValue) }
             .onChange(of: trip.id) { _, _ in
                 geometryCache.reset()
                 loadGeometry()
             }
+            .onChange(of: trip.journeyRoadKinds) { _, _ in loadGeometry() }
             .toolbar {
                 if metros.count > 1 {
                     ToolbarItem {
@@ -129,12 +134,15 @@ struct TripMapView: View {
         }
     }
 
-    /// Selecting a stop or Anchor annotation (a click, on macOS) flies the camera to it — the
-    /// native equivalent of the web map's `StopPanel` row click (`onFocus({tier: "stop", ...})`).
-    private func focusOnSelection(_ id: String?) {
-        guard let id else { return }
-        let coordinate = stopAnnotations.first { $0.id == id }?.coordinate
-            ?? anchorAnnotations.first { $0.id == id }?.coordinate
+    /// A one-shot "fly here" command, consumed and cleared — set only by the external "Show on
+    /// map" button in `DayDetailView` (`focusedLocationId`'s doc comment above explains why this
+    /// is never driven by the map's own `selection`). Clearing it after flying means clicking the
+    /// same button again re-triggers the animation instead of doing nothing on a no-op state change.
+    private func focusOnLocation(_ locationId: String?) {
+        guard let locationId else { return }
+        let coordinate = stopAnnotations.first { $0.locationId == locationId }?.coordinate
+            ?? anchorAnnotations.first { $0.locationId == locationId }?.coordinate
+        defer { focusedLocationId = nil }
         guard let coordinate else { return }
         withAnimation(.easeInOut(duration: cameraAnimationDuration)) {
             position = cameraPosition(flyingTo: Point(lat: coordinate.latitude, lng: coordinate.longitude))
@@ -176,6 +184,9 @@ struct TripMapView: View {
 
     private struct StopAnnotationRow: Identifiable {
         let id: String
+        /// The real Location id — distinct from `id` (a per-Placement identity, since the same
+        /// Location could in principle repeat), and what `focusOnLocation` actually matches on.
+        let locationId: String
         let name: String
         let coordinate: CLLocationCoordinate2D
         let order: Int
@@ -184,6 +195,9 @@ struct TripMapView: View {
 
     private struct AnchorAnnotationRow: Identifiable {
         let id: String
+        /// The real Location id — distinct from `id` (a per-day-per-role composite, since the same
+        /// Anchor can recur across days), and what `focusOnLocation` actually matches on.
+        let locationId: String
         let name: String
         let coordinate: CLLocationCoordinate2D
         let isTransit: Bool
@@ -205,7 +219,7 @@ struct TripMapView: View {
             day.stops.enumerated().compactMap { index, stop -> StopAnnotationRow? in
                 guard let lat = stop.location.base.lat, let lng = stop.location.base.lng else { return nil }
                 return StopAnnotationRow(
-                    id: stop.placement.id, name: stop.location.base.name,
+                    id: stop.placement.id, locationId: stop.location.base.id, name: stop.location.base.name,
                     coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng),
                     order: index + 1, dayNumber: day.dayNumber
                 )
@@ -218,14 +232,14 @@ struct TripMapView: View {
             var rows: [AnchorAnnotationRow] = []
             if let start = day.startAnchor, let lat = start.base.lat, let lng = start.base.lng {
                 rows.append(AnchorAnnotationRow(
-                    id: "\(day.dayNumber)-start-\(start.base.id)", name: start.base.name,
+                    id: "\(day.dayNumber)-start-\(start.base.id)", locationId: start.base.id, name: start.base.name,
                     coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng),
                     isTransit: start.asLocation.asTransit != nil, dayNumber: day.dayNumber
                 ))
             }
             if let end = day.endAnchor, let lat = end.base.lat, let lng = end.base.lng {
                 rows.append(AnchorAnnotationRow(
-                    id: "\(day.dayNumber)-end-\(end.base.id)", name: end.base.name,
+                    id: "\(day.dayNumber)-end-\(end.base.id)", locationId: end.base.id, name: end.base.name,
                     coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng),
                     isTransit: end.asLocation.asTransit != nil, dayNumber: day.dayNumber
                 ))
