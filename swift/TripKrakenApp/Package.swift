@@ -12,7 +12,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "TripKrakenApp",
-            dependencies: ["TripKrakenKit"]
+            dependencies: [
+                "TripKrakenKit",
+                .product(name: "TripKrakenStore", package: "TripKrakenKit"),
+            ]
         )
     ]
 )

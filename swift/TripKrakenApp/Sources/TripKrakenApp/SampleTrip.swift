@@ -1,10 +1,11 @@
 import Foundation
 import TripKrakenKit
 
-/// Hardcoded fixture, not a real fetch — proves the pipeline (domain model → SwiftUI) end to end
-/// before there's a networking layer or a persistence layer to pull real data from. Lives in the
-/// app target, not `TripKrakenKit`: the library stays free of demo data, same as it stays free of
-/// UI and persistence.
+/// The first-launch seed `TripStore.seedIfEmpty` inserts into an empty SwiftData store — no longer
+/// the app's data source itself (that's the store, from here on). Kept as a hardcoded fixture
+/// rather than an empty blank-slate trip so the app is immediately demonstrable on a fresh install.
+/// Lives in the app target, not `TripKrakenKit`: the library stays free of demo data, same as it
+/// stays free of UI and persistence.
 extension TripWithDetails {
     static let sample: TripWithDetails = {
         let arrival = Transit(
