@@ -11,6 +11,13 @@ private struct StubProvider: PathGeometryProviding {
     }
 }
 
+private struct ThrowingProvider: PathGeometryProviding {
+    struct Failure: Error {}
+    func geometry(for pairs: [PathPair], profile: RoadProfile, journeyRoadKinds: [JourneyRoadKind]) async throws -> PathGeometryBatch {
+        throw Failure()
+    }
+}
+
 private func pair(_ n: Double) -> PathPair {
     PathPair(from: PathEndpoint(lat: n, lng: n), to: PathEndpoint(lat: n + 1, lng: n + 1))
 }
@@ -95,5 +102,39 @@ struct CompositeGeometryProviderTests {
         let batch = try await composite.geometry(for: [], profile: .walking, journeyRoadKinds: [])
 
         #expect(batch.results.isEmpty)
+    }
+
+    @Test("the server throwing (e.g. no dev server running) still returns the on-device answer, not a thrown error")
+    func serverThrowingStillReturnsOnDeviceAnswer() async throws {
+        let onDevice = StubProvider(batch: PathGeometryBatch(results: [[walkingPath()]], retryIndices: []))
+        let server = ThrowingProvider()
+        let composite = CompositeGeometryProvider(onDevice: onDevice, server: server)
+
+        let batch = try await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
+
+        #expect(batch.results[0]?.first?.base.travelCost.answeredBy == .mapKit)
+    }
+
+    @Test("the on-device provider throwing still returns the server answer, and marks the pair for retry if it doesn't answer")
+    func onDeviceThrowingStillReturnsServerAnswer() async throws {
+        let onDevice = ThrowingProvider()
+        let server = StubProvider(batch: PathGeometryBatch(results: [[railPath()]], retryIndices: []))
+        let composite = CompositeGeometryProvider(onDevice: onDevice, server: server)
+
+        let batch = try await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
+
+        #expect(batch.results[0]?.first?.kind == .rail)
+    }
+
+    @Test("both providers throwing surfaces the pair for retry instead of throwing the whole batch")
+    func bothThrowingSurfacesRetry() async throws {
+        let onDevice = ThrowingProvider()
+        let server = ThrowingProvider()
+        let composite = CompositeGeometryProvider(onDevice: onDevice, server: server)
+
+        let batch = try await composite.geometry(for: [pair(0)], profile: .walking, journeyRoadKinds: [])
+
+        #expect(batch.results == [nil])
+        #expect(batch.retryIndices == [0])
     }
 }

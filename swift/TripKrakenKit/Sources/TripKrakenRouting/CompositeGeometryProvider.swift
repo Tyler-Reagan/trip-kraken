@@ -34,12 +34,12 @@ public struct CompositeGeometryProvider: PathGeometryProviding {
 
     public func geometry(
         for pairs: [PathPair], profile: RoadProfile, journeyRoadKinds: [JourneyRoadKind]
-    ) async throws -> PathGeometryBatch {
+    ) async -> PathGeometryBatch {
         guard !pairs.isEmpty else { return PathGeometryBatch(results: [], retryIndices: []) }
 
-        async let onDeviceBatch = onDevice.geometry(for: pairs, profile: profile, journeyRoadKinds: journeyRoadKinds)
-        async let serverBatch = server.geometry(for: pairs, profile: profile, journeyRoadKinds: journeyRoadKinds)
-        let (fromDevice, fromServer) = try await (onDeviceBatch, serverBatch)
+        async let onDeviceBatch = attempt(onDevice, pairs: pairs, profile: profile, journeyRoadKinds: journeyRoadKinds)
+        async let serverBatch = attempt(server, pairs: pairs, profile: profile, journeyRoadKinds: journeyRoadKinds)
+        let (fromDevice, fromServer) = await (onDeviceBatch, serverBatch)
 
         var results: [[Path]?] = Array(repeating: nil, count: pairs.count)
         var retryIndices: Set<Int> = []
@@ -62,5 +62,17 @@ public struct CompositeGeometryProvider: PathGeometryProviding {
         }
 
         return PathGeometryBatch(results: results, retryIndices: retryIndices)
+    }
+
+    /// Runs one provider and converts a thrown error (e.g. `NSURLErrorDomain -1004` when the dev
+    /// server isn't running) into a batch that asks for a retry on every pair, instead of letting
+    /// the throw propagate. Without this, `try await` on the `(onDeviceBatch, serverBatch)` tuple
+    /// would fail the whole composite call the moment either side throws — discarding whatever the
+    /// *other* side already answered, even a perfectly good on-device MapKit result.
+    private func attempt(
+        _ provider: PathGeometryProviding, pairs: [PathPair], profile: RoadProfile, journeyRoadKinds: [JourneyRoadKind]
+    ) async -> PathGeometryBatch {
+        (try? await provider.geometry(for: pairs, profile: profile, journeyRoadKinds: journeyRoadKinds))
+            ?? PathGeometryBatch(results: Array(repeating: nil, count: pairs.count), retryIndices: Set(pairs.indices))
     }
 }

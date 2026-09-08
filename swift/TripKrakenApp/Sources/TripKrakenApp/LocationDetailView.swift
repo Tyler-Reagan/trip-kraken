@@ -13,31 +13,40 @@ struct LocationDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var noteDraft: String = ""
 
+    /// Re-read from the store on every access instead of trusting the `location` the sheet was
+    /// opened with — that parameter is a plain value type captured once at presentation time
+    /// (`DayDetailView`'s `.sheet(item:)`), so it never reflects a mutation like the Stepper's own
+    /// `setVisitDuration` call. Falls back to the captured value only if the Location has since
+    /// been removed from the trip entirely.
+    private var liveLocation: TripKrakenKit.Location {
+        store.trip?.locations.first { $0.base.id == location.base.id } ?? location
+    }
+
     var body: some View {
         Form {
-            if location.base.rating != nil || location.base.reviewCount != nil {
+            if liveLocation.base.rating != nil || liveLocation.base.reviewCount != nil {
                 LabeledContent("Rating") {
                     HStack(spacing: 4) {
-                        if let rating = location.base.rating {
+                        if let rating = liveLocation.base.rating {
                             Image(systemName: "star.fill").foregroundStyle(.yellow).font(.caption)
                             Text(String(format: "%.1f", rating))
                         }
-                        if let count = location.base.reviewCount {
+                        if let count = liveLocation.base.reviewCount {
                             Text("(\(count) reviews)").foregroundStyle(.secondary)
                         }
                     }
                 }
             }
 
-            if let address = location.base.address {
+            if let address = liveLocation.base.address {
                 LabeledContent("Address", value: address)
             }
 
-            if location.base.openTime != nil || location.base.closeTime != nil {
-                LabeledContent("Hours", value: "\(location.base.openTime ?? "?")–\(location.base.closeTime ?? "?")")
+            if liveLocation.base.openTime != nil || liveLocation.base.closeTime != nil {
+                LabeledContent("Hours", value: "\(liveLocation.base.openTime ?? "?")–\(liveLocation.base.closeTime ?? "?")")
             }
 
-            if let activity = location.asActivity {
+            if let activity = liveLocation.asActivity {
                 LabeledContent("Visit duration") {
                     Stepper(
                         formatDuration(resolveVisitDuration(activity.base.visitDuration)),
@@ -47,11 +56,11 @@ struct LocationDetailView: View {
                 }
             }
 
-            if let categories = location.base.categories, !categories.isEmpty {
+            if let categories = liveLocation.base.categories, !categories.isEmpty {
                 LabeledContent("Categories", value: categories.map { $0.replacingOccurrences(of: "_", with: " ") }.joined(separator: ", "))
             }
 
-            switch location.base.enrichmentStatus {
+            switch liveLocation.base.enrichmentStatus {
             case .pending:
                 Label("Fetching details…", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(.secondary)
             case .failed:
@@ -66,7 +75,7 @@ struct LocationDetailView: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle(location.base.name)
+        .navigationTitle(liveLocation.base.name)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") {
@@ -75,18 +84,18 @@ struct LocationDetailView: View {
                 }
             }
         }
-        .onAppear { noteDraft = location.base.note ?? "" }
+        .onAppear { noteDraft = liveLocation.base.note ?? "" }
         .frame(minWidth: 380, minHeight: 440)
     }
 
     private func adjustVisitDuration(_ direction: StepDirection) {
-        guard let activity = location.asActivity else { return }
+        guard let activity = liveLocation.asActivity else { return }
         let next = nextVisitDuration(resolveVisitDuration(activity.base.visitDuration), direction: direction)
         try? store.setVisitDuration(locationId: activity.base.id, minutes: next)
     }
 
     private func commitNote() {
-        guard noteDraft != (location.base.note ?? "") else { return }
-        try? store.setLocationNote(locationId: location.base.id, note: noteDraft)
+        guard noteDraft != (liveLocation.base.note ?? "") else { return }
+        try? store.setLocationNote(locationId: liveLocation.base.id, note: noteDraft)
     }
 }
