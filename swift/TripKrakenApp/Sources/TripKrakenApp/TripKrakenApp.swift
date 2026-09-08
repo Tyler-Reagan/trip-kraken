@@ -21,6 +21,6 @@ struct TripKrakenApp: App {
             ContentView()
                 .environment(store)
         }
-        .defaultSize(width: 900, height: 550)
+        .defaultSize(width: 1100, height: 650)
     }
 }

@@ -17,15 +17,22 @@ struct ContentView: View {
             }
             .navigationTitle(store.trip?.name ?? "Trip")
             .frame(minWidth: 180)
-        } detail: {
+        } content: {
             if let day = store.days.first(where: { $0.dayNumber == selectedDayNumber }) {
                 DayDetailView(day: day)
+                    .frame(minWidth: 260)
             } else {
                 ContentUnavailableView("Select a day", systemImage: "calendar")
             }
+        } detail: {
+            if let trip = store.trip {
+                TripMapView(trip: trip, days: store.days, metros: store.metros, selectedDayNumber: $selectedDayNumber)
+            } else {
+                ContentUnavailableView("No trip loaded", systemImage: "map")
+            }
         }
         .onAppear { selectedDayNumber = store.days.first?.dayNumber }
-        .frame(minWidth: 700, minHeight: 450)
+        .frame(minWidth: 900, minHeight: 500)
     }
 }
 
