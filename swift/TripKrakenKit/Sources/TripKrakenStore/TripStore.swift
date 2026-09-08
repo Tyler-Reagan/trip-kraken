@@ -130,6 +130,27 @@ public final class TripStore {
         return id
     }
 
+    /// Sets an Activity's estimated visit time, clamped to the same range the duration ladder UI
+    /// steps within (`clampVisitDuration`). A no-op for a Location that isn't an Activity — only
+    /// activities carry a visit duration the optimizer consults.
+    public func setVisitDuration(locationId: String, minutes: Int) throws {
+        guard let record else { return }
+        guard let locationRecord = (record.locations ?? []).first(where: { $0.id == locationId }), locationRecord.kind == .activity else { return }
+        locationRecord.visitDuration = clampVisitDuration(minutes)
+        try context.save()
+        try refresh()
+    }
+
+    /// Free-text notes on any Location, regardless of kind. `nil`/empty clears them.
+    public func setLocationNote(locationId: String, note: String?) throws {
+        guard let record else { return }
+        guard let locationRecord = (record.locations ?? []).first(where: { $0.id == locationId }) else { return }
+        let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        locationRecord.note = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        try context.save()
+        try refresh()
+    }
+
     /// Cascades to the Location's own Placements and JourneyRoadKind rows — the SQLite
     /// `ON DELETE CASCADE` this design deliberately doesn't model as a SwiftData relationship (see
     /// `Schema.swift`'s header), so it's an explicit step here instead.

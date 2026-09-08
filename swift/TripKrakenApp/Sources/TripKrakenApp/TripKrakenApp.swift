@@ -1,10 +1,13 @@
+import Foundation
 import SwiftUI
 import TripKrakenKit
+import TripKrakenRouting
 import TripKrakenStore
 
 @main
 struct TripKrakenApp: App {
     private let store: TripStore
+    private let geometryCache: PathGeometryCache
 
     init() {
         do {
@@ -14,12 +17,22 @@ struct TripKrakenApp: App {
         } catch {
             fatalError("Failed to open the TripKraken store: \(error)")
         }
+        self.geometryCache = PathGeometryCache(provider: TripKrakenApp.makeGeometryProvider())
+    }
+
+    /// `TRIPKRAKEN_API_BASE_URL` lets a dev point this at a non-default server; defaults to the
+    /// local Next.js dev server's own default port.
+    private static func makeGeometryProvider() -> PathGeometryProviding {
+        let base = ProcessInfo.processInfo.environment["TRIPKRAKEN_API_BASE_URL"] ?? "http://localhost:3000"
+        let endpoint = URL(string: base)!.appending(path: "api/path-geometry")
+        return CompositeGeometryProvider(onDevice: MapKitGeometryProvider(), server: HTTPPathGeometryProvider(endpoint: endpoint))
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(store)
+                .environment(geometryCache)
         }
         .defaultSize(width: 1100, height: 650)
     }

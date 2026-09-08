@@ -9,11 +9,16 @@ import TripKrakenRouting
 /// endpoint (ADR-0043) via `HTTPPathGeometryProvider`; `CompositeGeometryProvider` reconciles the
 /// two. Anything neither answers stays a dashed straight line — a real, honest state (ADR-0029
 /// §7), not a stub.
+///
+/// `PathGeometryCache` is app-level state (constructed once in `TripKrakenApp`), not owned here —
+/// `DayDetailView`'s shift-row breakdown reads the same held geometry, so a single cache is what
+/// keeps the itinerary and the map from disagreeing about what's been answered.
 struct TripMapView: View {
     let trip: TripWithDetails
     let days: [DerivedDay]
     let metros: [TripMetro]
     @Binding var selectedDayNumber: Int?
+    @Environment(PathGeometryCache.self) private var geometryCache
 
     @State private var position: MapCameraPosition = .region(
         MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 35.69, longitude: 139.69), span: MKCoordinateSpan(latitudeDelta: 1.2, longitudeDelta: 1.2))
@@ -21,15 +26,6 @@ struct TripMapView: View {
     @State private var browsedMetroId: String?
     @State private var selectedLocationId: String?
     @State private var mapSize: CGSize = .zero
-    @State private var geometryCache = PathGeometryCache(provider: TripMapView.makeGeometryProvider())
-
-    /// `TRIPKRAKEN_API_BASE_URL` lets a dev point this at a non-default server; defaults to the
-    /// local Next.js dev server's own default port.
-    private static func makeGeometryProvider() -> PathGeometryProviding {
-        let base = ProcessInfo.processInfo.environment["TRIPKRAKEN_API_BASE_URL"] ?? "http://localhost:3000"
-        let endpoint = URL(string: base)!.appending(path: "api/path-geometry")
-        return CompositeGeometryProvider(onDevice: MapKitGeometryProvider(), server: HTTPPathGeometryProvider(endpoint: endpoint))
-    }
 
     /// The Metro tabs are browsed independently of the sidebar's active Day — overridden by an
     /// explicit tap, else falling back to whichever Metro contains the active Day. Mirrors
@@ -83,6 +79,7 @@ struct TripMapView: View {
                             .font(.title)
                             .opacity(dotAlpha(for: anchor.dayNumber))
                     }
+                    .tag(anchor.id)
                 }
             }
             .mapStyle(.standard(pointsOfInterest: .including([.publicTransport])))
@@ -93,6 +90,7 @@ struct TripMapView: View {
             }
             .onChange(of: geo.size) { _, newSize in mapSize = newSize }
             .onChange(of: selectedDayNumber) { _, _ in fitSelectedDay() }
+            .onChange(of: selectedLocationId) { _, newValue in focusOnSelection(newValue) }
             .onChange(of: trip.id) { _, _ in
                 geometryCache.reset()
                 loadGeometry()
@@ -128,6 +126,18 @@ struct TripMapView: View {
         }
         withAnimation(.easeInOut(duration: cameraAnimationDuration)) {
             position = cameraPosition(fitting: boundsOfDay(day), in: mapSize)
+        }
+    }
+
+    /// Selecting a stop or Anchor annotation (a click, on macOS) flies the camera to it — the
+    /// native equivalent of the web map's `StopPanel` row click (`onFocus({tier: "stop", ...})`).
+    private func focusOnSelection(_ id: String?) {
+        guard let id else { return }
+        let coordinate = stopAnnotations.first { $0.id == id }?.coordinate
+            ?? anchorAnnotations.first { $0.id == id }?.coordinate
+        guard let coordinate else { return }
+        withAnimation(.easeInOut(duration: cameraAnimationDuration)) {
+            position = cameraPosition(flyingTo: Point(lat: coordinate.latitude, lng: coordinate.longitude))
         }
     }
 
