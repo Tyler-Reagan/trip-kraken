@@ -1,3 +1,5 @@
+import Foundation
+import SQLite3
 import Testing
 import TripKrakenKit
 
@@ -67,6 +69,36 @@ struct CreateTripTests {
         #expect(throws: TripCreationError.invalidDateRange(startDate: "2026-10-05", endDate: "2026-10-01")) {
             try store.createTrip(name: "Kyoto", startDate: "2026-10-05", endDate: "2026-10-01")
         }
+    }
+}
+
+@MainActor
+@Suite("TripStore.importFromTursoExport")
+struct ImportFromTursoExportTests {
+    @Test("imports a Trip from a real SQLite file and switches to it")
+    func importsAndSwitches() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite")
+        var db: OpaquePointer?
+        #expect(sqlite3_open(url.path, &db) == SQLITE_OK)
+        defer { sqlite3_close(db); try? FileManager.default.removeItem(at: url) }
+        let sql = """
+            CREATE TABLE "Trip" (id TEXT PRIMARY KEY, name TEXT, sourceUrl TEXT, startDate TEXT, endDate TEXT, dayLabels TEXT, roadProfile TEXT, transitCaveatDismissed INTEGER, hasJrPass INTEGER, createdAt TEXT, updatedAt TEXT);
+            CREATE TABLE "Location" (id TEXT PRIMARY KEY, tripId TEXT, kind TEXT, name TEXT, address TEXT, lat REAL, lng REAL, placeId TEXT, excluded INTEGER, note TEXT, rating REAL, reviewCount INTEGER, categories TEXT, visitDuration INTEGER, openTime TEXT, closeTime TEXT, hoursJson TEXT, phone TEXT, checkInDate TEXT, checkOutDate TEXT, arriveAt TEXT, departAt TEXT, enrichmentStatus TEXT, enrichmentError TEXT);
+            CREATE TABLE "Placement" (id TEXT PRIMARY KEY, tripId TEXT, locationId TEXT, date TEXT, "order" INTEGER);
+            CREATE TABLE "JourneyRoadKind" (id TEXT PRIMARY KEY, tripId TEXT, locationAId TEXT, locationBId TEXT, kind TEXT);
+            INSERT INTO "Trip" (id, name, sourceUrl, startDate, endDate, dayLabels, roadProfile, transitCaveatDismissed, hasJrPass, createdAt, updatedAt)
+            VALUES ('t1', 'Kyoto', NULL, '2026-10-01', '2026-10-05', NULL, 'walking', 0, 0, '2026-09-01 10:00:00', '2026-09-01 10:00:00');
+            """
+        #expect(sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK)
+
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip(id: "existing"))
+        let ids = try store.importFromTursoExport(path: url.path)
+
+        #expect(ids == ["t1"])
+        #expect(store.trip?.id == "t1")
+        #expect(store.trip?.name == "Kyoto")
+        #expect((try store.listTripSummaries()).count == 2, "the existing trip is kept, not replaced")
     }
 }
 

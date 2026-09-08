@@ -49,6 +49,27 @@ public final class TripStore {
         return firstId
     }
 
+    /// One-time import from a Turso/libSQL SQLite export (`TursoImportReader`) — a migration tool,
+    /// not an ongoing sync path (ADR-0038 already keeps Turso itself out of the Swift client).
+    /// Reads every Trip the file contains before writing any of them, so a bad row partway through
+    /// (e.g. a lodging Location missing its dates) aborts with nothing written rather than leaving
+    /// a half-imported file. Switches to the first imported trip, same as `createTrip`; the rest
+    /// are reachable via the trip switcher like any other trip. Importing the same file twice fails
+    /// at `save()` on the id collision `insertTripRecord` never reconciles — the correct outcome,
+    /// not a bug to work around.
+    @discardableResult
+    public func importFromTursoExport(path: String) throws -> [String] {
+        let trips = try TursoImportReader(path: path).readTrips()
+        for trip in trips {
+            insertTripRecord(from: trip, into: context)
+        }
+        try context.save()
+        if let firstId = trips.first?.id {
+            try load(tripId: firstId)
+        }
+        return trips.map(\.id)
+    }
+
     public func load(tripId: String) throws {
         var descriptor = FetchDescriptor<TripRecord>(predicate: #Predicate { $0.id == tripId })
         descriptor.fetchLimit = 1

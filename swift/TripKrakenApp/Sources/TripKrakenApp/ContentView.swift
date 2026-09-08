@@ -2,6 +2,7 @@ import SwiftUI
 import TripKrakenKit
 import TripKrakenRouting
 import TripKrakenStore
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     let placesProvider: MapKitPlacesProvider
@@ -17,6 +18,13 @@ struct ContentView: View {
     @State private var isEnriching = false
     @State private var isAddingLocation = false
     @State private var isCreatingTrip = false
+    @State private var isImportingTurso = false
+    @State private var importAlert: ImportAlert?
+
+    private struct ImportAlert: Identifiable {
+        let id = UUID()
+        let message: String
+    }
 
     private var tripSummaries: [TripSummary] { (try? store.listTripSummaries()) ?? [] }
 
@@ -107,7 +115,34 @@ struct ContentView: View {
         .sheet(isPresented: $isCreatingTrip) {
             TripCreateView(existingTrips: tripSummaries) { _ in }
         }
+        .fileImporter(isPresented: $isImportingTurso, allowedContentTypes: [.data]) { result in
+            switch result {
+            case .success(let url):
+                importTursoExport(from: url)
+            case .failure(let error):
+                importAlert = ImportAlert(message: "Couldn't open that file: \(error.localizedDescription)")
+            }
+        }
+        .alert(item: $importAlert) { alert in
+            Alert(title: Text("Import"), message: Text(alert.message), dismissButton: .default(Text("OK")))
+        }
         .frame(minWidth: 900, minHeight: 500)
+    }
+
+    /// One-time migration from a Turso/libSQL SQLite export (ADR-0038 keeps Turso itself out of
+    /// ongoing Swift-client use — see `TursoImportReader`'s own doc comment). `url.startAccessingSecurityScopedResource()`
+    /// is required for a `.fileImporter`-granted path outside the app's sandbox container; without
+    /// it, `sqlite3_open_v2` would fail with a permissions error despite the picker having just
+    /// shown the user this exact file.
+    private func importTursoExport(from url: URL) {
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let ids = try store.importFromTursoExport(path: url.path)
+            importAlert = ImportAlert(message: "Imported \(ids.count) trip\(ids.count == 1 ? "" : "s").")
+        } catch {
+            importAlert = ImportAlert(message: "Import failed: \(error.localizedDescription)")
+        }
     }
 
     /// Sidebar-level trip switcher — sits above the day list rather than in the window's shared
@@ -122,6 +157,7 @@ struct ContentView: View {
             }
             Divider()
             Button("New Trip…") { isCreatingTrip = true }
+            Button("Import from Turso Export…") { isImportingTurso = true }
         } label: {
             HStack {
                 Text(store.trip?.name ?? "Trip").font(.headline)
