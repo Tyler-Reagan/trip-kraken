@@ -14,6 +14,23 @@ struct ContentView: View {
     /// The external button has no such dead end, since it's a list item, not a map pin.
     @State private var focusedLocationId: String?
     @State private var isEnriching = false
+    @State private var isAddingLocation = false
+
+    /// The default search bias for the general "add a location" entry point — the average of
+    /// every already-geocoded Location, so a search opened with no more specific anchor still
+    /// favors "near where this trip already is" over an unbiased global text search. `nil` only
+    /// for a trip with no geocoded locations at all.
+    private var tripCentroid: Point? {
+        let points = (store.trip?.locations ?? []).compactMap { location -> Point? in
+            guard let lat = location.base.lat, let lng = location.base.lng else { return nil }
+            return Point(lat: lat, lng: lng)
+        }
+        guard !points.isEmpty else { return nil }
+        return Point(
+            lat: points.map(\.lat).reduce(0, +) / Double(points.count),
+            lng: points.map(\.lng).reduce(0, +) / Double(points.count)
+        )
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -44,6 +61,14 @@ struct ContentView: View {
         .toolbar {
             ToolbarItem {
                 Button {
+                    isAddingLocation = true
+                } label: {
+                    Label("Add Location", systemImage: "magnifyingglass")
+                }
+                .help("Search for a place to add to this trip")
+            }
+            ToolbarItem {
+                Button {
                     isEnriching = true
                     Task {
                         await enrichPendingLocations(store: store, provider: placesProvider)
@@ -59,6 +84,9 @@ struct ContentView: View {
                 .disabled(isEnriching)
                 .help("Look up address/phone/category for any location missing them")
             }
+        }
+        .sheet(isPresented: $isAddingLocation) {
+            LocationSearchView(near: tripCentroid, provider: placesProvider)
         }
         .frame(minWidth: 900, minHeight: 500)
     }
