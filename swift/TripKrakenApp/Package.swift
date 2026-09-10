@@ -18,6 +18,13 @@ let package = Package(
                 .product(name: "TripKrakenStore", package: "TripKrakenKit"),
                 .product(name: "TripKrakenRouting", package: "TripKrakenKit"),
             ]
-        )
+        ),
+        // THROWAWAY — see the /prototype skill's own doc comment at the top of its one source file.
+        // Answered the day-header metro/date/day visual-hierarchy question for issue #235; the
+        // validated decision landed on swift-native at 7602907. Kept here only as a primary source.
+        .executableTarget(
+            name: "DayHeaderPrototype",
+            dependencies: ["TripKrakenKit"]
+        ),
     ]
 )
