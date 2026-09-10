@@ -29,6 +29,10 @@ struct ContentView: View {
     /// Which metro the map is browsing — shared between `TripMapView`'s own segmented picker and
     /// `DayHeaderView`'s metro chips (issue #235); lifted here so both can write to the same state.
     @State private var browsedMetroId: String?
+    /// Collapsed state for the sidebar's per-metro `DisclosureGroup`s — absence means expanded, so
+    /// a newly-appearing metro (a fresh trip, or a day gaining coordinates via enrichment) starts
+    /// open rather than needing to be tracked into existence first.
+    @State private var collapsedMetroIds: Set<String> = []
     @State private var isEnriching = false
     @State private var isAddingLocation = false
     @State private var isCreatingTrip = false
@@ -57,6 +61,26 @@ struct ContentView: View {
 
     private var tripSummaries: [TripSummary] { (try? store.listTripSummaries()) ?? [] }
 
+    /// Days no metro claims — a day with no stops yet, or whose stops aren't geocoded, never joins
+    /// a `TripMetro` cluster (`TripMetros.swift`'s own doc comment). Shown ungrouped rather than
+    /// silently dropped from the sidebar.
+    private var orphanDays: [DerivedDay] {
+        store.days.filter { day in !store.metros.contains { $0.dayNumbers.contains(day.dayNumber) } }
+    }
+
+    private func days(in metro: TripMetro) -> [DerivedDay] {
+        store.days.filter { metro.dayNumbers.contains($0.dayNumber) }
+    }
+
+    private func isExpandedBinding(for metroId: String) -> Binding<Bool> {
+        Binding(
+            get: { !collapsedMetroIds.contains(metroId) },
+            set: { expanded in
+                if expanded { collapsedMetroIds.remove(metroId) } else { collapsedMetroIds.insert(metroId) }
+            }
+        )
+    }
+
     /// The default search bias for the general "add a location" entry point — the average of
     /// every already-geocoded Location, so a search opened with no more specific anchor still
     /// favors "near where this trip already is" over an unbiased global text search. `nil` only
@@ -82,15 +106,30 @@ struct ContentView: View {
                     Label("Unscheduled (\(store.unscheduledActivities.count))", systemImage: "tray")
                         .tag(SidebarSelection.unscheduled)
                     Section("Days") {
-                        ForEach(store.days, id: \.dayNumber) { day in
-                            VStack(alignment: .leading, spacing: 2) {
-                                // Matches DayHeaderView's own hierarchy (issue #235): the calendar
-                                // date is the stable anchor and always shows; "Day N" is the least
-                                // useful of the two; a label displaces it, not the date.
-                                Text(day.label ?? "Day \(day.dayNumber)").font(.headline)
-                                Text(formatted(day.date)).font(.caption).foregroundStyle(.secondary)
+                        // Grouped-by-metro only once there's more than one metro to distinguish —
+                        // for a single-city trip every day would land in one drawer labeled with
+                        // that city, which conveys nothing and is chrome for its own sake.
+                        if store.metros.count > 1 {
+                            ForEach(store.metros, id: \.id) { metro in
+                                DisclosureGroup(isExpanded: isExpandedBinding(for: metro.id)) {
+                                    ForEach(days(in: metro), id: \.dayNumber) { day in
+                                        dayRow(day).tag(SidebarSelection.day(day.dayNumber))
+                                    }
+                                } label: {
+                                    // A day spanning two metros (a transition/day-trip day) appears
+                                    // under both drawers — the grouping's whole point is showing
+                                    // which days touch which metro, and a travel day genuinely
+                                    // touches two.
+                                    MetroEyebrowView(metros: [metro], allMetros: store.metros)
+                                }
                             }
-                            .tag(SidebarSelection.day(day.dayNumber))
+                            ForEach(orphanDays, id: \.dayNumber) { day in
+                                dayRow(day).tag(SidebarSelection.day(day.dayNumber))
+                            }
+                        } else {
+                            ForEach(store.days, id: \.dayNumber) { day in
+                                dayRow(day).tag(SidebarSelection.day(day.dayNumber))
+                            }
                         }
                     }
                 }
@@ -152,6 +191,7 @@ struct ContentView: View {
             sidebarSelection = store.days.first.map { .day($0.dayNumber) }
             focusedLocationId = nil
             browsedMetroId = nil
+            collapsedMetroIds = []
             dismissedMetroSignature = nil
             enrichmentDismissed = false
         }
@@ -262,6 +302,18 @@ struct ContentView: View {
             importAlert = SimpleAlert(message: "Imported \(ids.count) trip\(ids.count == 1 ? "" : "s").")
         } catch {
             importAlert = SimpleAlert(message: "Import failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Matches `DayHeaderView`'s own hierarchy (issue #235): the calendar date is the stable
+    /// anchor and always shows; "Day N" is the least useful of the two; a label displaces it, not
+    /// the date. No metro eyebrow here anymore — grouping by metro (`isExpandedBinding`'s call
+    /// site) already says that once per drawer instead of once per row.
+    @ViewBuilder
+    private func dayRow(_ day: DerivedDay) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(day.label ?? "Day \(day.dayNumber)").font(.headline)
+            Text(formatted(day.date)).font(.caption).foregroundStyle(.secondary)
         }
     }
 

@@ -67,12 +67,8 @@ struct DayHeaderView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                if !dayMetros.isEmpty {
-                    HStack(spacing: 10) {
-                        ForEach(dayMetros, id: \.id) { metro in
-                            metroChip(metro)
-                        }
-                    }
+                MetroEyebrowView(metros: dayMetros, allMetros: metros) { metro in
+                    browsedMetroId = metro.id
                 }
                 TextField("Add label…", text: $labelDraft)
                     .textFieldStyle(.plain)
@@ -107,27 +103,5 @@ struct DayHeaderView: View {
         // Covers the one path `onChange(of: day.date)` can't: switching away to the Unscheduled
         // sidebar row, which removes this view from the hierarchy rather than updating its `day`.
         .onDisappear { commitLabel(for: day.date) }
-    }
-
-    /// A colored dot + uppercase name, clickable — mirrors the web app's metro badge
-    /// (`focusMap({ tier: "metro", metroId })` in `DayCard.tsx`) by driving the same `browsedMetroId`
-    /// the map's own segmented picker writes to, rather than a second, parallel focus mechanism.
-    private func metroChip(_ metro: TripMetro) -> some View {
-        Button {
-            browsedMetroId = metro.id
-        } label: {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(MetroPalette.color(metros.firstIndex(of: metro) ?? 0))
-                    .frame(width: 7, height: 7)
-                Text(metro.label.uppercased())
-                    .font(.caption).fontWeight(.semibold)
-                    .tracking(0.8)
-                    .lineLimit(1)
-            }
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .help("Show \(metro.label) on the map")
     }
 }

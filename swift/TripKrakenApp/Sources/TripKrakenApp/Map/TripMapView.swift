@@ -99,6 +99,7 @@ struct TripMapView: View {
             .onChange(of: geo.size) { _, newSize in mapSize = newSize }
             .onChange(of: selectedDayNumber) { _, _ in fitSelectedDay() }
             .onChange(of: focusedLocationId) { _, newValue in focusOnLocation(newValue) }
+            .onChange(of: browsedMetroId) { _, newValue in focusOnMetro(newValue) }
             .onChange(of: trip.id) { _, _ in
                 geometryCache.reset()
                 loadGeometry()
@@ -125,6 +126,21 @@ struct TripMapView: View {
                     }
                 }
             }
+        }
+    }
+
+    /// Browsing a metro — from this view's own segmented picker, or `DayHeaderView`'s chips
+    /// (issue #235) — was previously a pure filtering/opacity change (`browsedDayNumbers` above)
+    /// with no visible camera movement, so picking a metro that already happened to be the
+    /// selected day's default (the common single-metro-day case) did nothing observable at all,
+    /// and even a genuine switch might not show up if the new metro wasn't already in view. Fits
+    /// the camera to the metro's own bounds, matching the "Show \(metro.label) on the map" promise
+    /// the chip's own `.help()` text already makes. Fires only on an explicit non-nil pick — not on
+    /// the `nil` reset a trip switch does, which has nothing to fly to.
+    private func focusOnMetro(_ metroId: String?) {
+        guard let metroId, let metro = metros.first(where: { $0.id == metroId }) else { return }
+        withAnimation(.easeInOut(duration: cameraAnimationDuration)) {
+            position = cameraPosition(fitting: metro.bounds, in: mapSize)
         }
     }
 
