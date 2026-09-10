@@ -91,6 +91,24 @@ struct TripMapView: View {
                 }
             }
             .mapStyle(.standard(pointsOfInterest: .including([.publicTransport])))
+            .overlay(alignment: .top) {
+                if geometryCache.isLoading {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Calculating routes\(geometryCache.pendingCount > 1 ? " (\(geometryCache.pendingCount) left)" : "")…")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(.separator))
+                    .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: geometryCache.isLoading)
             .onAppear {
                 mapSize = geo.size
                 fitSelectedDay()
@@ -172,9 +190,26 @@ struct TripMapView: View {
     /// Fire-and-forget: `PathGeometryCache` asks only for what's missing and lands answers into
     /// `held` asynchronously; a failure leaves pairs dashed, the correct fallback, not an error
     /// worth surfacing.
+    ///
+    /// Every Day is still requested — ADR-0029 §"Fetch only the active Day's geometry, lazily"
+    /// stays rejected, since every Day draws at once under the opacity tiers, active or not. What's
+    /// new is the *order*: Days are sorted active-tier-first before flattening to pairs, so
+    /// `uniquePairsOfDays`' first-occurrence dedup puts the visible Day's pairs at the front of the
+    /// list `MapKitGeometryProvider` works through. On a large trip, that's the difference between
+    /// "the Day I'm looking at solidifies almost immediately" and "it solidifies whenever its pairs
+    /// happen to come up in trip order."
     private func loadGeometry() {
-        let pairs = uniquePairsOfDays(days, profile: trip.roadProfile, journeyRoadKinds: trip.journeyRoadKinds)
+        let prioritized = days.sorted { emphasisRank($0) < emphasisRank($1) }
+        let pairs = uniquePairsOfDays(prioritized, profile: trip.roadProfile, journeyRoadKinds: trip.journeyRoadKinds)
         geometryCache.ensure(pairs: pairs, profile: trip.roadProfile, journeyRoadKinds: trip.journeyRoadKinds)
+    }
+
+    private func emphasisRank(_ day: DerivedDay) -> Int {
+        switch emphasisTier(dayNumber: day.dayNumber, activeDayNumber: selectedDayNumber, browsedDayNumbers: browsedDayNumbers) {
+        case .active: 0
+        case .metro: 1
+        case .rest: 2
+        }
     }
 
     private func routeAlpha(for dayNumber: Int) -> Double {

@@ -118,4 +118,69 @@ struct ListTripSummariesTests {
         let store = try makeInMemoryStore()
         #expect(try store.listTripSummaries().isEmpty)
     }
+
+    @Test("sorted by sortOrder, not creation order")
+    func sortedBySortOrder() throws {
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip(id: "first"))
+        let second = try store.createTrip(name: "Second", startDate: "2026-10-01", endDate: "2026-10-05")
+        let third = try store.createTrip(name: "Third", startDate: "2026-11-01", endDate: "2026-11-05")
+
+        let ids = try store.listTripSummaries().map(\.id)
+        #expect(ids == ["first", second, third])
+
+        try store.reorderTrips(orderedIds: [third, "first", second])
+        #expect(try store.listTripSummaries().map(\.id) == [third, "first", second])
+    }
+}
+
+@MainActor
+@Suite("TripStore.deleteTrip")
+struct DeleteTripTests {
+    @Test("removes a trip that isn't currently loaded")
+    func removesOtherTrip() throws {
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip(id: "keep"))
+        let doomed = try store.createTrip(name: "Doomed", startDate: "2026-10-01", endDate: "2026-10-05")
+        try store.load(tripId: "keep")
+
+        try store.deleteTrip(doomed)
+
+        #expect(try store.listTripSummaries().map(\.id) == ["keep"])
+        #expect(store.trip?.id == "keep", "deleting a trip that isn't loaded doesn't disturb the current one")
+    }
+
+    @Test("deleting the current trip switches to whichever sorts first")
+    func deletingCurrentSwitchesToNext() throws {
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip(id: "first"))
+        let second = try store.createTrip(name: "Second", startDate: "2026-10-01", endDate: "2026-10-05")
+
+        try store.deleteTrip(second)
+
+        #expect(store.trip?.id == "first")
+        #expect(try store.listTripSummaries().count == 1)
+    }
+
+    @Test("deleting the last remaining trip leaves the store empty, not crashed")
+    func deletingLastTripLeavesEmptyStore() throws {
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip(id: "only"))
+
+        try store.deleteTrip("only")
+
+        #expect(store.trip == nil)
+        #expect(store.days.isEmpty)
+        #expect(try store.listTripSummaries().isEmpty)
+    }
+
+    @Test("deleting an unknown id is a no-op")
+    func deletingUnknownIdIsNoOp() throws {
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip(id: "keep"))
+
+        try store.deleteTrip("ghost")
+
+        #expect(store.trip?.id == "keep")
+    }
 }

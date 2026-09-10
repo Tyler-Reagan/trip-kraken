@@ -12,17 +12,21 @@ import Foundation
 
 /// The store's view of a trip, without pulling its full location/placement graph — what
 /// `checkTripNameCollision` needs and nothing more.
-public struct TripSummary: Sendable, Hashable {
+public struct TripSummary: Sendable, Hashable, Identifiable {
     public var id: String
     public var name: String
     public var createdAt: Date
     public var locationCount: Int
+    /// User-controlled display order (the trip switcher/manager's drag-to-reorder) — distinct from
+    /// `createdAt`, which never changes and would otherwise be the only ordering available.
+    public var sortOrder: Int
 
-    public init(id: String, name: String, createdAt: Date, locationCount: Int) {
+    public init(id: String, name: String, createdAt: Date, locationCount: Int, sortOrder: Int = 0) {
         self.id = id
         self.name = name
         self.createdAt = createdAt
         self.locationCount = locationCount
+        self.sortOrder = sortOrder
     }
 }
 

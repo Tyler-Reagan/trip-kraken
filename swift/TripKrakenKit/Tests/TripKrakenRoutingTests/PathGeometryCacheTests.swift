@@ -19,6 +19,20 @@ private actor StubProvider: PathGeometryProviding {
     }
 }
 
+/// The first call to reach the actor resolves immediately; every later call waits 100ms — lets a
+/// test observe "one chunk landed, the rest are still in flight" deterministically.
+private actor FirstFastRestSlowProvider: PathGeometryProviding {
+    private var callCount = 0
+
+    func geometry(for pairs: [PathPair], profile: RoadProfile, journeyRoadKinds: [JourneyRoadKind]) async throws -> PathGeometryBatch {
+        callCount += 1
+        if callCount > 1 {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return PathGeometryBatch(results: Array(repeating: [realPath()], count: pairs.count), retryIndices: [])
+    }
+}
+
 private func pair(_ n: Double) -> PathPair {
     PathPair(from: PathEndpoint(lat: n, lng: n), to: PathEndpoint(lat: n + 1, lng: n + 1))
 }
@@ -93,6 +107,44 @@ struct PathGeometryCacheTests {
 
         try await Task.sleep(for: .milliseconds(100))
         #expect(cache.held[key]?.first != nil, "the retry round succeeded")
+    }
+
+    @Test("a large ask is split into chunkSize-pair provider calls, not one call for everything")
+    func largeAskIsChunked() async throws {
+        let pairs = (0..<5).map { pair(Double($0)) }
+        let provider = StubProvider(answers: [
+            PathGeometryBatch(results: [[realPath()], [realPath()]], retryIndices: []),
+            PathGeometryBatch(results: [[realPath()], [realPath()]], retryIndices: []),
+            PathGeometryBatch(results: [[realPath()]], retryIndices: []),
+        ])
+        let cache = PathGeometryCache(provider: provider, chunkSize: 2)
+
+        cache.ensure(pairs: pairs, profile: .walking, journeyRoadKinds: [])
+        try await Task.sleep(for: .milliseconds(50))
+
+        let requested = await provider.requestedPairSets
+        #expect(requested.count == 3, "5 pairs at chunkSize 2 makes three calls (2, 2, 1), not one call for all 5")
+        #expect(requested.allSatisfy { $0.count <= 2 })
+        for pair in pairs {
+            let key = pairKey(profile: .walking, pair: pair, journeyRoadKinds: [])
+            #expect(cache.held[key]?.first != nil, "every pair still lands in held once its own chunk resolves")
+        }
+    }
+
+    @Test("pendingCount counts down as each chunk resolves, not all at once")
+    func pendingCountCountsDownPerChunk() async throws {
+        let pairs = (0..<4).map { pair(Double($0)) }
+        let provider = FirstFastRestSlowProvider()
+        let cache = PathGeometryCache(provider: provider, chunkSize: 1)
+
+        cache.ensure(pairs: pairs, profile: .walking, journeyRoadKinds: [])
+        #expect(cache.pendingCount == 4)
+
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(cache.pendingCount == 3, "the one chunk that resolved fast should drop the count by one, not zero it out")
+
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(cache.pendingCount == 0)
     }
 
     @Test("reset clears held state so a trip switch starts clean")

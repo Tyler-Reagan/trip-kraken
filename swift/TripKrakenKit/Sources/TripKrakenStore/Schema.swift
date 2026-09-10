@@ -52,6 +52,10 @@ public final class TripRecord {
     public var hasJrPass: Bool = false
     public var createdAt: Date = Date.distantPast
     public var updatedAt: Date = Date.distantPast
+    /// User-controlled display order for the trip switcher — see `TripStore.reorderTrips`. Defaults
+    /// to 0 so every pre-existing row (lightweight-migrated) sorts first, ahead of anything newly
+    /// created; `TripStore` is the only writer of a non-zero value.
+    public var sortOrder: Int = 0
 
     @Relationship(deleteRule: .cascade, inverse: \LocationRecord.trip)
     public var locations: [LocationRecord]?

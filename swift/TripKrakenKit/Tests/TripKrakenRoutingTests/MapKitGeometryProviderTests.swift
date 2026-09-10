@@ -36,6 +36,26 @@ private actor FakeRequester: DirectionsRequesting {
     }
 }
 
+/// Tracks how many `route` calls are simultaneously in flight, so a test can assert on the actual
+/// peak concurrency observed rather than just the eventual results.
+private actor ConcurrencyTrackingRequester: DirectionsRequesting {
+    private(set) var current = 0
+    private(set) var maxObserved = 0
+    private let delay: Duration
+
+    init(delay: Duration) {
+        self.delay = delay
+    }
+
+    func route(from: Point, to: Point, transportType: RoadProfile) async throws -> RouteResult? {
+        current += 1
+        maxObserved = max(maxObserved, current)
+        try? await Task.sleep(for: delay)
+        current -= 1
+        return RouteResult(coordinates: [from, to], distanceMeters: 1, durationSeconds: 1)
+    }
+}
+
 private func pair(from: (Double, Double), to: (Double, Double), fromId: String? = nil, toId: String? = nil) -> PathPair {
     PathPair(
         from: PathEndpoint(lat: from.0, lng: from.1, locationId: fromId),
@@ -121,6 +141,25 @@ struct MapKitGeometryProviderTests {
         #expect(batch.results[0]?.first?.kind == .driving)
         let requested = await requester.requestedTransportTypes
         #expect(requested == [.driving])
+    }
+
+    @Test("maxConcurrency is a global bound shared across concurrent geometry(for:) calls, not one budget per call")
+    func concurrencyIsGlobalAcrossConcurrentCalls() async throws {
+        // Mirrors `PathGeometryCache.ensure` firing one `Task` per chunk: several concurrent
+        // top-level calls into the same actor instance. Each call alone stays under
+        // maxConcurrency (3 pairs vs. a bound of 3), so a per-call bound would never trip here —
+        // only a bound shared across both calls can hold the true peak at 3 instead of 6.
+        let requester = ConcurrencyTrackingRequester(delay: .milliseconds(30))
+        let provider = MapKitGeometryProvider(requester: requester, maxRetries: 1, initialBackoff: .milliseconds(1), maxConcurrency: 3)
+        let pairsA = (0..<3).map { pair(from: (Double($0), 0), to: (Double($0) + 1, 1)) }
+        let pairsB = (0..<3).map { pair(from: (Double($0) + 10, 0), to: (Double($0) + 11, 1)) }
+
+        async let batchA: PathGeometryBatch = provider.geometry(for: pairsA, profile: .walking, journeyRoadKinds: [])
+        async let batchB: PathGeometryBatch = provider.geometry(for: pairsB, profile: .walking, journeyRoadKinds: [])
+        _ = try await (batchA, batchB)
+
+        let peak = await requester.maxObserved
+        #expect(peak <= 3, "two concurrent geometry(for:) calls must share one global concurrency bound, not 3 workers apiece")
     }
 
     @Test("multiple pairs are answered independently, in order")

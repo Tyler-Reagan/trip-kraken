@@ -50,7 +50,8 @@ public final class TripStore {
     public func seedIfEmpty(with trip: TripWithDetails) throws -> String {
         let existingIds = try context.fetch(FetchDescriptor<TripRecord>()).map(\.id)
         guard let firstId = existingIds.first else {
-            insertTripRecord(from: trip, into: context)
+            let record = insertTripRecord(from: trip, into: context)
+            record.sortOrder = 0
             try context.save()
             try load(tripId: trip.id)
             return trip.id
@@ -70,8 +71,11 @@ public final class TripStore {
     @discardableResult
     public func importFromTursoExport(path: String) throws -> [String] {
         let trips = try TursoImportReader(path: path).readTrips()
+        var order = try nextSortOrder()
         for trip in trips {
-            insertTripRecord(from: trip, into: context)
+            let record = insertTripRecord(from: trip, into: context)
+            record.sortOrder = order
+            order += 1
         }
         try context.save()
         if let firstId = trips.first?.id {
@@ -110,19 +114,66 @@ public final class TripStore {
             dayLabels: nil, roadProfile: .walking, transitCaveatDismissed: false, hasJrPass: false,
             createdAt: Date(), updatedAt: Date(), locations: [], placements: [], journeyRoadKinds: []
         )
-        insertTripRecord(from: trip, into: context)
+        let record = insertTripRecord(from: trip, into: context)
+        record.sortOrder = try nextSortOrder()
         try context.save()
         try load(tripId: id)
         return id
     }
 
     public func listTripSummaries() throws -> [TripSummary] {
-        try context.fetch(FetchDescriptor<TripRecord>()).map { record in
-            TripSummary(
-                id: record.id, name: record.name, createdAt: record.createdAt,
-                locationCount: record.locations?.count ?? 0
-            )
+        try context.fetch(FetchDescriptor<TripRecord>())
+            .sorted { $0.sortOrder < $1.sortOrder }
+            .map { record in
+                TripSummary(
+                    id: record.id, name: record.name, createdAt: record.createdAt,
+                    locationCount: record.locations?.count ?? 0, sortOrder: record.sortOrder
+                )
+            }
+    }
+
+    /// Persists a new display order wholesale — the trip switcher/manager reorders by dragging and
+    /// hands back the full list of ids in the new order, so there's no partial reindex to reconcile.
+    public func reorderTrips(orderedIds: [String]) throws {
+        let records = try context.fetch(FetchDescriptor<TripRecord>())
+        let byId = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
+        for (index, id) in orderedIds.enumerated() {
+            byId[id]?.sortOrder = index
         }
+        try context.save()
+    }
+
+    /// Deletes a trip outright — cascades to its Locations/Placements/JourneyRoadKinds via the
+    /// `.cascade` relationships in `Schema.swift`. If the deleted trip was the one currently loaded,
+    /// switches to whichever trip now sorts first, or leaves every derived property empty when none
+    /// remain — the same "no trip loaded" state `ContentView` already renders before a first trip
+    /// exists.
+    public func deleteTrip(_ tripId: String) throws {
+        var descriptor = FetchDescriptor<TripRecord>(predicate: #Predicate { $0.id == tripId })
+        descriptor.fetchLimit = 1
+        guard let target = try context.fetch(descriptor).first else { return }
+        let wasCurrent = record?.id == tripId
+        context.delete(target)
+        try context.save()
+
+        guard wasCurrent else { return }
+        let remaining = try context.fetch(FetchDescriptor<TripRecord>()).sorted { $0.sortOrder < $1.sortOrder }
+        if let next = remaining.first {
+            try load(tripId: next.id)
+        } else {
+            record = nil
+            trip = nil
+            days = []
+            metros = []
+            unscheduledActivities = []
+            lastUnplaced = []
+            lastOptimizeWarnings = []
+        }
+    }
+
+    private func nextSortOrder() throws -> Int {
+        let existing = try context.fetch(FetchDescriptor<TripRecord>())
+        return (existing.map(\.sortOrder).max()).map { $0 + 1 } ?? 0
     }
 
     // MARK: - Plan mutations
