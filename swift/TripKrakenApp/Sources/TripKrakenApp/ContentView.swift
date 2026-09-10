@@ -26,6 +26,9 @@ struct ContentView: View {
     /// every other stop outside the viewport with no annotation left to click to get back out.
     /// The external button has no such dead end, since it's a list item, not a map pin.
     @State private var focusedLocationId: String?
+    /// Which metro the map is browsing — shared between `TripMapView`'s own segmented picker and
+    /// `DayHeaderView`'s metro chips (issue #235); lifted here so both can write to the same state.
+    @State private var browsedMetroId: String?
     @State private var isEnriching = false
     @State private var isAddingLocation = false
     @State private var isCreatingTrip = false
@@ -81,8 +84,11 @@ struct ContentView: View {
                     Section("Days") {
                         ForEach(store.days, id: \.dayNumber) { day in
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Day \(day.dayNumber)").font(.headline)
-                                Text(day.label ?? formatted(day.date)).font(.caption).foregroundStyle(.secondary)
+                                // Matches DayHeaderView's own hierarchy (issue #235): the calendar
+                                // date is the stable anchor and always shows; "Day N" is the least
+                                // useful of the two; a label displaces it, not the date.
+                                Text(day.label ?? "Day \(day.dayNumber)").font(.headline)
+                                Text(formatted(day.date)).font(.caption).foregroundStyle(.secondary)
                             }
                             .tag(SidebarSelection.day(day.dayNumber))
                         }
@@ -115,7 +121,10 @@ struct ContentView: View {
                     UnscheduledView(placesProvider: placesProvider)
                 case .day(let dayNumber):
                     if let day = store.days.first(where: { $0.dayNumber == dayNumber }) {
-                        DayDetailView(day: day, placesProvider: placesProvider, focusedLocationId: $focusedLocationId)
+                        DayDetailView(
+                            day: day, metros: store.metros, placesProvider: placesProvider,
+                            focusedLocationId: $focusedLocationId, browsedMetroId: $browsedMetroId
+                        )
                     }
                 case nil:
                     ContentUnavailableView("Select a day", systemImage: "calendar")
@@ -125,7 +134,10 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 320, ideal: 420, max: 640)
         } detail: {
             if let trip = store.trip {
-                TripMapView(trip: trip, days: store.days, metros: store.metros, selectedDayNumber: selectedDayBinding, focusedLocationId: $focusedLocationId)
+                TripMapView(
+                    trip: trip, days: store.days, metros: store.metros, selectedDayNumber: selectedDayBinding,
+                    focusedLocationId: $focusedLocationId, browsedMetroId: $browsedMetroId
+                )
             } else {
                 ContentUnavailableView("No trip loaded", systemImage: "map")
             }
@@ -139,6 +151,7 @@ struct ContentView: View {
             geometryCache.reset()
             sidebarSelection = store.days.first.map { .day($0.dayNumber) }
             focusedLocationId = nil
+            browsedMetroId = nil
             dismissedMetroSignature = nil
             enrichmentDismissed = false
         }

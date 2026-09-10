@@ -5,8 +5,10 @@ import TripKrakenStore
 
 struct DayDetailView: View {
     let day: DerivedDay
+    let metros: [TripMetro]
     let placesProvider: MapKitPlacesProvider
     @Binding var focusedLocationId: String?
+    @Binding var browsedMetroId: String?
     @Environment(TripStore.self) private var store
     @Environment(PathGeometryCache.self) private var geometryCache
     @State private var detailLocation: TripKrakenKit.Location?
@@ -28,15 +30,20 @@ struct DayDetailView: View {
     private var chain: [ChainEntry] { dayChainEntries(day) }
 
     var body: some View {
-        List {
-            ForEach(leadingEntries, id: \.self) { row(for: $0) }
-            ForEach(Array(day.stops.enumerated()), id: \.element.placement.id) { index, stop in
-                row(for: ChainEntry(role: .stop, location: .activity(stop.location), stop: stop, index: index))
+        VStack(spacing: 0) {
+            DayHeaderView(day: day, metros: metros, browsedMetroId: $browsedMetroId)
+                .padding(.horizontal)
+            Divider()
+            List {
+                ForEach(leadingEntries, id: \.self) { row(for: $0) }
+                ForEach(Array(day.stops.enumerated()), id: \.element.placement.id) { index, stop in
+                    row(for: ChainEntry(role: .stop, location: .activity(stop.location), stop: stop, index: index))
+                }
+                .onMove(perform: moveStops)
+                ForEach(trailingEntries, id: \.self) { row(for: $0) }
             }
-            .onMove(perform: moveStops)
-            ForEach(trailingEntries, id: \.self) { row(for: $0) }
         }
-        .navigationTitle("Day \(day.dayNumber) · \(formatted(day.date))")
+        .navigationTitle("Day \(day.dayNumber)")
         .sheet(item: $detailLocation) { location in
             NavigationStack { LocationDetailView(location: location) }
         }

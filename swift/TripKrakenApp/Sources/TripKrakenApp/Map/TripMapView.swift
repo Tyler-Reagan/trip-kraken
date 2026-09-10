@@ -22,12 +22,16 @@ struct TripMapView: View {
     /// that moves the camera to a single location. Selecting a map annotation directly only
     /// highlights it; see `focusedLocationId`'s doc comment on `ContentView` for why.
     @Binding var focusedLocationId: String?
+    /// Which metro is being browsed — driven by this view's own segmented-picker toolbar, and by
+    /// `DayHeaderView`'s metro chips (issue #235), which write to the same binding rather than a
+    /// second, parallel focus mechanism. Lifted out of private `@State` for exactly that reason: a
+    /// day header can't reach into another view's internal state.
+    @Binding var browsedMetroId: String?
     @Environment(PathGeometryCache.self) private var geometryCache
 
     @State private var position: MapCameraPosition = .region(
         MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 35.69, longitude: 139.69), span: MKCoordinateSpan(latitudeDelta: 1.2, longitudeDelta: 1.2))
     )
-    @State private var browsedMetroId: String?
     @State private var selectedLocationId: String?
     @State private var mapSize: CGSize = .zero
 

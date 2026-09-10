@@ -1,11 +1,25 @@
+import AppKit
 import Foundation
 import SwiftUI
 import TripKrakenKit
 import TripKrakenRouting
 import TripKrakenStore
 
+/// `swift run`'s executable has no `.app` bundle or Info.plist, and without one macOS doesn't
+/// reliably treat the process as a regular foreground app — the window can appear without ever
+/// becoming key, so it can't be brought to the front and text fields don't receive keystrokes, even
+/// launched from an interactive terminal. Xcode-built/bundled runs don't need this; this only
+/// matters for the raw `swift run` path.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
 @main
 struct TripKrakenApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     private let store: TripStore
     private let geometryCache: PathGeometryCache
     private let placesProvider: MapKitPlacesProvider
