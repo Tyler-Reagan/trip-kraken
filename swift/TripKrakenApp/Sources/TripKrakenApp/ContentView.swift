@@ -90,6 +90,7 @@ struct ContentView: View {
                 }
             }
             .frame(minWidth: 180)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
         } content: {
             VStack(alignment: .leading, spacing: 12) {
                 if let trip = store.trip {
@@ -120,7 +121,8 @@ struct ContentView: View {
                     ContentUnavailableView("Select a day", systemImage: "calendar")
                 }
             }
-            .frame(minWidth: 260)
+            .frame(minWidth: 320)
+            .navigationSplitViewColumnWidth(min: 320, ideal: 420, max: 640)
         } detail: {
             if let trip = store.trip {
                 TripMapView(trip: trip, days: store.days, metros: store.metros, selectedDayNumber: selectedDayBinding, focusedLocationId: $focusedLocationId)

@@ -13,27 +13,31 @@ struct ShiftRowsView: View {
 
     var body: some View {
         ForEach(Array(chain.enumerated()), id: \.offset) { _, path in
-            HStack(spacing: 6) {
+            HStack(alignment: .top, spacing: 6) {
                 Image(systemName: iconName(for: path))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .frame(width: 14)
-                Text(label(for: path))
-                    .font(.caption)
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                if needsSupplementMarker(path) {
-                    Image(systemName: "exclamationmark.circle")
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
-                        .help("Nozomi/Mizuho aren't covered by a JR Pass outright — ridable with a separate supplement ticket")
-                }
-                if path.base.travelCost.basisOfCost == .straightLine {
-                    Text("straight-line").font(.caption2).foregroundStyle(.secondary)
-                }
-                Text(formatDuration(max(1, Int(path.base.travelCost.costAsMinutes.rounded()))))
+                    .padding(.top, 1)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label(for: path))
+                        .font(.caption)
+                        .lineLimit(2)
+                    HStack(spacing: 4) {
+                        if needsSupplementMarker(path) {
+                            Image(systemName: "exclamationmark.circle")
+                                .foregroundStyle(.orange)
+                                .help("Nozomi/Mizuho aren't covered by a JR Pass outright — ridable with a separate supplement ticket")
+                        }
+                        Text(formatDuration(max(1, Int(path.base.travelCost.costAsMinutes.rounded()))))
+                        if path.base.travelCost.basisOfCost == .straightLine {
+                            Text("· straight-line")
+                        }
+                    }
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                }
             }
             .padding(.leading, 28)
         }

@@ -56,14 +56,14 @@ struct DayDetailView: View {
                     .frame(width: 20)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.location.base.name).font(.body)
-                    Text(subtext(for: entry)).font(.caption).foregroundStyle(.secondary)
+                    Text(entry.location.base.name).font(.body).lineLimit(1)
+                    Text(subtext(for: entry)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
 
-                Spacer()
+                Spacer(minLength: 8)
 
                 if entry.role == .stop, let minutes = entry.location.base.visitDuration {
-                    Text(formatDuration(minutes)).font(.caption).foregroundStyle(.secondary)
+                    Text(formatDuration(minutes)).font(.caption).foregroundStyle(.secondary).lineLimit(1).layoutPriority(1)
                 }
 
                 locateButton(for: entry)
