@@ -24,6 +24,16 @@ public final class TripStore {
     public private(set) var trip: TripWithDetails?
     public private(set) var days: [DerivedDay] = []
     public private(set) var metros: [TripMetro] = []
+    public private(set) var unscheduledActivities: [Location] = []
+
+    /// The most recent optimize run's failures/warnings (ADR-0045) — cached here rather than
+    /// discarded, so the UI can keep showing *why* a location wasn't placed after the one-shot
+    /// moment `applyOptimizedPlacements` runs in. Mirrors the web app's own Zustand `unplaced`
+    /// state: not cleared by any other mutation, so an entry for a location since placed by hand
+    /// just goes unread — the same tolerance `UnassignedCard.tsx`'s `unplacedByLocationId` lookup
+    /// already accepts.
+    public private(set) var lastUnplaced: [Unplaced] = []
+    public private(set) var lastOptimizeWarnings: [String] = []
 
     private let context: ModelContext
     private var record: TripRecord?
@@ -77,6 +87,11 @@ public final class TripStore {
             throw StoreMappingError.tripNotFound(tripId)
         }
         self.record = record
+        // Per-trip ephemeral state, not part of `refresh()`'s trip-derived properties — must be
+        // cleared by hand on every switch, or a stale optimize run's reasons would bleed from the
+        // previous trip into this one.
+        lastUnplaced = []
+        lastOptimizeWarnings = []
         try refresh()
     }
 
@@ -146,8 +161,9 @@ public final class TripStore {
 
     /// Replaces the trip's whole Placement set from a solved `Itinerary` (ADR-0045) — mirrors
     /// `setPlacements` (`src/lib/db`)'s own "replace, not diff" semantics (ADR-0015 §5): no locks,
-    /// no reconciliation against what was there before. `Itinerary.unplaced`/`.warnings` are the
-    /// caller's (UI's) concern to surface, not this method's — it only persists `days`.
+    /// no reconciliation against what was there before. `unplaced`/`warnings` are cached onto
+    /// `lastUnplaced`/`lastOptimizeWarnings` (this class's own doc comment on those) rather than
+    /// dropped — the one thing this method does beyond persisting `days`.
     public func applyOptimizedPlacements(_ itinerary: Itinerary) throws {
         guard let trip, let record else { return }
         for existing in record.placements ?? [] {
@@ -163,6 +179,8 @@ public final class TripStore {
                 context.insert(placementRecord)
             }
         }
+        lastUnplaced = itinerary.unplaced
+        lastOptimizeWarnings = itinerary.warnings
         try context.save()
         try refresh()
     }
@@ -176,6 +194,16 @@ public final class TripStore {
             labels.removeValue(forKey: date)
         }
         record.dayLabels = labels.isEmpty ? nil : labels
+        try context.save()
+        try refresh()
+    }
+
+    /// Persists dismissal of the transit-timing-is-estimated caveat — mirrors the web app's
+    /// DB-backed `transitCaveatDismissed` flag. Unlike the distant-metro-warning's session-local
+    /// dismissal, this survives a relaunch, matching web's own distinction between the two.
+    public func setTransitCaveatDismissed(_ dismissed: Bool) throws {
+        guard let record else { return }
+        record.transitCaveatDismissed = dismissed
         try context.save()
         try refresh()
     }
@@ -239,6 +267,18 @@ public final class TripStore {
         guard let locationRecord = (record.locations ?? []).first(where: { $0.id == locationId }) else { return }
         let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
         locationRecord.note = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        try context.save()
+        try refresh()
+    }
+
+    /// Marks a Location included in or excluded from the plan — the user's own choice, distinct
+    /// from an `Unplaced` entry (the optimizer's own failure to place it). `Optimize.swift`'s
+    /// problem builder and `detectUncoveredSplit` already both filter on this field; this is simply
+    /// the first writer of it.
+    public func setExcluded(locationId: String, excluded: Bool) throws {
+        guard let record else { return }
+        guard let locationRecord = (record.locations ?? []).first(where: { $0.id == locationId }) else { return }
+        locationRecord.excluded = excluded
         try context.save()
         try refresh()
     }
@@ -387,5 +427,6 @@ public final class TripStore {
         trip = mapped
         days = deriveTripPlanDays(mapped)
         metros = metrosOf(mapped)
+        unscheduledActivities = unscheduledActivitiesOf(mapped)
     }
 }

@@ -142,6 +142,31 @@ struct DeriveTripPlanDaysTests {
     }
 }
 
+@Suite("unscheduledActivitiesOf")
+struct UnscheduledActivitiesOfTests {
+    @Test("an activity with no placement is unscheduled")
+    func noPlacementIsUnscheduled() {
+        let trip = makeTrip(locations: [.activity(makeActivity(id: "museum"))])
+        #expect(unscheduledActivitiesOf(trip).map(\.id) == ["museum"])
+    }
+
+    @Test("a placed activity is excluded")
+    func placedActivityExcluded() {
+        let placement = Placement(id: "p1", tripId: "t1", locationId: "museum", date: "2026-09-01", order: 0)
+        let trip = makeTrip(locations: [.activity(makeActivity(id: "museum"))], placements: [placement])
+        #expect(unscheduledActivitiesOf(trip).isEmpty)
+    }
+
+    @Test("lodging and transit never appear, even though never placed")
+    func lodgingAndTransitNeverAppear() {
+        let trip = makeTrip(locations: [
+            .lodging(makeLodging(id: "hotel", checkIn: "2026-09-01", checkOut: "2026-09-02")),
+            .transit(makeTransit(id: "airport", arriveAt: "2026-09-01T10:00")),
+        ])
+        #expect(unscheduledActivitiesOf(trip).isEmpty)
+    }
+}
+
 @Suite("rolesOf")
 struct RolesOfTests {
     @Test func lodgingIsAlwaysLodgingRole() {

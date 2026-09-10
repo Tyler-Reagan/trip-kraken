@@ -116,3 +116,26 @@ struct SetLocationNoteTests {
         #expect(store.trip?.locations.first?.base.note == nil)
     }
 }
+
+@MainActor
+@Suite("TripStore.setExcluded")
+struct SetExcludedTests {
+    @Test("excluding a location round-trips")
+    func excludes() throws {
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip(locations: [.activity(makeActivity(id: "a"))]))
+        try store.setExcluded(locationId: "a", excluded: true)
+
+        #expect(store.trip?.locations.first?.base.excluded == true)
+    }
+
+    @Test("re-including clears it")
+    func reIncludes() throws {
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip(locations: [.activity(makeActivity(id: "a"))]))
+        try store.setExcluded(locationId: "a", excluded: true)
+        try store.setExcluded(locationId: "a", excluded: false)
+
+        #expect(store.trip?.locations.first?.base.excluded == false)
+    }
+}

@@ -40,6 +40,72 @@ struct ApplyOptimizedPlacementsTests {
 
         #expect(store.trip?.placements.isEmpty == true)
     }
+
+    @Test("caches unplaced/warnings for the UI to read afterward")
+    func cachesUnplacedAndWarnings() throws {
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip(locations: [.activity(makeActivity(id: "a"))]))
+
+        let unplaced = Unplaced(locationId: "a", code: .closedAllDays, reason: "Closed every day of the trip")
+        try store.applyOptimizedPlacements(Itinerary(days: [], unplaced: [unplaced], warnings: ["Some warning"]))
+
+        #expect(store.lastUnplaced == [unplaced])
+        #expect(store.lastOptimizeWarnings == ["Some warning"])
+    }
+
+    @Test("switching trips clears the previous trip's cached unplaced/warnings")
+    func switchingTripsClearsCache() throws {
+        let container = try TripKrakenContainer.inMemory()
+        let store = TripStore(container: container)
+        try store.seedIfEmpty(with: makeTrip(id: "t1", locations: [.activity(makeActivity(id: "a"))]))
+        let unplaced = Unplaced(locationId: "a", code: .closedAllDays, reason: "Closed every day of the trip")
+        try store.applyOptimizedPlacements(Itinerary(days: [], unplaced: [unplaced], warnings: ["Some warning"]))
+
+        try store.createTrip(name: "Other Trip", startDate: "2026-10-01", endDate: "2026-10-03")
+
+        #expect(store.lastUnplaced.isEmpty)
+        #expect(store.lastOptimizeWarnings.isEmpty)
+    }
+}
+
+@MainActor
+@Suite("TripStore.unscheduledActivities")
+struct UnscheduledActivitiesCacheTests {
+    @Test("updates as placements are added and removed")
+    func updatesWithPlacements() throws {
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip(locations: [.activity(makeActivity(id: "a"))]))
+        #expect(store.unscheduledActivities.map(\.id) == ["a"])
+
+        let placementId = try store.placeActivity(locationId: "a", date: "2026-09-01")
+        #expect(store.unscheduledActivities.isEmpty)
+
+        try store.removePlacement(placementId)
+        #expect(store.unscheduledActivities.map(\.id) == ["a"])
+    }
+}
+
+@MainActor
+@Suite("TripStore.setTransitCaveatDismissed")
+struct SetTransitCaveatDismissedTests {
+    @Test("dismissing round-trips")
+    func dismisses() throws {
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip())
+        try store.setTransitCaveatDismissed(true)
+
+        #expect(store.trip?.transitCaveatDismissed == true)
+    }
+
+    @Test("un-dismissing clears it")
+    func unDismisses() throws {
+        let store = try makeInMemoryStore()
+        try store.seedIfEmpty(with: makeTrip())
+        try store.setTransitCaveatDismissed(true)
+        try store.setTransitCaveatDismissed(false)
+
+        #expect(store.trip?.transitCaveatDismissed == false)
+    }
 }
 
 @MainActor

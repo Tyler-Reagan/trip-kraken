@@ -4,12 +4,22 @@ import TripKrakenRouting
 import TripKrakenStore
 import UniformTypeIdentifiers
 
+/// The sidebar's selectable rows — a Day, or the standing `Unscheduled` row (ADR/planning: Slice 2
+/// landed on a sidebar row over a toolbar-sheet or inline-in-the-day-list, after comparing all
+/// three in a throwaway prototype). Widening this from a bare day number is the one structural
+/// cost of that choice — `TripMapView` still only knows about days, so `selectedDayBinding` below
+/// is the seam that hides the extra case from it.
+enum SidebarSelection: Hashable {
+    case day(Int)
+    case unscheduled
+}
+
 struct ContentView: View {
     let placesProvider: MapKitPlacesProvider
     let optimizeProvider: OptimizeProviding
     @Environment(TripStore.self) private var store
     @Environment(PathGeometryCache.self) private var geometryCache
-    @State private var selectedDayNumber: Int?
+    @State private var sidebarSelection: SidebarSelection?
     /// A one-shot "fly the camera here" request, set only by an explicit button in
     /// `DayDetailView` — never by anything on the map itself. Clicking a map annotation only
     /// selects/highlights it; if selecting also flew the camera, zooming into a stop would push
@@ -23,10 +33,23 @@ struct ContentView: View {
     @State private var isOptimizing = false
     @State private var importAlert: SimpleAlert?
     @State private var optimizeAlert: SimpleAlert?
+    /// Slice 1's pre-optimize notices (`NoticeStack`) own this dismissal state here, not in the
+    /// view itself, so a trip switch (`.onChange(of: store.trip?.id)` below) can reset both at
+    /// once — otherwise dismissing a warning on one trip would incorrectly suppress it after
+    /// switching to another, since `ContentView` doesn't remount on a trip switch.
+    @State private var dismissedMetroSignature: String?
+    @State private var enrichmentDismissed = false
 
     private struct SimpleAlert: Identifiable {
         let id = UUID()
         let message: String
+    }
+
+    private var selectedDayBinding: Binding<Int?> {
+        Binding(
+            get: { if case .day(let n) = sidebarSelection { n } else { nil } },
+            set: { if let n = $0 { sidebarSelection = .day(n) } }
+        )
     }
 
     private var tripSummaries: [TripSummary] { (try? store.listTripSummaries()) ?? [] }
@@ -52,38 +75,70 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 tripSwitcher
                 Divider()
-                List(store.days, id: \.dayNumber, selection: $selectedDayNumber) { day in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Day \(day.dayNumber)").font(.headline)
-                        Text(day.label ?? formatted(day.date)).font(.caption).foregroundStyle(.secondary)
+                List(selection: $sidebarSelection) {
+                    Label("Unscheduled (\(store.unscheduledActivities.count))", systemImage: "tray")
+                        .tag(SidebarSelection.unscheduled)
+                    Section("Days") {
+                        ForEach(store.days, id: \.dayNumber) { day in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Day \(day.dayNumber)").font(.headline)
+                                Text(day.label ?? formatted(day.date)).font(.caption).foregroundStyle(.secondary)
+                            }
+                            .tag(SidebarSelection.day(day.dayNumber))
+                        }
                     }
-                    .tag(day.dayNumber)
                 }
             }
             .frame(minWidth: 180)
         } content: {
-            if let day = store.days.first(where: { $0.dayNumber == selectedDayNumber }) {
-                DayDetailView(day: day, placesProvider: placesProvider, focusedLocationId: $focusedLocationId)
-                    .frame(minWidth: 260)
-            } else {
-                ContentUnavailableView("Select a day", systemImage: "calendar")
+            VStack(alignment: .leading, spacing: 12) {
+                if let trip = store.trip {
+                    NoticeStack(
+                        data: noticeData(trip),
+                        onDismissTransitCaveat: { try? store.setTransitCaveatDismissed(true) },
+                        onRetryEnrichment: {
+                            isEnriching = true
+                            Task {
+                                await enrichPendingLocations(store: store, provider: placesProvider)
+                                isEnriching = false
+                            }
+                        },
+                        isRetrying: isEnriching,
+                        dismissedMetroSignature: $dismissedMetroSignature,
+                        enrichmentDismissed: $enrichmentDismissed
+                    )
+                    .padding([.horizontal, .top])
+                }
+                switch sidebarSelection {
+                case .unscheduled:
+                    UnscheduledView(placesProvider: placesProvider)
+                case .day(let dayNumber):
+                    if let day = store.days.first(where: { $0.dayNumber == dayNumber }) {
+                        DayDetailView(day: day, placesProvider: placesProvider, focusedLocationId: $focusedLocationId)
+                    }
+                case nil:
+                    ContentUnavailableView("Select a day", systemImage: "calendar")
+                }
             }
+            .frame(minWidth: 260)
         } detail: {
             if let trip = store.trip {
-                TripMapView(trip: trip, days: store.days, metros: store.metros, selectedDayNumber: $selectedDayNumber, focusedLocationId: $focusedLocationId)
+                TripMapView(trip: trip, days: store.days, metros: store.metros, selectedDayNumber: selectedDayBinding, focusedLocationId: $focusedLocationId)
             } else {
                 ContentUnavailableView("No trip loaded", systemImage: "map")
             }
         }
-        .onAppear { selectedDayNumber = store.days.first?.dayNumber }
+        .onAppear { sidebarSelection = store.days.first.map { .day($0.dayNumber) } }
         .onChange(of: store.trip?.id) {
             // Any trip switch — an explicit pick or a fresh `createTrip` — lands here, since both
             // funnel through `store.trip` changing. `PathGeometryCache.held` is keyed by
             // coordinate/profile, not trip id (its own doc comment says so), so it must be cleared
             // by hand or a new trip's map would render stale geometry from the old one.
             geometryCache.reset()
-            selectedDayNumber = store.days.first?.dayNumber
+            sidebarSelection = store.days.first.map { .day($0.dayNumber) }
             focusedLocationId = nil
+            dismissedMetroSignature = nil
+            enrichmentDismissed = false
         }
         .toolbar {
             ToolbarItem {
@@ -153,15 +208,19 @@ struct ContentView: View {
     }
 
     /// ADR-0045: shapes the current trip into an `OptimizeProblem`, calls the trip-less
-    /// `/api/optimize` endpoint, and persists the result wholesale. `unplaced`/`warnings` have no
-    /// dedicated UI yet (the web app's "Unassigned tray," #120, is out of scope for this first
-    /// cut) — surfaced in the completion alert instead, so nothing about a run is silently lost.
+    /// `/api/optimize` endpoint, and persists the result wholesale. `unplaced`/`warnings` are also
+    /// cached on `TripStore.lastUnplaced`/`lastOptimizeWarnings` for `UnscheduledView` to read, on
+    /// top of this method's own completion alert.
     private func runOptimize() async {
         guard let trip = store.trip else { return }
         let problem = optimizationProblem(for: trip)
         do {
             let itinerary = try await optimizeProvider.optimize(problem)
             try store.applyOptimizedPlacements(itinerary)
+            // Mirrors the web app: "a fresh optimize is the one event that resurfaces" a dismissed
+            // enrichment-failure notice, even though retries in between may have fixed some of the
+            // named places but not others.
+            enrichmentDismissed = false
             var message = "Re-planned \(itinerary.days.count) day\(itinerary.days.count == 1 ? "" : "s")."
             if !itinerary.unplaced.isEmpty {
                 message += " \(itinerary.unplaced.count) location\(itinerary.unplaced.count == 1 ? "" : "s") couldn't be placed."

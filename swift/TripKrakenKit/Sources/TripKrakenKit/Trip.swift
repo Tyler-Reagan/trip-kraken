@@ -289,6 +289,14 @@ public func deriveTripPlanDays(_ trip: TripWithDetails) -> [DerivedDay] {
     }
 }
 
+/// Activities present in the trip but placed into no day — mirrors the web app's inline filter in
+/// `DayNavigator.tsx` (`isActivity(l) && !placedIds.has(l.id)`). Lodging and transit are never
+/// placed (ADR-0015 §2), so only activities are ever candidates.
+public func unscheduledActivitiesOf(_ trip: TripWithDetails) -> [Location] {
+    let placedIds = Set(trip.placements.map(\.locationId))
+    return trip.locations.filter { $0.asActivity != nil && !placedIds.contains($0.id) }
+}
+
 public struct NearbyPlace: Sendable, Hashable, Codable {
     public var placeId: String
     public var name: String
