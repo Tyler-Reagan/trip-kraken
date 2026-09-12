@@ -1,5 +1,7 @@
 import SwiftUI
 import TripKrakenKit
+import TripKrakenRouting
+import TripKrakenStore
 
 /// The native equivalent of the web app's `PathShiftRows` (ADR-0036) — every Location-to-Location
 /// gap's held Path chain renders one row per shift: a plain walk/drive is a chain of length one
@@ -67,5 +69,68 @@ struct ShiftRowsView: View {
     /// only worth showing to a traveler who actually declared a Pass.
     private func needsSupplementMarker(_ path: TripKrakenKit.Path) -> Bool {
         hasJrPass && path.asRail?.jrPassSupplementRequired == true
+    }
+}
+
+/// Renders in `ShiftRowsView`'s place when a gap has no held geometry at all — `held[key] == nil`
+/// (never resolved, or fell out after `PathGeometryCache`'s own retry rounds exhausted) draws as
+/// "not resolved yet"; `held[key] == []` (a real answer: no walking, driving, or rail path exists)
+/// draws as a plain "no route" statement instead, so a genuine dead end doesn't read as a stuck
+/// loading state. Same indent and row height as a real shift row on purpose — this is still one
+/// leg's detail, not a separate callout.
+struct GeometryGapRow: View {
+    let pair: PathPair
+    let key: String
+    @Environment(TripStore.self) private var store
+    @Environment(PathGeometryCache.self) private var geometryCache
+    @State private var isRetrying = false
+
+    private var isConfirmedNoRoute: Bool {
+        geometryCache.held[key] != nil
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if isRetrying {
+                ProgressView().controlSize(.small).frame(width: 14)
+            } else {
+                Image(systemName: isConfirmedNoRoute ? "exclamationmark.triangle.fill" : "questionmark.circle")
+                    .font(.caption2)
+                    .foregroundStyle(tint)
+                    .frame(width: 14)
+            }
+            Text(isRetrying ? "Retrying…" : text)
+                .font(.caption)
+                .foregroundStyle(isRetrying ? AnyShapeStyle(.secondary) : AnyShapeStyle(tint))
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if !isRetrying {
+                Button(action: retry) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help(isConfirmedNoRoute ? "Check again — no route was found last time" : "Retry finding a route")
+            }
+        }
+        .padding(.leading, 28)
+    }
+
+    private var text: String {
+        isConfirmedNoRoute ? "No route found for this leg" : "Route not resolved yet"
+    }
+
+    /// Pending draws attention (orange, matching the map's dashed line); a confirmed no-route is a
+    /// real answer, not a problem to flag as loudly — muted like any other secondary-text row.
+    private var tint: Color {
+        isConfirmedNoRoute ? .secondary : .orange
+    }
+
+    private func retry() {
+        guard let trip = store.trip, !isRetrying else { return }
+        isRetrying = true
+        Task {
+            await geometryCache.retry(pair: pair, profile: trip.roadProfile, journeyRoadKinds: trip.journeyRoadKinds)
+            isRetrying = false
+        }
     }
 }

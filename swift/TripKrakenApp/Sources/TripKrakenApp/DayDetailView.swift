@@ -100,22 +100,27 @@ struct DayDetailView: View {
         }
     }
 
-    /// One gap's content — the held Path chain's shift rows, the walk/drive kind toggle, and a
-    /// "find along the way" button (along-route discovery, ADR-0044's deferred third mode, picked
-    /// back up), mirroring how the web app's `PathShiftRows` folds all of this onto the gap itself
-    /// (`mergedEnd`) rather than onto either endpoint's own row. Renders nothing when the gap has
-    /// none of the three (no geometry held yet, no real Journey to choose a kind for, and neither
-    /// endpoint geocoded — a zero-length "same Location" gap, per `resolveJourneyKindToggle`'s own
-    /// guard, or `routePoints`' own).
+    /// One gap's content — the held Path chain's shift rows (or, absent those, a retry row for the
+    /// geometry that's missing), the walk/drive kind toggle, and a "find along the way" button
+    /// (along-route discovery, ADR-0044's deferred third mode, picked back up), mirroring how the
+    /// web app's `PathShiftRows` folds all of this onto the gap itself (`mergedEnd`) rather than
+    /// onto either endpoint's own row. Renders nothing when the gap has none of the three (neither
+    /// endpoint geocoded, no real Journey to choose a kind for — a zero-length "same Location" gap,
+    /// per `resolveJourneyKindToggle`'s own guard, or `routePoints`' own).
     private func gapView(after entry: ChainEntry) -> some View {
         let shifts = shiftChain(after: entry) ?? []
         let toggle = journeyToggle(after: entry)
         let route = routePoints(after: entry)
+        let missingGeometry = shifts.isEmpty ? pairAndKey(after: entry) : nil
         return Group {
-            if !shifts.isEmpty || toggle != nil || route != nil {
+            if !shifts.isEmpty || toggle != nil || route != nil || missingGeometry != nil {
                 HStack(alignment: .top, spacing: 8) {
                     VStack(alignment: .leading, spacing: 0) {
-                        ShiftRowsView(chain: shifts, hasJrPass: store.trip?.hasJrPass ?? false)
+                        if !shifts.isEmpty {
+                            ShiftRowsView(chain: shifts, hasJrPass: store.trip?.hasJrPass ?? false)
+                        } else if let missingGeometry {
+                            GeometryGapRow(pair: missingGeometry.pair, key: missingGeometry.key)
+                        }
                     }
                     Spacer(minLength: 0)
                     if let route {
@@ -170,11 +175,11 @@ struct DayDetailView: View {
         chain.firstIndex { $0.role == entry.role && $0.location.base.id == entry.location.base.id && $0.index == entry.index }
     }
 
-    /// The held Path chain for the gap from `entry` to whichever entry follows it — `nil` when
-    /// either end isn't geocoded, or when nothing's been asked/answered yet (`PathGeometryCache`
-    /// fills this in asynchronously; an absent key just renders no shift rows, the same way the
-    /// map draws that gap as a plain dashed line until it resolves).
-    private func shiftChain(after entry: ChainEntry) -> [TripKrakenKit.Path]? {
+    /// The gap from `entry` to whichever entry follows it, as a `PathPair` plus its `PathGeometryCache`
+    /// key — `nil` when either end isn't geocoded, there's no next entry, or there's no trip to read
+    /// `roadProfile`/`journeyRoadKinds` from. Factored out of `shiftChain` so `gapView` can also ask
+    /// "is this gap missing geometry at all," not just "what geometry does it hold."
+    private func pairAndKey(after entry: ChainEntry) -> (pair: PathPair, key: String)? {
         guard let next = nextEntry(after: entry),
             let fromLat = entry.location.base.lat, let fromLng = entry.location.base.lng,
             let toLat = next.location.base.lat, let toLng = next.location.base.lng,
@@ -185,6 +190,15 @@ struct DayDetailView: View {
             to: PathEndpoint(lat: toLat, lng: toLng, locationId: next.location.base.id)
         )
         let key = pairKey(profile: trip.roadProfile, pair: pair, journeyRoadKinds: trip.journeyRoadKinds)
+        return (pair, key)
+    }
+
+    /// The held Path chain for the gap from `entry` to whichever entry follows it — `nil` when
+    /// `pairAndKey` is (not geocoded, or no trip), or when nothing's been asked/answered yet
+    /// (`PathGeometryCache` fills this in asynchronously). `GeometryGapRow` is what renders in that
+    /// second case now — an absent key no longer renders nothing.
+    private func shiftChain(after entry: ChainEntry) -> [TripKrakenKit.Path]? {
+        guard let (_, key) = pairAndKey(after: entry) else { return nil }
         return geometryCache.held[key]
     }
 

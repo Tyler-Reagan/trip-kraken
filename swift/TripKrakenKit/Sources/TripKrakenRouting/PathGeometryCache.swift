@@ -9,6 +9,14 @@ import TripKrakenKit
 /// pair dashed straight," matching `routeSegmentsOfDay`'s own `geometry[key] ?? []` lookup.
 /// `ensure` splits a large ask into `chunkSize`-pair calls (its own doc comment explains why) so
 /// `pendingCount` genuinely counts down instead of sitting frozen until the whole ask lands at once.
+///
+/// `maxRetryRounds`/`retryDelay` are deliberately short (ADR-0046): this loop exists to smooth a
+/// whole-request outage (the composite/HTTP side unreachable — a dev server still starting, a
+/// dropped connection), not to wait out `MapKitGeometryProvider`'s own throttle-retry-with-backoff
+/// (ADR-0042), which already owns recovering from a `.throttled` MapKit response on its own, shorter
+/// timescale. A pair that survives both is handed to a person via the sidebar's manual retry
+/// (`retry(pair:...)` below) rather than kept in an ever-longer automatic loop — no fixed-delay
+/// round count here could usefully outlast MapKit's real ~60-second rate-limit window anyway.
 @MainActor
 @Observable
 public final class PathGeometryCache {
@@ -31,7 +39,7 @@ public final class PathGeometryCache {
     private let retryDelay: Duration
     private let chunkSize: Int
 
-    public init(provider: PathGeometryProviding, maxRetryRounds: Int = 5, retryDelay: Duration = .seconds(4), chunkSize: Int = 8) {
+    public init(provider: PathGeometryProviding, maxRetryRounds: Int = 2, retryDelay: Duration = .seconds(4), chunkSize: Int = 8) {
         self.provider = provider
         self.maxRetryRounds = maxRetryRounds
         self.retryDelay = retryDelay
@@ -71,6 +79,20 @@ public final class PathGeometryCache {
         for chunk in missing.chunked(into: chunkSize) {
             Task { await fetch(pairs: chunk, profile: profile, journeyRoadKinds: journeyRoadKinds, round: 0) }
         }
+    }
+
+    /// A person's explicit retry for one pair — the sidebar's per-leg retry button, never called
+    /// automatically. Unlike `ensure`, this bypasses the "already held" skip, so it works on a pair
+    /// `held` as `[]` (a confirmed "no route" answer) and not just one that's still missing
+    /// entirely. Awaitable so the row driving it knows exactly when the attempt is over — resolved,
+    /// confirmed empty, or exhausted back to unresolved — rather than having to watch `held` land.
+    /// Runs the same bounded round-based retry `ensure`'s own fetches do, so a transient failure
+    /// still gets `maxRetryRounds` chances before giving up.
+    public func retry(pair: PathPair, profile: RoadProfile, journeyRoadKinds: [JourneyRoadKind]) async {
+        let key = pairKey(profile: profile, pair: pair, journeyRoadKinds: journeyRoadKinds)
+        guard !inFlight.contains(key) else { return }
+        inFlight.insert(key)
+        await fetch(pairs: [pair], profile: profile, journeyRoadKinds: journeyRoadKinds, round: 0)
     }
 
     private func fetch(pairs: [PathPair], profile: RoadProfile, journeyRoadKinds: [JourneyRoadKind], round: Int) async {
