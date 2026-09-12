@@ -62,3 +62,14 @@ status to **Superseded by ADR-NNNN**.
 | [0033](0033-premium-boarding-penalty.md) | Boarding a premium service costs flat minutes, charged once per boarding | Accepted |
 | [0034](0034-map-rendering-stack-stays-station-labels-added-client-side.md) | The map rendering stack stays as-is; station labels are added client-side | Accepted |
 | [0035](0035-surfaced-transit-projected-as-a-provenance-not-a-kind.md) | Surfaced Transit is `Transit.authored: false`, not a new kind, projected by a standalone function | Accepted |
+| [0036](0036-row-per-path-shift-rows-in-the-itinerary-and-map-panel.md) | Itinerary and map panel render one row per Path shift, not per Journey | Accepted |
+| [0037](0037-hosting-goes-live-fly-io-turso-and-a-password-gate.md) | Hosting goes live: Fly.io for VROOM/OSRM, Turso for the database, a password gate | Accepted |
+| [0038](0038-swift-native-client-vroom-osrm-stay-server-side-for-now.md) | Client rebuilds as Swift-native; VROOM/OSRM/rail graph stay server-side for now | Accepted |
+| [0039](0039-swift-client-maps-with-mapkit-not-maplibre.md) | The Swift client maps with MapKit, not MapLibre Native | Accepted |
+| [0040](0040-swift-client-persists-with-swiftdata-schema-built-cloudkit-compliant.md) | Swift client persists with SwiftData, schema built CloudKit-compliant from the start | Accepted |
+| [0041](0041-cloudkit-default-conflict-resolution-accepted-no-field-level-merge.md) | CloudKit's default conflict resolution accepted; no field-level merge engine built | Accepted |
+| [0042](0042-mapkit-supplies-road-geometry-on-device.md) | MapKit supplies road geometry on-device; the server keeps only rail | Accepted |
+| [0043](0043-trip-less-path-geometry-endpoint.md) | A trip-less sibling of the path-geometry endpoint | Accepted |
+| [0044](0044-swift-client-place-search-and-enrichment-via-mapkit.md) | Swift client's place search and enrichment run on-device via MapKit, not Google Places | Accepted |
+| [0045](0045-trip-less-optimize-endpoint.md) | A trip-less sibling of the optimize endpoint | Accepted |
+| [0046](0046-path-geometry-retry-splits-blip-from-sustained-throttling.md) | Automatic path-geometry retry stays a short blip window; a sustained failure hands off to a person | Accepted |
