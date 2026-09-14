@@ -1,11 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { COOKIE_NAME, isValidClientKey, isValidSession } from "@/lib/auth";
-
-const CLIENT_KEY_HEADER = "x-tripkraken-client-key";
-
-// The Swift client's trip-less routes (ADR-0043, ADR-0045) — no cookie-login flow exists for a
-// native app to complete, so they authenticate with a static key (isValidClientKey) instead.
-const CLIENT_KEY_PATHS = new Set(["/api/optimize", "/api/path-geometry"]);
+import { COOKIE_NAME, isValidSession } from "@/lib/auth";
 
 export async function proxy(req: NextRequest) {
   // The gate protects the app from strangers on the open internet (ADR-0037) — on your own
@@ -14,13 +8,6 @@ export async function proxy(req: NextRequest) {
   // is dev" — a local production build (`pnpm build && pnpm start`) skips the gate too.
   if (!process.env.VERCEL) {
     return NextResponse.next();
-  }
-
-  if (CLIENT_KEY_PATHS.has(req.nextUrl.pathname)) {
-    if (await isValidClientKey(req.headers.get(CLIENT_KEY_HEADER))) {
-      return NextResponse.next();
-    }
-    return NextResponse.json({ error: "Missing or invalid client key" }, { status: 401 });
   }
 
   const session = req.cookies.get(COOKIE_NAME)?.value;

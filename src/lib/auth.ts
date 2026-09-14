@@ -50,16 +50,3 @@ export async function isValidSession(
   if (!token) return false;
   return timingSafeEqual(token, await sessionToken());
 }
-
-// The Swift client (trip-kraken-swift) can't complete the cookie-login flow above — no browser,
-// no session — so its two trip-less routes (ADR-0043, ADR-0045) accept this static key instead,
-// sent as a header. Same "1-2 known people" scope as the password gate: one shared secret, no
-// rotation ceremony, no expiry.
-export async function isValidClientKey(
-  candidate: string | null,
-): Promise<boolean> {
-  const configured = process.env.TRIPKRAKEN_CLIENT_API_KEY;
-  if (!configured || !candidate) return false;
-  const [a, b] = await Promise.all([sha256Hex(candidate), sha256Hex(configured)]);
-  return timingSafeEqual(a, b);
-}
