@@ -715,14 +715,23 @@ const orderNodes: OsmNode[] = [
   // Plain track vertices either side of S1, for the line whose *track* is out of place.
   { id: "M01", lat: 34.905, lon: 138.9, tags: {} },
   { id: "M12", lat: 34.915, lon: 138.9, tags: {} },
+  // The same two places again under other ids: track that sits where M01/M12 are but shares no
+  // node with them, so nothing can join it to the rest of the line.
+  { id: "N01", lat: 34.905, lon: 138.9, tags: {} },
+  { id: "N12", lat: 34.915, lon: 138.9, tags: {} },
 ];
 
 const orderWays: OsmWay[] = [
   { id: "WS", nodeRefs: ["S0", "S1", "S2", "S3", "S4"] },
-  // S1's stretch of track listed last, after a gap: the chain runs S0 · S2 S3 S4 · S1.
+  // S1's stretch of track listed last and joined to nothing: the chain runs S0 · S2 S3 S4 · S1.
   { id: "WM0", nodeRefs: ["S0", "M01"] },
   { id: "WM2", nodeRefs: ["M12", "S2", "S3", "S4"] },
-  { id: "WM1", nodeRefs: ["M01", "S1", "M12"] },
+  { id: "WM1", nodeRefs: ["N01", "S1", "N12"] },
+  // The same line in three pieces with the middle one listed last — a way out of member order
+  // that does join up, which is how most real breaks happen (ADR-0055 §1).
+  { id: "WP0", nodeRefs: ["S0", "M01"] },
+  { id: "WP2", nodeRefs: ["M12", "S2", "S3", "S4"] },
+  { id: "WP1", nodeRefs: ["M01", "S1", "M12"] },
 ];
 
 const orderGraph = buildTransitGraph(orderNodes, orderWays, [
@@ -810,6 +819,33 @@ assert.equal(
   "while a hop onto the misplaced track still draws dashed — the stop is right, its shape is not known",
 );
 
+// A way listed out of member order but joined at both ends is placed where it joins, not
+// concatenated across a break — so every hop traces. Built alone, so nothing borrows (§2).
+const swappedGraph = buildTransitGraph(orderNodes, orderWays, [
+  tracedRoute(
+    "RSwapped",
+    "Swapped Ways",
+    ["S0", "S1", "S2", "S3", "S4"],
+    ["WP0", "WP2", "WP1"],
+  ),
+]);
+for (const edge of swappedGraph.rideEdges) {
+  assert.ok(
+    edge.geometry,
+    `a way listed out of order still assembles in place: ${edge.fromStopId}`,
+  );
+}
+assert.deepEqual(
+  swappedGraph.rideEdges.find((e) => e.fromStopId === "RSwapped:S0")!.geometry!
+    .coordinates,
+  [
+    [138.9, 34.9],
+    [138.9, 34.905],
+    [138.9, 34.91],
+  ],
+  "through the out-of-order way's own vertex, not a chord across a gap",
+);
+
 console.log("transitGraphIngest stop-order tests: OK");
 
 // ── A Shinkansen is recognised by its track (ADR-0054) ─────────────────────────────────────
@@ -870,6 +906,56 @@ assert.equal(
   lineTypeOfLine("RStray"),
   "commuter",
   "a stray highspeed tag on a few per cent of the track does not make a Shinkansen",
+);
+
+// A mini-Shinkansen (ADR-0055 §2): Shinkansen track as far as S2, the rails local trains use after
+// it. The line is a Shinkansen — half its track is highspeed — but only its first two hops are.
+const miniGraph = buildTransitGraph(
+  trackNodes,
+  [
+    { id: "WMiniHigh", nodeRefs: ["S0", "S1", "S2"], highspeed: true },
+    { id: "WMiniConv", nodeRefs: ["S2", "S3", "S4"] },
+  ],
+  [
+    tracedRoute(
+      "RMini",
+      "Mini",
+      ["S0", "S1", "S2", "S3", "S4"],
+      ["WMiniHigh", "WMiniConv"],
+    ),
+    // Stops only at S2 and S4, with no track of its own: it borrows RMini's, flag and all.
+    {
+      ...tracedRoute("RMiniExpress", "Mini Express", ["S2", "S4"], []),
+      tags: { route: "train", name: "Mini Express", service: "high_speed" },
+    },
+  ],
+);
+const miniEdge = (from: string, to: string) =>
+  miniGraph.rideEdges.find((e) => e.fromStopId === from && e.toStopId === to)!;
+assert.equal(
+  [...miniGraph.stopNodes.values()].find((s) => s.lineId === "RMini")!.lineType,
+  "shinkansen",
+  "a line with half its track on Shinkansen rails is a Shinkansen",
+);
+assert.equal(
+  miniEdge("RMini:S0", "RMini:S1").conventionalTrack,
+  undefined,
+  "its hops on highspeed track carry no flag",
+);
+assert.equal(
+  miniEdge("RMini:S2", "RMini:S3").conventionalTrack,
+  true,
+  "its hops on conventional track are flagged, to be priced as a limited express",
+);
+assert.equal(
+  miniEdge("RMiniExpress:S2", "RMiniExpress:S4").conventionalTrack,
+  true,
+  "a shape borrowed across conventional track carries the flag too",
+);
+assert.equal(
+  trackGraph.rideEdges.some((e) => e.conventionalTrack),
+  false,
+  "and no hop of a conventional line is ever flagged — the flag only qualifies a Shinkansen",
 );
 
 const { ways: parsedWays } = parseOsmXml(`<?xml version="1.0" encoding="UTF-8"?>
