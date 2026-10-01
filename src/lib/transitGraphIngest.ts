@@ -7,8 +7,9 @@
  *
  * Two node tiers derive from two different OSM relation kinds:
  *  - Stop nodes/ride edges come from `route` relations (PTv2): one stop node per line/station,
- *    consecutive stop members become ride edges carrying the real haversine distance between
- *    the two stations' actual coordinates.
+ *    consecutive stops — in the order the line rides them, which is member order unless the
+ *    line's own track proves otherwise (ADR-0053) — become ride edges carrying the real haversine
+ *    distance between the two stations' actual coordinates.
  *  - Station clusters come from `stop_area`/`stop_area_group` relations first; any stop node OSM
  *    left unclustered (no grouping relation covers it) falls back to proximity + normalized-name
  *    matching, per the design doc's explicit fallback.
@@ -26,7 +27,11 @@
  */
 
 import { haversineMeters } from "@/lib/geo";
-import { traceLineGeometry } from "@/lib/railGeometry";
+import {
+  traceLine,
+  borrowSharedTrack,
+  type BuiltLine,
+} from "@/lib/railGeometry";
 import {
   createGraph,
   type TransitGraph,
@@ -43,10 +48,13 @@ export interface OsmNode {
   tags: Record<string, string>;
 }
 
-/** A way, reduced to what tracing needs. Tags are not retained — see `parsers/osmXml.ts`. */
+/** A way, reduced to what tracing and classification need. Tags are not retained beyond the one
+ * flag below — see `parsers/osmXml.ts`. */
 export interface OsmWay {
   id: string;
   nodeRefs: string[];
+  /** `highspeed=yes`: Shinkansen track (ADR-0054). Absent on everything else. */
+  highspeed?: boolean;
 }
 
 export interface OsmMember {
@@ -70,12 +78,48 @@ const RAIL_ROUTE_VALUES = new Set([
   "monorail",
 ]);
 
-// ADR-0019's own fix, thresholded as it suggested: real Japanese `route=train` relations do not
-// reliably carry the `service` sub-tag (issue #192 measured zero of 1,419 lines classified via it
-// nationally), but a named Shinkansen/limited-express relation's own `duration` tag, divided by its
-// stops' real distance, self-calibrates without depending on how any one contributor tagged it.
-const SHINKANSEN_SPEED_THRESHOLD_KMH = 150;
+// A Shinkansen is recognised by its track, not its timetable (ADR-0054). Real Japanese `route=train`
+// relations do not reliably carry the `service` sub-tag (issue #192 measured zero of 1,419 lines
+// classified via it nationally), and the `duration` tag ADR-0019 fell back to cannot tell an
+// all-stops Shinkansen from a fast limited express: Kodama's 3:57 over its stops implies ~130 km/h,
+// under any threshold that also excludes conventional lines, while a wrong `duration` on しらさぎ
+// implied over 150. The ways a Shinkansen runs on are tagged `highspeed=yes`, and on the pinned
+// 260101 extract the share of a relation's track carrying it is unambiguous: every Shinkansen
+// service is at or above 44.5% (Kamome, whose relation includes its conventional relay), and no
+// other relation touches a single highspeed way. The threshold sits far below the first and well
+// above zero, so one mis-tagged way on a conventional line cannot promote it.
+const SHINKANSEN_TRACK_SHARE = 0.12;
+// `duration` still separates a limited express from a commuter line, which the track cannot: both
+// run on the same conventional rails.
 const LIMITED_EXPRESS_SPEED_THRESHOLD_KMH = 80;
+
+/** The fraction of a route relation's member track, by length, that is tagged `highspeed=yes`. */
+function highspeedTrackShare(
+  relation: OsmRelation,
+  waysById: Map<string, OsmWay>,
+  nodesById: Map<string, OsmNode>,
+): number {
+  let total = 0;
+  let highspeed = 0;
+  for (const member of relation.members) {
+    if (member.type !== "way" || member.role !== "") continue;
+    const way = waysById.get(member.ref);
+    if (!way) continue;
+    let meters = 0;
+    for (let i = 1; i < way.nodeRefs.length; i++) {
+      const a = nodesById.get(way.nodeRefs[i - 1]);
+      const b = nodesById.get(way.nodeRefs[i]);
+      if (a && b)
+        meters += haversineMeters(
+          { lat: a.lat, lng: a.lon },
+          { lat: b.lat, lng: b.lon },
+        );
+    }
+    total += meters;
+    if (way.highspeed) highspeed += meters;
+  }
+  return total > 0 ? highspeed / total : 0;
+}
 
 /** OSM's plain `duration` tag on a route relation: `H:MM` or `H:MM:SS`, no seen use of ISO 8601 on
  * real Japanese rail relations. Anything else returns null rather than guess. */
@@ -94,17 +138,12 @@ function parseDurationSeconds(duration: string | undefined): number | null {
 
 /** The straight-line distance a route relation's own stops span, summed consecutively. Computed
  * independently of ride-edge construction because classification has to happen before any edge
- * exists to read it from — this walks the same stop members the same way, so it is the same
+ * exists to read it from — this walks the same ordered stops the same way, so it is the same
  * distance those edges end up carrying. */
-function lineDistanceMeters(
-  stopMembers: OsmMember[],
-  nodesById: Map<string, OsmNode>,
-): number {
+function lineDistanceMeters(stops: OsmNode[]): number {
   let total = 0;
   let previous: OsmNode | null = null;
-  for (const member of stopMembers) {
-    const osmNode = nodesById.get(member.ref);
-    if (!osmNode) continue;
+  for (const osmNode of stops) {
     if (previous) {
       total += haversineMeters(
         { lat: previous.lat, lng: previous.lon },
@@ -116,18 +155,24 @@ function lineDistanceMeters(
   return total;
 }
 
-function lineTypeOf(relation: OsmRelation, distanceMeters: number): LineType {
+function lineTypeOf(
+  relation: OsmRelation,
+  distanceMeters: number,
+  highspeedShare: number,
+): LineType {
   const route = relation.tags.route;
   if (route === "subway") return "subway";
   if (route === "light_rail" || route === "monorail") return "commuter";
   // route === "train": the `service` sub-tag stays the first check — some contributors do tag it —
-  // falling back to the relation's own implied average speed when it doesn't.
+  // then the track (ADR-0054), then the relation's own implied average speed.
   if (relation.tags.service === "high_speed") return "shinkansen";
+  if (highspeedShare >= SHINKANSEN_TRACK_SHARE) return "shinkansen";
   if (relation.tags.service === "long_distance") return "limitedExpress";
   const durationSeconds = parseDurationSeconds(relation.tags.duration);
   if (durationSeconds) {
+    // However fast it implies, a timetable never makes a Shinkansen on its own: off Shinkansen
+    // track, an implied speed past any limited express's is a tagging error, not a bullet train.
     const impliedSpeedKmh = distanceMeters / 1000 / (durationSeconds / 3600);
-    if (impliedSpeedKmh > SHINKANSEN_SPEED_THRESHOLD_KMH) return "shinkansen";
     if (impliedSpeedKmh > LIMITED_EXPRESS_SPEED_THRESHOLD_KMH)
       return "limitedExpress";
   }
@@ -246,16 +291,19 @@ function normalizeStationName(name: string): string {
 const FALLBACK_CLUSTER_RADIUS_METERS = 300;
 
 /**
- * Builds ride edges (and their stop nodes) from every rail `route` relation, in relation-member
- * order — PTv2 route relations carry their stop members in travel-sequence order, so consecutive
- * stop members are consecutive stations, no reordering needed.
+ * Builds ride edges (and their stop nodes) from every rail `route` relation, in travel order.
+ * PTv2 says a route relation carries its stop members in travel sequence, and almost every one
+ * does — but not all: all four のぞみ relations list 名古屋 after their terminus. Member order is
+ * therefore the default, and `traceLine` overrides it only where the relation's own track proves a
+ * stop out of place (ADR-0053).
  */
 function buildLines(
   graph: TransitGraph,
   nodesById: Map<string, OsmNode>,
   waysById: Map<string, OsmWay>,
   relations: OsmRelation[],
-): Map<string, string[]> {
+): { rawNodeToStopNodes: Map<string, string[]>; lines: BuiltLine[] } {
+  const lines: BuiltLine[] = [];
   // Maps a raw OSM node id to every stop node id created from it (one per line through that
   // physical location) — cluster derivation below needs this to translate stop_area membership
   // (which references raw OSM nodes) back into our stop node ids.
@@ -265,26 +313,32 @@ function buildLines(
     if (!RAIL_ROUTE_VALUES.has(relation.tags.route ?? "")) continue;
 
     const lineName = lineNameOf(relation);
-    const stopMembers = relation.members.filter(
-      (m) => m.type === "node" && m.role.startsWith("stop"),
-    );
+    // A referenced node missing from the extract is skipped, not fabricated.
+    const resolvedStopIds = relation.members
+      .filter((m) => m.type === "node" && m.role.startsWith("stop"))
+      .filter((m) => nodesById.has(m.ref))
+      .map((m) => m.ref);
+
+    // The line's real track, cut per ride edge (ADR-0030) — and, before that, the order its stops
+    // are actually ridden in (ADR-0053), which everything below is built from. A refused segment
+    // leaves its edge without geometry, which is what makes the map draw that stretch dashed rather
+    // than claim a shape we do not have.
+    const traced = traceLine(relation, resolvedStopIds, waysById, nodesById);
+    const stops = traced.stopOsmIds.map((id) => nodesById.get(id)!);
+
     const lineType = lineTypeOf(
       relation,
-      lineDistanceMeters(stopMembers, nodesById),
+      lineDistanceMeters(stops),
+      highspeedTrackShare(relation, waysById, nodesById),
     );
     const operator = operatorOf(relation, lineType, lineName);
 
     let sequence = 0;
     let previous: { id: string; node: OsmNode } | null = null;
-    // The resolved stop sequence and the edges built from it, kept aligned so tracing below can
-    // hand segment `i` to the edge between stop `i` and stop `i + 1`.
-    const stopOsmIds: string[] = [];
+    // The edges built from the ordered stops, kept aligned with them so segment `i` lands on the
+    // edge between stop `i` and stop `i + 1`.
     const edgesOfLine: RideEdge[] = [];
-    for (const member of stopMembers) {
-      const osmNode = nodesById.get(member.ref);
-      if (!osmNode) continue; // referenced node missing from the extract — skip, don't fabricate.
-      stopOsmIds.push(osmNode.id);
-
+    for (const osmNode of stops) {
       const id = stopNodeId(relation.id, osmNode.id);
       if (!graph.stopNodes.has(id)) {
         const stop: StopNode = {
@@ -324,20 +378,25 @@ function buildLines(
       previous = { id, node: osmNode };
     }
 
-    // The line's real track, cut per ride edge (ADR-0030). A refused segment leaves the edge
-    // without geometry, which is what makes the map draw that stretch dashed rather than claim a
-    // shape we do not have.
-    traceLineGeometry(relation, stopOsmIds, waysById, nodesById).forEach(
-      (segment, i) => {
-        const edge = edgesOfLine[i];
-        if (!segment || !edge) return;
-        edge.geometry = segment.geometry;
-        edge.tracedLengthMeters = segment.tracedLengthMeters;
-      },
+    const highspeedMeters = edgesOfLine.map(
+      () => undefined as number | undefined,
     );
+    traced.segments.forEach((segment, i) => {
+      const edge = edgesOfLine[i];
+      if (!segment || !edge) return;
+      edge.geometry = segment.geometry;
+      edge.tracedLengthMeters = segment.tracedLengthMeters;
+      highspeedMeters[i] = segment.highspeedMeters;
+    });
+    lines.push({
+      lineId: relation.id,
+      stopOsmIds: traced.stopOsmIds,
+      edges: edgesOfLine,
+      highspeedMeters,
+    });
   }
 
-  return rawNodeToStopNodes;
+  return { rawNodeToStopNodes, lines };
 }
 
 function addCluster(
@@ -462,6 +521,28 @@ function buildClusters(
   }
 }
 
+// A Shinkansen hop with less than this share of its traced track on `highspeed=yes` ways runs on
+// conventional rails (ADR-0055 §2). Measured on 260101, a hop's share is bimodal — on Shinkansen
+// track it is ~1, on a mini-Shinkansen's conventional stretch ~0 — so the cut is not sensitive; a
+// half is simply "mostly".
+const CONVENTIONAL_TRACK_SHARE = 0.5;
+
+/** Flags each hop of a Shinkansen line whose own track is mostly conventional — the stretch a
+ * mini-Shinkansen shares with local trains, which no Shinkansen speed applies to. Only a traced hop
+ * can be judged: an untraced one keeps its line's speed, since there is no track to read. */
+function markConventionalTrack(graph: TransitGraph, lines: BuiltLine[]): void {
+  for (const line of lines) {
+    line.edges.forEach((edge, i) => {
+      const highspeed = line.highspeedMeters[i];
+      if (highspeed === undefined || !edge.tracedLengthMeters) return;
+      if (graph.stopNodes.get(edge.fromStopId)?.lineType !== "shinkansen")
+        return;
+      if (highspeed / edge.tracedLengthMeters < CONVENTIONAL_TRACK_SHARE)
+        edge.conventionalTrack = true;
+    });
+  }
+}
+
 /** The pure transform (Seam 2): parsed OSM nodes + ways + relations → a complete `TransitGraph`.
  * Ways joined the signature with ADR-0030 — they carry the geometry each ride edge is traced from,
  * and tracing belongs behind this seam, where ADR-0019's ticket #87 drew the unit-test line. */
@@ -473,7 +554,15 @@ export function buildTransitGraph(
   const graph = createGraph();
   const nodesById = new Map(nodes.map((n) => [n.id, n]));
   const waysById = new Map(ways.map((w) => [w.id, w]));
-  const rawNodeToStopNodes = buildLines(graph, nodesById, waysById, relations);
+  const { rawNodeToStopNodes, lines } = buildLines(
+    graph,
+    nodesById,
+    waysById,
+    relations,
+  );
+  // Only once every line has traced its own track can one lend it to another (ADR-0053 §2).
+  borrowSharedTrack(lines);
+  markConventionalTrack(graph, lines);
   buildClusters(graph, relations, rawNodeToStopNodes);
   return graph;
 }

@@ -11,8 +11,11 @@
  * members into the track between two stations. The geometry was always in the filtered extract;
  * about 91% of the 212 MB of XML read on every run used to be thrown away here.
  *
- * A way's tags are deliberately *not* retained. Tracing needs the node refs and nothing else, and
- * the national extract holds 90,632 ways — a tag map each is real memory for data no caller reads.
+ * A way's tags are deliberately *not* retained, with one exception. Tracing needs the node refs and
+ * nothing else, and the national extract holds 90,632 ways — a tag map each is real memory for data
+ * no caller reads. The exception is `highspeed=yes`, kept as a single flag because it is the one
+ * fact about a line the track states more reliably than the route relation does: it is how ingest
+ * tells a Shinkansen from a conventional line (ADR-0054).
  */
 
 import { XMLParser } from "fast-xml-parser";
@@ -88,6 +91,8 @@ export function parseOsmXml(xml: string): {
     nodeRefs: toArray(w.nd as Record<string, unknown>[] | undefined).map((nd) =>
       String(nd["@_ref"]),
     ),
+    // Omitted rather than `false` when absent, so a way stays two fields in the common case.
+    ...(tagsOf(w).highspeed === "yes" ? { highspeed: true } : {}),
   }));
 
   const relations: OsmRelation[] = toArray(
