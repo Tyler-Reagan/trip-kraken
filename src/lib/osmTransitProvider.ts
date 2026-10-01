@@ -229,6 +229,8 @@ interface RideLink {
    * still charged by the line's type — a Komachi past Morioka is a slow Shinkansen, not a cheaper
    * train. */
   speedType: LineType;
+  /** The line's own type, which a boarding is charged by (ADR-0033) — never `speedType`. */
+  boardingType: LineType;
   geometry?: GeoJSON.LineString;
   forward: boolean;
 }
@@ -258,6 +260,7 @@ function buildAdjacency(graph: TransitGraph): Adjacency {
       speedType: edge.conventionalTrack
         ? ("limitedExpress" as const)
         : lineType,
+      boardingType: lineType,
       geometry: edge.geometry,
     };
     addRide(edge.fromStopId, {
@@ -364,6 +367,16 @@ function shortestPath(
   withSteps: boolean,
   hasJrPass: boolean,
 ): Map<string, SearchResult> {
+  // Two states per stop node (ADR-0055 §3): *riding* — arrived on a ride link, so already aboard
+  // that stop's line — and *standing* — arrived by the access walk or a transfer, aboard nothing.
+  // A boarding is charged on the first ride link of a line, which is exactly where `decompose`
+  // starts a new rail Path and charges it, so the search's total and the Paths' sum agree
+  // (ADR-0032 §5). Charging at the seed and the transfer edge instead, by the line of the stop
+  // stood on, left issue #159's same-platform union a free way aboard any sibling line at the same
+  // physical point: a commuter stop node next to a Shinkansen platform boarded the Shinkansen for
+  // nothing, and the decomposed Path then charged the boarding the search never paid.
+  const keyOf = (id: string, riding: boolean) =>
+    riding ? id : `${id}\u0000standing`;
   const timeMin = new Map<string, number>();
   const distanceMeters = new Map<string, number>();
   const steps = new Map<string, Step[]>();
@@ -371,9 +384,9 @@ function shortestPath(
 
   // Min-priority queue via a simple array — the fixture/optimizer-scale graphs this runs against
   // (a few dozen snapped stops, nationwide rail node counts) don't warrant a binary heap.
-  const queue: { id: string; time: number }[] = [];
-  const push = (id: string, time: number) => queue.push({ id, time });
-  const pop = (): { id: string; time: number } | undefined => {
+  type Entry = { key: string; id: string; riding: boolean; time: number };
+  const queue: Entry[] = [];
+  const pop = (): Entry | undefined => {
     let bestIdx = -1;
     for (let i = 0; i < queue.length; i++) {
       if (bestIdx === -1 || queue[i].time < queue[bestIdx].time) bestIdx = i;
@@ -381,36 +394,49 @@ function shortestPath(
     if (bestIdx === -1) return undefined;
     return queue.splice(bestIdx, 1)[0];
   };
+  const relax = (
+    id: string,
+    riding: boolean,
+    time: number,
+    meters: number,
+    path: Step[] | null,
+  ) => {
+    const key = keyOf(id, riding);
+    if (visited.has(key) || time >= (timeMin.get(key) ?? Infinity)) return;
+    timeMin.set(key, time);
+    distanceMeters.set(key, meters);
+    if (path) steps.set(key, path);
+    queue.push({ key, id, riding, time });
+  };
 
-  for (const seed of seeds) {
-    // The other place a boarding happens (ADR-0033 §3): starting the Journey already on this line
-    // rather than reaching it through a transfer. Charged here, at the seed, and deliberately not
-    // inside `snapWithWalkCost` — that helper serves both ends of the Journey, and the far end is
-    // an *alighting*, which owes nothing.
-    const seedMinutes =
-      seed.walkMinutes + PREMIUM_BOARDING_MINUTES[seed.stop.lineType];
-    const existing = timeMin.get(seed.stop.id);
-    if (existing !== undefined && existing <= seedMinutes) continue;
-    timeMin.set(seed.stop.id, seedMinutes);
-    distanceMeters.set(seed.stop.id, seed.walkMeters);
-    if (withSteps) steps.set(seed.stop.id, []);
-    push(seed.stop.id, seedMinutes);
-  }
+  // The access walk. No boarding here: standing on a platform is not boarding a train, and the
+  // first ride link out of it charges for whichever line it actually rides.
+  for (const seed of seeds)
+    relax(
+      seed.stop.id,
+      false,
+      seed.walkMinutes,
+      seed.walkMeters,
+      withSteps ? [] : null,
+    );
 
   const remainingTargets = new Set(toStopIds);
   while (remainingTargets.size > 0) {
     const current = pop();
     if (!current) break;
-    if (visited.has(current.id)) continue;
-    visited.add(current.id);
+    if (visited.has(current.key)) continue;
+    visited.add(current.key);
     remainingTargets.delete(current.id);
 
-    const currentTime = timeMin.get(current.id) ?? Infinity;
-    const currentDistance = distanceMeters.get(current.id) ?? 0;
-    const currentSteps = withSteps ? (steps.get(current.id) ?? []) : [];
+    const currentTime = timeMin.get(current.key)!;
+    const currentDistance = distanceMeters.get(current.key)!;
+    const currentSteps = withSteps ? (steps.get(current.key) ?? []) : [];
+    // The line this state is aboard, if any — what makes riding on free.
+    const aboard = current.riding
+      ? graph.stopNodes.get(current.id)?.lineName
+      : undefined;
 
     for (const rideEdge of adjacency.ride.get(current.id) ?? []) {
-      if (visited.has(rideEdge.toStopId)) continue;
       // Both reads key off `rideEdge.fromStopId`, the link's true origin — never `current.id`,
       // which is only the *physical point* the search is standing at (issue #159's same-platform
       // union above can hand `current` a sibling's own link, belonging to a different line).
@@ -424,67 +450,71 @@ function shortestPath(
         )
       )
         continue;
-      const speed = LINE_TYPE_SPEEDS_KMH[rideEdge.speedType];
-      const candidateTime =
-        currentTime + minutesForMeters(rideEdge.distanceMeters, speed);
-      if (candidateTime < (timeMin.get(rideEdge.toStopId) ?? Infinity)) {
-        timeMin.set(rideEdge.toStopId, candidateTime);
-        distanceMeters.set(
-          rideEdge.toStopId,
-          currentDistance + rideEdge.distanceMeters,
-        );
-        if (withSteps) {
-          steps.set(rideEdge.toStopId, [
-            ...currentSteps,
-            {
-              kind: "ride",
-              lineName: rideEdge.lineName,
-              fromStopId: rideEdge.fromStopId,
-              toStopId: rideEdge.toStopId,
-            },
-          ]);
-        }
-        push(rideEdge.toStopId, candidateTime);
-      }
+      // A boarding: the first link of a line, or a change of line without a transfer — the
+      // same-platform union's sibling, which `decompose` also splits into its own Path. Keyed on
+      // the line *name*, as `decompose` is: a service mapped as several relations is one train.
+      const boarding =
+        rideEdge.lineName === aboard
+          ? 0
+          : PREMIUM_BOARDING_MINUTES[rideEdge.boardingType];
+      relax(
+        rideEdge.toStopId,
+        true,
+        currentTime +
+          boarding +
+          minutesForMeters(
+            rideEdge.distanceMeters,
+            LINE_TYPE_SPEEDS_KMH[rideEdge.speedType],
+          ),
+        currentDistance + rideEdge.distanceMeters,
+        withSteps
+          ? [
+              ...currentSteps,
+              {
+                kind: "ride",
+                lineName: rideEdge.lineName,
+                fromStopId: rideEdge.fromStopId,
+                toStopId: rideEdge.toStopId,
+              },
+            ]
+          : null,
+      );
     }
 
     for (const transferEdge of adjacency.transfer.get(current.id) ?? []) {
-      const toStopId = transferEdge.toStopId;
-      if (visited.has(toStopId)) continue;
-      // Boarding, charged here rather than on the ride edge: stop nodes are line-scoped, so a
-      // transfer edge is the *only* way to change lines, which makes it exactly the moment a
-      // traveler buys the ticket and walks to the other gate. Charging per ride edge instead would
-      // scale the fare with the number of stations, which is not how any of this works.
-      const boardingType =
-        graph.stopNodes.get(toStopId)?.lineType ?? "commuter";
-      const candidateTime =
-        currentTime + TRANSFER_MINUTES + PREMIUM_BOARDING_MINUTES[boardingType];
-      if (candidateTime < (timeMin.get(toStopId) ?? Infinity)) {
-        timeMin.set(toStopId, candidateTime);
-        distanceMeters.set(toStopId, currentDistance);
-        if (withSteps) {
-          steps.set(toStopId, [
-            ...currentSteps,
-            {
-              kind: "transfer",
-              clusterId: transferEdge.clusterId,
-              fromStopId: current.id,
-              toStopId,
-            },
-          ]);
-        }
-        push(toStopId, candidateTime);
-      }
+      // A transfer is the walk to the other gate, nothing more: stop nodes are line-scoped, so the
+      // line beyond it is boarded — and charged — by the first ride link taken from it.
+      relax(
+        transferEdge.toStopId,
+        false,
+        currentTime + TRANSFER_MINUTES,
+        currentDistance,
+        withSteps
+          ? [
+              ...currentSteps,
+              {
+                kind: "transfer",
+                clusterId: transferEdge.clusterId,
+                fromStopId: current.id,
+                toStopId: transferEdge.toStopId,
+              },
+            ]
+          : null,
+      );
     }
   }
 
+  // A target's answer is the faster of its two states.
   const results = new Map<string, SearchResult>();
   for (const id of toStopIds) {
-    if (!timeMin.has(id)) continue;
+    const best = [keyOf(id, true), keyOf(id, false)]
+      .filter((key) => timeMin.has(key))
+      .sort((a, b) => timeMin.get(a)! - timeMin.get(b)!)[0];
+    if (best === undefined) continue;
     results.set(id, {
-      timeMin: timeMin.get(id)!,
-      distanceMeters: distanceMeters.get(id)!,
-      steps: steps.get(id) ?? [],
+      timeMin: timeMin.get(best)!,
+      distanceMeters: distanceMeters.get(best)!,
+      steps: steps.get(best) ?? [],
     });
   }
   return results;

@@ -1070,5 +1070,96 @@ async function main() {
     );
   }
 
+  // ── Boarding is charged for the line ridden, not the stop stood on (ADR-0055 §3) ──────────
+  //
+  // A commuter line and a Shinkansen share one platform node (issue #159's same-platform union).
+  // The commuter stop node is the nearer seed. Charging boarding at the seed, by the stop's own line,
+  // let the search ride the Shinkansen from there for nothing — measured on the 260101 graph, 92 of
+  // 380 Tokyo-area pairs did — while the decomposed Path charged the boarding the search never paid.
+  {
+    const shared = createGraph();
+    const stop = (
+      id: string,
+      osmNodeId: string,
+      lineId: string,
+      lineName: string,
+      lineType: "commuter" | "shinkansen",
+      lat: number,
+      sequence: number,
+    ) =>
+      shared.stopNodes.set(id, {
+        id,
+        osmNodeId,
+        lineId,
+        lineName,
+        lineType,
+        stationName: osmNodeId,
+        lat,
+        lng: 141.5,
+        sequence,
+      });
+    // The platform both lines stop at, and a far station only the Shinkansen reaches.
+    stop("local-hub", "hub", "local", "Local", "commuter", 38.0, 0);
+    stop("local-near", "near", "local", "Local", "commuter", 38.01, 1);
+    stop("fast-hub", "hub", "fast", "Fast", "shinkansen", 38.0, 0);
+    // The same service mapped as two relations under one name, joined at "mid" — one train.
+    stop("fast-mid", "mid", "fast", "Fast", "shinkansen", 38.5, 1);
+    stop("fast2-mid", "mid", "fast2", "Fast", "shinkansen", 38.5, 0);
+    stop("fast2-far", "far", "fast2", "Fast", "shinkansen", 39.0, 1);
+    shared.rideEdges.push(
+      {
+        fromStopId: "local-hub",
+        toStopId: "local-near",
+        distanceMeters: 1_100,
+      },
+      { fromStopId: "fast-hub", toStopId: "fast-mid", distanceMeters: 55_000 },
+      {
+        fromStopId: "fast2-mid",
+        toStopId: "fast2-far",
+        distanceMeters: 55_000,
+      },
+    );
+    const sharedProvider = createOsmTransitProvider(
+      shared,
+      buildSpatialIndex(shared),
+    );
+    const from = P(38.0, 141.5001);
+    const to = P(39.0, 141.5001);
+    const journey = (await sharedProvider.describeJourney(from, to, ["rail"]))!;
+    const rail = journey.filter((p) => p.kind === "rail");
+    assert.equal(
+      rail.length,
+      1,
+      "two relations of one service, joined at a platform, are one rail Path",
+    );
+    const ridingMinutes = (110 / LINE_TYPE_SPEEDS_KMH.shinkansen) * 60;
+    assert.ok(
+      Math.abs(
+        rail[0].travelCost.durationSeconds / 60 -
+          (ridingMinutes + PREMIUM_BOARDING_MINUTES.shinkansen),
+      ) < 1e-6,
+      "charged one Shinkansen boarding — not zero for boarding from the commuter's stop, not two for the second relation",
+    );
+    const [[, cell]] = await sharedProvider.costMatrix([from, to], ["rail"]);
+    assert.ok(
+      Math.abs(cell!.durationSeconds - journeyCost(journey)!.durationSeconds) <
+        1e-6,
+      "and the search the optimizer plans against charged it too: its total is the Paths' sum (ADR-0032 §5)",
+    );
+    // Riding only the commuter line from the same platform still costs no boarding at all.
+    const local = (await sharedProvider.describeJourney(
+      from,
+      P(38.01, 141.5001),
+      ["rail"],
+    ))!;
+    assert.ok(
+      Math.abs(
+        local.find((p) => p.kind === "rail")!.travelCost.durationSeconds / 60 -
+          (1.1 / LINE_TYPE_SPEEDS_KMH.commuter) * 60,
+      ) < 1e-6,
+      "a commuter ride from a shared platform pays no Shinkansen boarding",
+    );
+  }
+
   console.log("✓ osmTransitProvider.test.ts passed");
 }
