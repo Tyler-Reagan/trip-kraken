@@ -382,17 +382,36 @@ function shortestPath(
   const steps = new Map<string, Step[]>();
   const visited = new Set<string>();
 
-  // Min-priority queue via a simple array — the fixture/optimizer-scale graphs this runs against
-  // (a few dozen snapped stops, nationwide rail node counts) don't warrant a binary heap.
+  // Min-priority queue as a binary heap. A linear-scan array served while the search had one state
+  // per stop node; with two (above), a 20-point matrix took 2.7x as long until this replaced it.
   type Entry = { key: string; id: string; riding: boolean; time: number };
-  const queue: Entry[] = [];
-  const pop = (): Entry | undefined => {
-    let bestIdx = -1;
-    for (let i = 0; i < queue.length; i++) {
-      if (bestIdx === -1 || queue[i].time < queue[bestIdx].time) bestIdx = i;
+  const heap: Entry[] = [];
+  const push = (entry: Entry) => {
+    heap.push(entry);
+    for (let i = heap.length - 1; i > 0;) {
+      const parent = (i - 1) >> 1;
+      if (heap[parent].time <= heap[i].time) break;
+      [heap[parent], heap[i]] = [heap[i], heap[parent]];
+      i = parent;
     }
-    if (bestIdx === -1) return undefined;
-    return queue.splice(bestIdx, 1)[0];
+  };
+  const pop = (): Entry | undefined => {
+    const top = heap[0];
+    const last = heap.pop();
+    if (heap.length > 0 && last) {
+      heap[0] = last;
+      for (let i = 0; ;) {
+        const l = 2 * i + 1;
+        const r = l + 1;
+        let smallest = i;
+        if (l < heap.length && heap[l].time < heap[smallest].time) smallest = l;
+        if (r < heap.length && heap[r].time < heap[smallest].time) smallest = r;
+        if (smallest === i) break;
+        [heap[smallest], heap[i]] = [heap[i], heap[smallest]];
+        i = smallest;
+      }
+    }
+    return top;
   };
   const relax = (
     id: string,
@@ -403,10 +422,13 @@ function shortestPath(
   ) => {
     const key = keyOf(id, riding);
     if (visited.has(key) || time >= (timeMin.get(key) ?? Infinity)) return;
+    // Aboard beats standing: anything reachable from the platform is reachable from the train at
+    // the same stop for no more, so a standing state no earlier than the riding one is dead weight.
+    if (!riding && time >= (timeMin.get(keyOf(id, true)) ?? Infinity)) return;
     timeMin.set(key, time);
     distanceMeters.set(key, meters);
     if (path) steps.set(key, path);
-    queue.push({ key, id, riding, time });
+    push({ key, id, riding, time });
   };
 
   // The access walk. No boarding here: standing on a platform is not boarding a train, and the
@@ -426,6 +448,13 @@ function shortestPath(
     if (!current) break;
     if (visited.has(current.key)) continue;
     visited.add(current.key);
+    if (
+      !current.riding &&
+      (timeMin.get(keyOf(current.id, true)) ?? Infinity) <= current.time
+    ) {
+      remainingTargets.delete(current.id);
+      continue;
+    }
     remainingTargets.delete(current.id);
 
     const currentTime = timeMin.get(current.key)!;
