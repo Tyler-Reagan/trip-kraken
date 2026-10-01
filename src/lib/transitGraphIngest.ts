@@ -7,8 +7,9 @@
  *
  * Two node tiers derive from two different OSM relation kinds:
  *  - Stop nodes/ride edges come from `route` relations (PTv2): one stop node per line/station,
- *    consecutive stop members become ride edges carrying the real haversine distance between
- *    the two stations' actual coordinates.
+ *    consecutive stops — in the order the line rides them, which is member order unless the
+ *    line's own track proves otherwise (ADR-0053) — become ride edges carrying the real haversine
+ *    distance between the two stations' actual coordinates.
  *  - Station clusters come from `stop_area`/`stop_area_group` relations first; any stop node OSM
  *    left unclustered (no grouping relation covers it) falls back to proximity + normalized-name
  *    matching, per the design doc's explicit fallback.
@@ -26,7 +27,11 @@
  */
 
 import { haversineMeters } from "@/lib/geo";
-import { traceLineGeometry } from "@/lib/railGeometry";
+import {
+  traceLine,
+  borrowSharedTrack,
+  type BuiltLine,
+} from "@/lib/railGeometry";
 import {
   createGraph,
   type TransitGraph,
@@ -94,17 +99,12 @@ function parseDurationSeconds(duration: string | undefined): number | null {
 
 /** The straight-line distance a route relation's own stops span, summed consecutively. Computed
  * independently of ride-edge construction because classification has to happen before any edge
- * exists to read it from — this walks the same stop members the same way, so it is the same
+ * exists to read it from — this walks the same ordered stops the same way, so it is the same
  * distance those edges end up carrying. */
-function lineDistanceMeters(
-  stopMembers: OsmMember[],
-  nodesById: Map<string, OsmNode>,
-): number {
+function lineDistanceMeters(stops: OsmNode[]): number {
   let total = 0;
   let previous: OsmNode | null = null;
-  for (const member of stopMembers) {
-    const osmNode = nodesById.get(member.ref);
-    if (!osmNode) continue;
+  for (const osmNode of stops) {
     if (previous) {
       total += haversineMeters(
         { lat: previous.lat, lng: previous.lon },
@@ -246,16 +246,19 @@ function normalizeStationName(name: string): string {
 const FALLBACK_CLUSTER_RADIUS_METERS = 300;
 
 /**
- * Builds ride edges (and their stop nodes) from every rail `route` relation, in relation-member
- * order — PTv2 route relations carry their stop members in travel-sequence order, so consecutive
- * stop members are consecutive stations, no reordering needed.
+ * Builds ride edges (and their stop nodes) from every rail `route` relation, in travel order.
+ * PTv2 says a route relation carries its stop members in travel sequence, and almost every one
+ * does — but not all: all four のぞみ relations list 名古屋 after their terminus. Member order is
+ * therefore the default, and `traceLine` overrides it only where the relation's own track proves a
+ * stop out of place (ADR-0053).
  */
 function buildLines(
   graph: TransitGraph,
   nodesById: Map<string, OsmNode>,
   waysById: Map<string, OsmWay>,
   relations: OsmRelation[],
-): Map<string, string[]> {
+): { rawNodeToStopNodes: Map<string, string[]>; lines: BuiltLine[] } {
+  const lines: BuiltLine[] = [];
   // Maps a raw OSM node id to every stop node id created from it (one per line through that
   // physical location) — cluster derivation below needs this to translate stop_area membership
   // (which references raw OSM nodes) back into our stop node ids.
@@ -265,26 +268,28 @@ function buildLines(
     if (!RAIL_ROUTE_VALUES.has(relation.tags.route ?? "")) continue;
 
     const lineName = lineNameOf(relation);
-    const stopMembers = relation.members.filter(
-      (m) => m.type === "node" && m.role.startsWith("stop"),
-    );
-    const lineType = lineTypeOf(
-      relation,
-      lineDistanceMeters(stopMembers, nodesById),
-    );
+    // A referenced node missing from the extract is skipped, not fabricated.
+    const resolvedStopIds = relation.members
+      .filter((m) => m.type === "node" && m.role.startsWith("stop"))
+      .filter((m) => nodesById.has(m.ref))
+      .map((m) => m.ref);
+
+    // The line's real track, cut per ride edge (ADR-0030) — and, before that, the order its stops
+    // are actually ridden in (ADR-0053), which everything below is built from. A refused segment
+    // leaves its edge without geometry, which is what makes the map draw that stretch dashed rather
+    // than claim a shape we do not have.
+    const traced = traceLine(relation, resolvedStopIds, waysById, nodesById);
+    const stops = traced.stopOsmIds.map((id) => nodesById.get(id)!);
+
+    const lineType = lineTypeOf(relation, lineDistanceMeters(stops));
     const operator = operatorOf(relation, lineType, lineName);
 
     let sequence = 0;
     let previous: { id: string; node: OsmNode } | null = null;
-    // The resolved stop sequence and the edges built from it, kept aligned so tracing below can
-    // hand segment `i` to the edge between stop `i` and stop `i + 1`.
-    const stopOsmIds: string[] = [];
+    // The edges built from the ordered stops, kept aligned with them so segment `i` lands on the
+    // edge between stop `i` and stop `i + 1`.
     const edgesOfLine: RideEdge[] = [];
-    for (const member of stopMembers) {
-      const osmNode = nodesById.get(member.ref);
-      if (!osmNode) continue; // referenced node missing from the extract — skip, don't fabricate.
-      stopOsmIds.push(osmNode.id);
-
+    for (const osmNode of stops) {
       const id = stopNodeId(relation.id, osmNode.id);
       if (!graph.stopNodes.has(id)) {
         const stop: StopNode = {
@@ -324,20 +329,20 @@ function buildLines(
       previous = { id, node: osmNode };
     }
 
-    // The line's real track, cut per ride edge (ADR-0030). A refused segment leaves the edge
-    // without geometry, which is what makes the map draw that stretch dashed rather than claim a
-    // shape we do not have.
-    traceLineGeometry(relation, stopOsmIds, waysById, nodesById).forEach(
-      (segment, i) => {
-        const edge = edgesOfLine[i];
-        if (!segment || !edge) return;
-        edge.geometry = segment.geometry;
-        edge.tracedLengthMeters = segment.tracedLengthMeters;
-      },
-    );
+    traced.segments.forEach((segment, i) => {
+      const edge = edgesOfLine[i];
+      if (!segment || !edge) return;
+      edge.geometry = segment.geometry;
+      edge.tracedLengthMeters = segment.tracedLengthMeters;
+    });
+    lines.push({
+      lineId: relation.id,
+      stopOsmIds: traced.stopOsmIds,
+      edges: edgesOfLine,
+    });
   }
 
-  return rawNodeToStopNodes;
+  return { rawNodeToStopNodes, lines };
 }
 
 function addCluster(
@@ -473,7 +478,14 @@ export function buildTransitGraph(
   const graph = createGraph();
   const nodesById = new Map(nodes.map((n) => [n.id, n]));
   const waysById = new Map(ways.map((w) => [w.id, w]));
-  const rawNodeToStopNodes = buildLines(graph, nodesById, waysById, relations);
+  const { rawNodeToStopNodes, lines } = buildLines(
+    graph,
+    nodesById,
+    waysById,
+    relations,
+  );
+  // Only once every line has traced its own track can one lend it to another (ADR-0053 §2).
+  borrowSharedTrack(lines);
   buildClusters(graph, relations, rawNodeToStopNodes);
   return graph;
 }

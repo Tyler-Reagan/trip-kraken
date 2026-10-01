@@ -488,7 +488,7 @@ const geoNodes: OsmNode[] = [
   { id: "P1", lat: 35.31, lon: 139.3, tags: { name: "Lasso Junction" } },
   { id: "P2", lat: 35.32, lon: 139.3, tags: { name: "Lasso B" } },
   { id: "P3", lat: 35.32, lon: 139.31, tags: { name: "Lasso C" } },
-  // A stop order the chain cannot explain: the route claims to run Q0 -> Q2 -> Q1.
+  // A stop listed twice, so position along the chain cannot settle its order: Q0 -> Q2 -> Q1 -> Q2.
   { id: "Q0", lat: 35.2, lon: 139.2, tags: { name: "Skip A" } },
   { id: "Q1", lat: 35.21, lon: 139.2, tags: { name: "Skip B" } },
   { id: "Q2", lat: 35.22, lon: 139.2, tags: { name: "Skip C" } },
@@ -544,7 +544,7 @@ const geoGraph = buildTransitGraph(geoNodes, geoWays, [
     ["P0", "P1", "P2", "P3", "P1"],
     ["WP1", "WP2"],
   ),
-  tracedRoute("RSkip", "Unexplainable Line", ["Q0", "Q2", "Q1"], ["WQ"]),
+  tracedRoute("RSkip", "Unexplainable Line", ["Q0", "Q2", "Q1", "Q2"], ["WQ"]),
 ]);
 
 const edgeOf = (from: string, to: string) =>
@@ -673,6 +673,7 @@ assert.ok(
 // A hop the chain genuinely cannot explain — the stop order skips ahead and doubles back, and no
 // forward run of track connects the pair. Slicing it anyway and reversing is what traced 25.3 km
 // for a 1.0 km hop on 名古屋市営名城線. §1's answer stands: we do not know it, so we do not draw it.
+// (A stop listed twice is what keeps ADR-0053's re-ordering out of this: it has no one position.)
 assert.ok(
   edgeOf("RSkip:Q0", "RSkip:Q2")?.geometry,
   "the explainable hop still traces",
@@ -692,6 +693,244 @@ for (const edge of geoGraph.rideEdges) {
 }
 
 console.log("transitGraphIngest rail geometry tests: OK");
+
+// ── Stop order settled by the track (ADR-0053 §1) ───────────────────────────────────────
+//
+// All four のぞみ relations in the 260101 extract list 名古屋 after their terminus. Built in member
+// order that is a phantom hop from the terminus back to 名古屋 and a real hop that runs straight
+// past it — the 355 km 新横浜 → 京都 edge that traced 451 km of track through a station it never
+// stopped at. Each fixture here is that defect, or a guard against fixing it wrongly, on a straight
+// north-south track a human can check by hand.
+
+const orderNodes: OsmNode[] = [
+  // A straight line of five stations, 0.01° (~1.1 km) apart.
+  ...[0, 1, 2, 3, 4].map((i) => ({
+    id: `S${i}`,
+    lat: 34.9 + i * 0.01,
+    lon: 138.9,
+    tags: { name: `Straight ${i}` },
+  })),
+  // Plain track vertices either side of S1, for the line whose *track* is out of place.
+  { id: "M01", lat: 34.905, lon: 138.9, tags: {} },
+  { id: "M12", lat: 34.915, lon: 138.9, tags: {} },
+];
+
+const orderWays: OsmWay[] = [
+  { id: "WS", nodeRefs: ["S0", "S1", "S2", "S3", "S4"] },
+  // S1's stretch of track listed last, after a gap: the chain runs S0 · S2 S3 S4 · S1.
+  { id: "WM0", nodeRefs: ["S0", "M01"] },
+  { id: "WM2", nodeRefs: ["M12", "S2", "S3", "S4"] },
+  { id: "WM1", nodeRefs: ["M01", "S1", "M12"] },
+];
+
+const orderGraph = buildTransitGraph(orderNodes, orderWays, [
+  // The のぞみ shape: one stop appended after the terminus.
+  tracedRoute(
+    "RAppended",
+    "Appended Stop",
+    ["S0", "S1", "S3", "S4", "S2"],
+    ["WS"],
+  ),
+  // A line already in order — the overwhelming majority, which must come through untouched.
+  tracedRoute("RInOrder", "In Order", ["S0", "S1", "S2", "S3", "S4"], ["WS"]),
+]);
+
+// Built alone, so no line above can lend it a shape (§2) and blur what its own track explains.
+const bothWrongGraph = buildTransitGraph(orderNodes, orderWays, [
+  // Both witnesses wrong, about different stops: S3 is appended late in the stop list, and S1's
+  // track is appended late in the way list — the shape of のぞみ 9807033, whose chain carries
+  // 新大阪's track after 東京's. Sorting every stop by chain position would drag S1 to the end.
+  tracedRoute(
+    "RBothWrong",
+    "Both Witnesses Wrong",
+    ["S0", "S1", "S2", "S4", "S3"],
+    ["WM0", "WM2", "WM1"],
+  ),
+]);
+
+const orderEdge = (from: string, to: string) =>
+  [...orderGraph.rideEdges, ...bothWrongGraph.rideEdges].find(
+    (e) => e.fromStopId === from && e.toStopId === to,
+  );
+const edgesOfLine = (lineId: string) =>
+  [...orderGraph.rideEdges, ...bothWrongGraph.rideEdges]
+    .filter((e) => e.fromStopId.startsWith(`${lineId}:`))
+    .map((e) => `${e.fromStopId.split(":")[1]}>${e.toStopId.split(":")[1]}`);
+
+assert.deepEqual(
+  edgesOfLine("RAppended"),
+  ["S0>S1", "S1>S2", "S2>S3", "S3>S4"],
+  "a stop listed after the terminus is ridden where the track puts it",
+);
+assert.equal(
+  orderEdge("RAppended:S4", "RAppended:S2"),
+  undefined,
+  "and the phantom hop back to it is never built",
+);
+assert.equal(
+  orderEdge("RAppended:S1", "RAppended:S3"),
+  undefined,
+  "nor the real hop that skipped it",
+);
+for (const edge of orderGraph.rideEdges.filter((e) =>
+  e.fromStopId.startsWith("RAppended:"),
+)) {
+  assert.ok(edge.geometry, `every re-ordered hop traces: ${edge.fromStopId}`);
+}
+assert.deepEqual(
+  ["S0", "S1", "S2", "S3", "S4"].map(
+    (id) => orderGraph.stopNodes.get(`RAppended:${id}`)!.sequence,
+  ),
+  [0, 1, 2, 3, 4],
+  "sequence follows the ridden order, not the member order",
+);
+
+assert.deepEqual(
+  edgesOfLine("RInOrder"),
+  ["S0>S1", "S1>S2", "S2>S3", "S3>S4"],
+  "a line already in travel order is unchanged",
+);
+
+assert.deepEqual(
+  edgesOfLine("RBothWrong"),
+  ["S0>S1", "S1>S2", "S2>S3", "S3>S4"],
+  "when the stop list and the track are each wrong about a different stop, only the stop the " +
+    "track places correctly moves",
+);
+assert.ok(
+  orderEdge("RBothWrong:S2", "RBothWrong:S3")?.geometry &&
+    orderEdge("RBothWrong:S3", "RBothWrong:S4")?.geometry,
+  "the hops the track explains trace",
+);
+assert.equal(
+  orderEdge("RBothWrong:S0", "RBothWrong:S1")?.geometry,
+  undefined,
+  "while a hop onto the misplaced track still draws dashed — the stop is right, its shape is not known",
+);
+
+console.log("transitGraphIngest stop-order tests: OK");
+
+// ── Shape borrowed from another line on the same track (ADR-0053 §2) ─────────────────────
+//
+// Nationally 6.4% of ride edges traced to nothing, and many of them sit between two stop_position
+// nodes another line traced cleanly — Nozomi's 品川 → 新横浜 is Kodama's, node for node. The
+// local line here traces natively; every other line stops at some of its nodes and has a gap of
+// its own in the way list.
+
+const borrowNodes: OsmNode[] = [
+  ...[138.8, 138.81, 138.82, 138.83].map((lon, i) => ({
+    id: `K${i}`,
+    lat: 34.8,
+    lon,
+    tags: { name: `Kodama ${i}` },
+  })),
+  // A mid-hop vertex, so a borrowed shape is visibly the donor's track and not a chord.
+  { id: "K12", lat: 34.802, lon: 138.815, tags: {} },
+  // A namesake: same station name as K1/K2, different physical stop — another railway entirely.
+  { id: "N1", lat: 34.81, lon: 138.81, tags: { name: "Kodama 1" } },
+  { id: "N2", lat: 34.81, lon: 138.82, tags: { name: "Kodama 2" } },
+];
+
+const borrowWays: OsmWay[] = [
+  { id: "WK", nodeRefs: ["K0", "K1", "K12", "K2", "K3"] },
+  // Pieces that do not meet, so every line built from them has a known discontinuity.
+  { id: "WK01", nodeRefs: ["K0", "K1"] },
+  { id: "WK23", nodeRefs: ["K2", "K3"] },
+  { id: "WN1", nodeRefs: ["N1"] },
+  { id: "WN", nodeRefs: ["N1", "N2"] },
+];
+
+const borrowGraph = buildTransitGraph(borrowNodes, borrowWays, [
+  tracedRoute("RLocal", "Local", ["K0", "K1", "K2", "K3"], ["WK"]),
+  // Stops only at the ends — its own way list has a gap, so it cannot trace K0 -> K3 itself.
+  tracedRoute("RExpress", "Express", ["K0", "K3"], ["WK01", "WK23"]),
+  // The same, running the other way.
+  tracedRoute("RExpressBack", "Express Back", ["K3", "K0"], ["WK23", "WK01"]),
+  // One hop, K1 -> K2, with no track of its own at all.
+  tracedRoute("RShort", "Short", ["K1", "K2"], []),
+  // A line through the namesake stations, also with no track of its own.
+  tracedRoute("RNamesake", "Namesake", ["N1", "N2"], []),
+]);
+
+const borrowEdge = (from: string, to: string) =>
+  borrowGraph.rideEdges.find((e) => e.fromStopId === from && e.toStopId === to);
+const local = (from: string, to: string) =>
+  borrowEdge(`RLocal:${from}`, `RLocal:${to}`)!;
+const localLength =
+  local("K0", "K1").tracedLengthMeters! +
+  local("K1", "K2").tracedLengthMeters! +
+  local("K2", "K3").tracedLengthMeters!;
+
+const express = borrowEdge("RExpress:K0", "RExpress:K3");
+assert.ok(
+  express?.geometry,
+  "an express hop borrows the stopping line's track between its stops",
+);
+assert.deepEqual(
+  express!.geometry!.coordinates,
+  [
+    [138.8, 34.8],
+    [138.81, 34.8],
+    [138.815, 34.802],
+    [138.82, 34.8],
+    [138.83, 34.8],
+  ],
+  "joined hop to hop, with each shared station point once",
+);
+assert.ok(
+  Math.abs(express!.tracedLengthMeters! - localLength) < 1e-6,
+  "and its traced length is the sum of the hops it was built from",
+);
+assert.ok(
+  express!.distanceMeters < express!.tracedLengthMeters!,
+  "while its distance stays its own station-to-station chord (ADR-0030 §4)",
+);
+
+assert.deepEqual(
+  borrowEdge("RExpressBack:K3", "RExpressBack:K0")!.geometry!.coordinates,
+  [...express!.geometry!.coordinates].reverse(),
+  "a donor running the other way is turned round to run from the edge's own from-stop",
+);
+
+assert.deepEqual(
+  borrowEdge("RShort:K1", "RShort:K2")!.geometry,
+  local("K1", "K2").geometry,
+  "a single shared hop borrows that hop's shape exactly",
+);
+
+assert.equal(
+  borrowEdge("RNamesake:N1", "RNamesake:N2")!.geometry,
+  undefined,
+  "a namesake station on other track borrows nothing — identity is the node, not the name",
+);
+
+// A run with a refused hop in the middle is not a run of track we know.
+const gapGraph = buildTransitGraph(borrowNodes, borrowWays, [
+  tracedRoute(
+    "RLocalGap",
+    "Local With Gap",
+    ["K0", "K1", "K2", "K3"],
+    ["WK01", "WK23"],
+  ),
+  tracedRoute("RExpressGap", "Express", ["K0", "K3"], []),
+  // K1 -> K2 borrows from RLocal below, natively traced...
+  tracedRoute("RLocal", "Local", ["K1", "K2"], ["WK"]),
+]);
+assert.ok(
+  gapGraph.rideEdges.find(
+    (e) => e.fromStopId === "RLocalGap:K1" && e.toStopId === "RLocalGap:K2",
+  )?.geometry,
+  "the gapped line's own middle hop borrows from a line that traced it",
+);
+assert.equal(
+  gapGraph.rideEdges.find(
+    (e) => e.fromStopId === "RExpressGap:K0" && e.toStopId === "RExpressGap:K3",
+  )?.geometry,
+  undefined,
+  "...but a borrowed shape is never lent onward, so the express spanning it stays dashed",
+);
+
+console.log("transitGraphIngest shape-borrowing tests: OK");
 
 // ── Operator capture (issue #210) ───────────────────────────────────────────────────────
 //
