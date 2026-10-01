@@ -84,9 +84,10 @@ const RAIL_ROUTE_VALUES = new Set([
 // all-stops Shinkansen from a fast limited express: Kodama's 3:57 over its stops implies ~130 km/h,
 // under any threshold that also excludes conventional lines, while a wrong `duration` on しらさぎ
 // implied over 150. The ways a Shinkansen runs on are tagged `highspeed=yes`, and on the pinned
-// 260101 extract the share of a relation's track carrying it separates cleanly: every Shinkansen
-// service is at or above 18.7% (Tanigawa, on patchily tagged track), and no conventional line is
-// above 7.1% (the Kawagoe Line, a few stray tags). The threshold sits in that gap.
+// 260101 extract the share of a relation's track carrying it is unambiguous: every Shinkansen
+// service is at or above 44.5% (Kamome, whose relation includes its conventional relay), and no
+// other relation touches a single highspeed way. The threshold sits far below the first and well
+// above zero, so one mis-tagged way on a conventional line cannot promote it.
 const SHINKANSEN_TRACK_SHARE = 0.12;
 // `duration` still separates a limited express from a commuter line, which the track cannot: both
 // run on the same conventional rails.
