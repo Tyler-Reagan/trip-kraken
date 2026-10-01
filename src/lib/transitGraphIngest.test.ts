@@ -715,14 +715,23 @@ const orderNodes: OsmNode[] = [
   // Plain track vertices either side of S1, for the line whose *track* is out of place.
   { id: "M01", lat: 34.905, lon: 138.9, tags: {} },
   { id: "M12", lat: 34.915, lon: 138.9, tags: {} },
+  // The same two places again under other ids: track that sits where M01/M12 are but shares no
+  // node with them, so nothing can join it to the rest of the line.
+  { id: "N01", lat: 34.905, lon: 138.9, tags: {} },
+  { id: "N12", lat: 34.915, lon: 138.9, tags: {} },
 ];
 
 const orderWays: OsmWay[] = [
   { id: "WS", nodeRefs: ["S0", "S1", "S2", "S3", "S4"] },
-  // S1's stretch of track listed last, after a gap: the chain runs S0 · S2 S3 S4 · S1.
+  // S1's stretch of track listed last and joined to nothing: the chain runs S0 · S2 S3 S4 · S1.
   { id: "WM0", nodeRefs: ["S0", "M01"] },
   { id: "WM2", nodeRefs: ["M12", "S2", "S3", "S4"] },
-  { id: "WM1", nodeRefs: ["M01", "S1", "M12"] },
+  { id: "WM1", nodeRefs: ["N01", "S1", "N12"] },
+  // The same line in three pieces with the middle one listed last — a way out of member order
+  // that does join up, which is how most real breaks happen (ADR-0055 §1).
+  { id: "WP0", nodeRefs: ["S0", "M01"] },
+  { id: "WP2", nodeRefs: ["M12", "S2", "S3", "S4"] },
+  { id: "WP1", nodeRefs: ["M01", "S1", "M12"] },
 ];
 
 const orderGraph = buildTransitGraph(orderNodes, orderWays, [
@@ -808,6 +817,33 @@ assert.equal(
   orderEdge("RBothWrong:S0", "RBothWrong:S1")?.geometry,
   undefined,
   "while a hop onto the misplaced track still draws dashed — the stop is right, its shape is not known",
+);
+
+// A way listed out of member order but joined at both ends is placed where it joins, not
+// concatenated across a break — so every hop traces. Built alone, so nothing borrows (§2).
+const swappedGraph = buildTransitGraph(orderNodes, orderWays, [
+  tracedRoute(
+    "RSwapped",
+    "Swapped Ways",
+    ["S0", "S1", "S2", "S3", "S4"],
+    ["WP0", "WP2", "WP1"],
+  ),
+]);
+for (const edge of swappedGraph.rideEdges) {
+  assert.ok(
+    edge.geometry,
+    `a way listed out of order still assembles in place: ${edge.fromStopId}`,
+  );
+}
+assert.deepEqual(
+  swappedGraph.rideEdges.find((e) => e.fromStopId === "RSwapped:S0")!.geometry!
+    .coordinates,
+  [
+    [138.9, 34.9],
+    [138.9, 34.905],
+    [138.9, 34.91],
+  ],
+  "through the out-of-order way's own vertex, not a chord across a gap",
 );
 
 console.log("transitGraphIngest stop-order tests: OK");

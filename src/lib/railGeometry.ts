@@ -53,11 +53,19 @@ function pointOf(node: OsmNode): Point {
 }
 
 /**
- * Greedy end-to-end assembly of the relation's unroled way members. A way is reversed when its far
- * end matches; when neither end matches, the way is concatenated anyway and the join is recorded
- * as a break rather than erroring. Concatenating rather than stopping is deliberate — it keeps the
- * ways after the gap available to the stops that sit on them, and §1's gate refuses only the
- * segments that actually cross the break.
+ * End-to-end assembly of the relation's unroled way members, by connectivity with member order as
+ * the tie-break (ADR-0055 §1). A way is reversed when its far end matches; when no remaining way
+ * meets the chain's tail, the next way in member order is concatenated anyway and the join is
+ * recorded as a break rather than erroring. Concatenating rather than stopping is deliberate — it
+ * keeps the ways after the gap available to the stops that sit on them, and §1's gate refuses only
+ * the segments that actually cross the break.
+ *
+ * Member order alone is not enough to follow: contributors list a short way one place out of order
+ * often enough that the 260101 のぞみ 9802494 alone had twenty joins where consecutive members do
+ * not meet, nearly all of them a pair either side of one misplaced way, 4–372 m apart. Each refused
+ * every hop it fell inside. So when the next way in member order does not meet the tail, the
+ * nearest way that does — searching forward through member order first, then back — is taken
+ * instead, and the skipped way waits for the tail to reach it.
  */
 function assembleChain(
   relation: OsmRelation,
@@ -70,7 +78,35 @@ function assembleChain(
     .filter((w): w is OsmWay => w !== undefined && w.nodeRefs.length >= 2);
   if (ways.length === 0) return null;
 
+  // Every unplaced way, by the node at each of its ends. A way listed twice (an out-and-back's
+  // stem) is two entries, placed independently.
+  const byEnd = new Map<string, number[]>();
+  const index = (id: string, i: number) => {
+    const list = byEnd.get(id);
+    if (list) list.push(i);
+    else byEnd.set(id, [i]);
+  };
+  ways.forEach((way, i) => {
+    index(way.nodeRefs[0], i);
+    if (way.nodeRefs[way.nodeRefs.length - 1] !== way.nodeRefs[0])
+      index(way.nodeRefs[way.nodeRefs.length - 1], i);
+  });
+  const placed = new Array<boolean>(ways.length).fill(false);
+
+  /** The unplaced way meeting `nodeId` nearest after `last` in member order, else nearest before. */
+  const meeting = (nodeId: string, last: number): number | undefined => {
+    let after: number | undefined;
+    let before: number | undefined;
+    for (const i of byEnd.get(nodeId) ?? []) {
+      if (placed[i]) continue;
+      if (i > last && (after === undefined || i < after)) after = i;
+      if (i < last && (before === undefined || i > before)) before = i;
+    }
+    return after ?? before;
+  };
+
   let nodeIds = [...ways[0].nodeRefs];
+  placed[0] = true;
   // The first way's own direction is unknowable until a second way is placed against it: if the
   // neighbour meets its *start* and not its end, it was laid down backwards. Both tests are
   // needed — a closed loop's second way meets the first at both ends, and reversing on the head
@@ -84,17 +120,27 @@ function assembleChain(
   }
 
   const breaks = new Set<number>();
-  for (let i = 1; i < ways.length; i++) {
-    const refs = ways[i].nodeRefs;
+  let last = 0;
+  for (let placedCount = 1; placedCount < ways.length; placedCount++) {
     const tail = nodeIds[nodeIds.length - 1];
-    if (refs[0] === tail) {
-      nodeIds.push(...refs.slice(1));
-    } else if (refs[refs.length - 1] === tail) {
-      nodeIds.push(...refs.slice(0, -1).reverse());
-    } else {
-      breaks.add(nodeIds.length - 1);
-      nodeIds.push(...refs);
+    const joined = meeting(tail, last);
+    if (joined !== undefined) {
+      const refs = ways[joined].nodeRefs;
+      if (refs[0] === tail) nodeIds.push(...refs.slice(1));
+      else nodeIds.push(...refs.slice(0, -1).reverse());
+      placed[joined] = true;
+      last = joined;
+      continue;
     }
+    // Nothing meets the tail: a real gap. Carry on from the next unplaced way in member order,
+    // wrapping round, so the ways beyond the gap still reach the stops on them.
+    let next = last + 1;
+    while (placed[next % ways.length]) next++;
+    next %= ways.length;
+    breaks.add(nodeIds.length - 1);
+    nodeIds.push(...ways[next].nodeRefs);
+    placed[next] = true;
+    last = next;
   }
 
   // A node the extract does not carry cannot contribute a coordinate. Dropping it silently would
