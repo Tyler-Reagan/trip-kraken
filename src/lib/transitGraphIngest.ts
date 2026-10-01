@@ -48,10 +48,13 @@ export interface OsmNode {
   tags: Record<string, string>;
 }
 
-/** A way, reduced to what tracing needs. Tags are not retained — see `parsers/osmXml.ts`. */
+/** A way, reduced to what tracing and classification need. Tags are not retained beyond the one
+ * flag below — see `parsers/osmXml.ts`. */
 export interface OsmWay {
   id: string;
   nodeRefs: string[];
+  /** `highspeed=yes`: Shinkansen track (ADR-0054). Absent on everything else. */
+  highspeed?: boolean;
 }
 
 export interface OsmMember {
@@ -75,12 +78,47 @@ const RAIL_ROUTE_VALUES = new Set([
   "monorail",
 ]);
 
-// ADR-0019's own fix, thresholded as it suggested: real Japanese `route=train` relations do not
-// reliably carry the `service` sub-tag (issue #192 measured zero of 1,419 lines classified via it
-// nationally), but a named Shinkansen/limited-express relation's own `duration` tag, divided by its
-// stops' real distance, self-calibrates without depending on how any one contributor tagged it.
-const SHINKANSEN_SPEED_THRESHOLD_KMH = 150;
+// A Shinkansen is recognised by its track, not its timetable (ADR-0054). Real Japanese `route=train`
+// relations do not reliably carry the `service` sub-tag (issue #192 measured zero of 1,419 lines
+// classified via it nationally), and the `duration` tag ADR-0019 fell back to cannot tell an
+// all-stops Shinkansen from a fast limited express: Kodama's 3:57 over its stops implies ~130 km/h,
+// under any threshold that also excludes conventional lines, while a wrong `duration` on しらさぎ
+// implied over 150. The ways a Shinkansen runs on are tagged `highspeed=yes`, and on the pinned
+// 260101 extract the share of a relation's track carrying it separates cleanly: every Shinkansen
+// service is at or above 18.7% (Tanigawa, on patchily tagged track), and no conventional line is
+// above 7.1% (the Kawagoe Line, a few stray tags). The threshold sits in that gap.
+const SHINKANSEN_TRACK_SHARE = 0.12;
+// `duration` still separates a limited express from a commuter line, which the track cannot: both
+// run on the same conventional rails.
 const LIMITED_EXPRESS_SPEED_THRESHOLD_KMH = 80;
+
+/** The fraction of a route relation's member track, by length, that is tagged `highspeed=yes`. */
+function highspeedTrackShare(
+  relation: OsmRelation,
+  waysById: Map<string, OsmWay>,
+  nodesById: Map<string, OsmNode>,
+): number {
+  let total = 0;
+  let highspeed = 0;
+  for (const member of relation.members) {
+    if (member.type !== "way" || member.role !== "") continue;
+    const way = waysById.get(member.ref);
+    if (!way) continue;
+    let meters = 0;
+    for (let i = 1; i < way.nodeRefs.length; i++) {
+      const a = nodesById.get(way.nodeRefs[i - 1]);
+      const b = nodesById.get(way.nodeRefs[i]);
+      if (a && b)
+        meters += haversineMeters(
+          { lat: a.lat, lng: a.lon },
+          { lat: b.lat, lng: b.lon },
+        );
+    }
+    total += meters;
+    if (way.highspeed) highspeed += meters;
+  }
+  return total > 0 ? highspeed / total : 0;
+}
 
 /** OSM's plain `duration` tag on a route relation: `H:MM` or `H:MM:SS`, no seen use of ISO 8601 on
  * real Japanese rail relations. Anything else returns null rather than guess. */
@@ -116,18 +154,24 @@ function lineDistanceMeters(stops: OsmNode[]): number {
   return total;
 }
 
-function lineTypeOf(relation: OsmRelation, distanceMeters: number): LineType {
+function lineTypeOf(
+  relation: OsmRelation,
+  distanceMeters: number,
+  highspeedShare: number,
+): LineType {
   const route = relation.tags.route;
   if (route === "subway") return "subway";
   if (route === "light_rail" || route === "monorail") return "commuter";
   // route === "train": the `service` sub-tag stays the first check — some contributors do tag it —
-  // falling back to the relation's own implied average speed when it doesn't.
+  // then the track (ADR-0054), then the relation's own implied average speed.
   if (relation.tags.service === "high_speed") return "shinkansen";
+  if (highspeedShare >= SHINKANSEN_TRACK_SHARE) return "shinkansen";
   if (relation.tags.service === "long_distance") return "limitedExpress";
   const durationSeconds = parseDurationSeconds(relation.tags.duration);
   if (durationSeconds) {
+    // However fast it implies, a timetable never makes a Shinkansen on its own: off Shinkansen
+    // track, an implied speed past any limited express's is a tagging error, not a bullet train.
     const impliedSpeedKmh = distanceMeters / 1000 / (durationSeconds / 3600);
-    if (impliedSpeedKmh > SHINKANSEN_SPEED_THRESHOLD_KMH) return "shinkansen";
     if (impliedSpeedKmh > LIMITED_EXPRESS_SPEED_THRESHOLD_KMH)
       return "limitedExpress";
   }
@@ -281,7 +325,11 @@ function buildLines(
     const traced = traceLine(relation, resolvedStopIds, waysById, nodesById);
     const stops = traced.stopOsmIds.map((id) => nodesById.get(id)!);
 
-    const lineType = lineTypeOf(relation, lineDistanceMeters(stops));
+    const lineType = lineTypeOf(
+      relation,
+      lineDistanceMeters(stops),
+      highspeedTrackShare(relation, waysById, nodesById),
+    );
     const operator = operatorOf(relation, lineType, lineName);
 
     let sequence = 0;

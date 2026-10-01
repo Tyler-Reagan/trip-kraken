@@ -209,12 +209,14 @@ assert.equal(
   "route=monorail -> commuter",
 );
 
-// ── Classification falls back to implied average speed (`duration` ÷ distance) when `service`
-// is absent, per ADR-0019's own fix (issue #192) — same ~268 km Tokyo-Nagoya hop as R1, unlabeled ──
+// ── Off Shinkansen track, classification falls back to implied average speed (`duration` ÷
+// distance) when `service` is absent (issue #192) — same ~268 km Tokyo-Nagoya hop as R1, unlabeled.
+// These fixtures carry no ways, so no track share: the timetable alone can reach limitedExpress but
+// never shinkansen (ADR-0054) ──
 assert.equal(
   graph.stopNodes.get("R11:tokyoC")!.lineType,
-  "shinkansen",
-  "no service tag, but 268 km in 1:00 (~268 km/h, over the 150 km/h threshold) -> shinkansen",
+  "limitedExpress",
+  "no service tag and no Shinkansen track: 268 km in 1:00 is a tagging error, not a bullet train",
 );
 assert.equal(
   graph.stopNodes.get("R12:tokyoC")!.lineType,
@@ -809,6 +811,84 @@ assert.equal(
 );
 
 console.log("transitGraphIngest stop-order tests: OK");
+
+// ── A Shinkansen is recognised by its track (ADR-0054) ─────────────────────────────────────
+//
+// The `duration` threshold called every Tokaido Kodama a limited express (3:57 over its stops is
+// ~130 km/h) and しらさぎ, a conventional limited express with a wrong `duration`, a Shinkansen.
+// What a Shinkansen actually runs on is track tagged `highspeed=yes`. The same straight five-station
+// track as above, with a separate highspeed copy of it and a mostly-conventional variant.
+
+const trackNodes: OsmNode[] = [
+  ...orderNodes,
+  // Conventional track running on ~43 km past S1, so one highspeed way S0 -> S1 is a small share.
+  { id: "X1", lat: 34.98, lon: 138.9, tags: {} },
+  { id: "X2", lat: 35.3, lon: 138.9, tags: {} },
+];
+
+const trackWays: OsmWay[] = [
+  { id: "WHigh", nodeRefs: ["S0", "S1", "S2", "S3", "S4"], highspeed: true },
+  { id: "WConv", nodeRefs: ["S0", "S1", "S2", "S3", "S4"] },
+  // 1.1 km of highspeed track and ~44 km of conventional: a 2.5% share, like a stray tag.
+  { id: "WStray", nodeRefs: ["S0", "S1"], highspeed: true },
+  { id: "WLong", nodeRefs: ["S1", "S2", "S3", "S4", "X1", "X2"] },
+];
+
+const trackGraph = buildTransitGraph(trackNodes, trackWays, [
+  // All-stops on Shinkansen track, with a timetable that implies only ~1.1 km/h.
+  {
+    ...tracedRoute(
+      "RKodama",
+      "All-stops",
+      ["S0", "S1", "S2", "S3", "S4"],
+      ["WHigh"],
+    ),
+    tags: { route: "train", name: "All-stops", duration: "4:00" },
+  },
+  // Conventional track, with a timetable implying ~265 km/h — the しらさぎ tagging error.
+  {
+    ...tracedRoute("RFastTag", "Fast tag", ["S0", "S4"], ["WConv"]),
+    tags: { route: "train", name: "Fast tag", duration: "0:01" },
+  },
+  // Conventional track with a stray highspeed way on it.
+  tracedRoute("RStray", "Stray tag", ["S0", "S1", "S4"], ["WStray", "WLong"]),
+]);
+const lineTypeOfLine = (lineId: string) =>
+  [...trackGraph.stopNodes.values()].find((s) => s.lineId === lineId)!.lineType;
+
+assert.equal(
+  lineTypeOfLine("RKodama"),
+  "shinkansen",
+  "a line on highspeed track is a Shinkansen however slow its timetable",
+);
+assert.equal(
+  lineTypeOfLine("RFastTag"),
+  "limitedExpress",
+  "a fast timetable on conventional track is a limited express, never a Shinkansen",
+);
+assert.equal(
+  lineTypeOfLine("RStray"),
+  "commuter",
+  "a stray highspeed tag on a few per cent of the track does not make a Shinkansen",
+);
+
+const { ways: parsedWays } = parseOsmXml(`<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6">
+  <way id="1"><nd ref="a"/><nd ref="b"/><tag k="highspeed" v="yes"/><tag k="railway" v="rail"/></way>
+  <way id="2"><nd ref="b"/><nd ref="c"/><tag k="highspeed" v="no"/></way>
+  <way id="3"><nd ref="c"/><nd ref="d"/></way>
+</osm>`);
+assert.deepEqual(
+  parsedWays,
+  [
+    { id: "1", nodeRefs: ["a", "b"], highspeed: true },
+    { id: "2", nodeRefs: ["b", "c"] },
+    { id: "3", nodeRefs: ["c", "d"] },
+  ],
+  "the parser keeps highspeed=yes as one flag, and no other way tag",
+);
+
+console.log("transitGraphIngest Shinkansen-track tests: OK");
 
 // ── Shape borrowed from another line on the same track (ADR-0053 §2) ─────────────────────
 //
