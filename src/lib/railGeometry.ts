@@ -21,6 +21,10 @@ import type { OsmNode, OsmRelation, OsmWay } from "@/lib/transitGraphIngest";
 
 export interface TracedSegment {
   geometry: GeoJSON.LineString;
+  /** How much of `tracedLengthMeters` runs on `highspeed=yes` track — what tells a mini-Shinkansen's
+   * conventional stretch from its Shinkansen one (ADR-0055 §2). Not stored; ingest reads it once to
+   * decide a ride edge's `conventionalTrack` flag. */
+  highspeedMeters: number;
   /** Real track length along the traced shape. Stored because it is free once the shape exists,
    * and consumed by nothing — rail durations stay haversine (ADR-0030 §4). Swapping it in would
    * move every rail duration ~7.7%, which is not a rendering change's business, and is gated on a
@@ -45,6 +49,9 @@ interface Chain {
    * moment it happens, which is why no jump-distance threshold is used: a Shinkansen viaduct's
    * sparse straight track looks like a gap and is not one. */
   breaks: Set<number>;
+  /** Chain indexes `i` where the join between `points[i]` and `points[i + 1]` lies along a way
+   * tagged `highspeed=yes` — Shinkansen track (ADR-0055 §2). */
+  highspeed: Set<number>;
   closed: boolean;
 }
 
@@ -107,6 +114,14 @@ function assembleChain(
 
   let nodeIds = [...ways[0].nodeRefs];
   placed[0] = true;
+  // Every join laid along a highspeed way, by the index of its first vertex — symmetric under the
+  // first way's possible reversal below, since all of its joins are on the one way.
+  const highspeed = new Set<number>();
+  const markHighspeed = (way: OsmWay, firstJoin: number, joins: number) => {
+    if (!way.highspeed) return;
+    for (let j = firstJoin; j < firstJoin + joins; j++) highspeed.add(j);
+  };
+  markHighspeed(ways[0], 0, nodeIds.length - 1);
   // The first way's own direction is unknowable until a second way is placed against it: if the
   // neighbour meets its *start* and not its end, it was laid down backwards. Both tests are
   // needed — a closed loop's second way meets the first at both ends, and reversing on the head
@@ -126,6 +141,7 @@ function assembleChain(
     const joined = meeting(tail, last);
     if (joined !== undefined) {
       const refs = ways[joined].nodeRefs;
+      markHighspeed(ways[joined], nodeIds.length - 1, refs.length - 1);
       if (refs[0] === tail) nodeIds.push(...refs.slice(1));
       else nodeIds.push(...refs.slice(0, -1).reverse());
       placed[joined] = true;
@@ -138,6 +154,7 @@ function assembleChain(
     while (placed[next % ways.length]) next++;
     next %= ways.length;
     breaks.add(nodeIds.length - 1);
+    markHighspeed(ways[next], nodeIds.length, ways[next].nodeRefs.length - 1);
     nodeIds.push(...ways[next].nodeRefs);
     placed[next] = true;
     last = next;
@@ -150,6 +167,7 @@ function assembleChain(
   const points: Point[] = [];
   const kept: string[] = [];
   const keptBreaks = new Set<number>();
+  const keptHighspeed = new Set<number>();
   let previousIndex = -1;
   for (let i = 0; i < nodeIds.length; i++) {
     const node = nodesById.get(nodeIds[i]);
@@ -158,6 +176,7 @@ function assembleChain(
       let broken = i !== previousIndex + 1;
       for (let b = previousIndex; b < i && !broken; b++) broken = breaks.has(b);
       if (broken) keptBreaks.add(kept.length - 1);
+      else if (highspeed.has(previousIndex)) keptHighspeed.add(kept.length - 1);
     }
     previousIndex = i;
     kept.push(nodeIds[i]);
@@ -176,6 +195,7 @@ function assembleChain(
     occurrences,
     points,
     breaks: keptBreaks,
+    highspeed: keptHighspeed,
     closed: kept[0] === kept[kept.length - 1],
   };
 }
@@ -193,10 +213,12 @@ function reverseChain(chain: Chain): Chain {
   const breaks = new Set<number>();
   // A break between vertices i and i+1 becomes a break between their mirrored neighbours.
   for (const i of chain.breaks) breaks.add(last - i - 1);
+  const highspeed = new Set<number>();
+  for (const i of chain.highspeed) highspeed.add(last - i - 1);
   const occurrences = new Map<string, number[]>();
   for (const [id, list] of chain.occurrences)
     occurrences.set(id, list.map((i) => last - i).reverse());
-  return { occurrences, points, breaks, closed: chain.closed };
+  return { occurrences, points, breaks, highspeed, closed: chain.closed };
 }
 
 /** The point at a fractional chain index. */
@@ -300,12 +322,30 @@ function lengthOf(points: Point[]): number {
   return meters;
 }
 
+/** Metres of highspeed track between two positions, `from` at or before `to`, counting each join
+ * only for the part of it the span covers. */
+function highspeedMetersBetween(
+  chain: Chain,
+  from: ChainPosition,
+  to: ChainPosition,
+): number {
+  let meters = 0;
+  for (let j = Math.floor(from); j <= Math.ceil(to) - 1; j++) {
+    if (!chain.highspeed.has(j)) continue;
+    const covered = Math.min(j + 1, to) - Math.max(j, from);
+    if (covered > 0)
+      meters += covered * haversineMeters(chain.points[j], chain.points[j + 1]);
+  }
+  return meters;
+}
+
 function segmentBetween(
   chain: Chain,
   from: ChainPosition,
   to: ChainPosition,
 ): TracedSegment | null {
   let points: Point[];
+  let highspeedMeters: number;
 
   // The same place twice — a relation listing one station as two consecutive stop members. There
   // is no track between them to trace.
@@ -314,6 +354,7 @@ function segmentBetween(
   if (to > from) {
     if (crossesBreak(chain, from, to)) return null;
     points = sliceBetween(chain, from, to);
+    highspeedMeters = highspeedMetersBetween(chain, from, to);
   } else if (chain.closed) {
     // The hop that closes a loop (§2): the chain's tail joined to its head, which is an exact cut
     // rather than a heuristic. Special-cased instead of left to §1's gate deliberately — refusing
@@ -326,6 +367,9 @@ function segmentBetween(
       ...sliceBetween(chain, from, last),
       ...sliceBetween(chain, 0, to).slice(1),
     ];
+    highspeedMeters =
+      highspeedMetersBetween(chain, from, last) +
+      highspeedMetersBetween(chain, 0, to);
   } else {
     // One hop runs against the chain while the line as a whole runs with it. A systematically
     // backwards chain was already turned around before any cutting happened, so what is left here
@@ -353,6 +397,7 @@ function segmentBetween(
       coordinates: points.map((p) => [p.lng, p.lat]),
     },
     tracedLengthMeters: lengthOf(points),
+    highspeedMeters,
   };
 }
 
@@ -548,6 +593,9 @@ export interface BuiltLine {
   lineId: string;
   stopOsmIds: string[];
   edges: RideEdge[];
+  /** `highspeedMeters` of each edge's shape, aligned with `edges` — present exactly where the edge
+   * has geometry. Kept beside the edge rather than on it because nothing reads it after ingest. */
+  highspeedMeters: (number | undefined)[];
 }
 
 /**
@@ -619,6 +667,7 @@ export function borrowSharedTrack(lines: BuiltLine[]): number {
       if (!best) return;
       edge.geometry = best.geometry;
       edge.tracedLengthMeters = best.tracedLengthMeters;
+      line.highspeedMeters[i] = best.highspeedMeters;
       filled++;
     });
   }
@@ -637,6 +686,7 @@ function runBetween(
   const [lo, hi] = from < to ? [from, to] : [to, from];
   const coordinates: GeoJSON.Position[] = [];
   let tracedLengthMeters = 0;
+  let highspeedMeters = 0;
   for (let k = lo; k < hi; k++) {
     const edge = line.edges[k];
     if (!natively[k] || !edge.geometry || edge.tracedLengthMeters === undefined)
@@ -647,10 +697,12 @@ function runBetween(
       joint !== undefined && joint[0] === part[0][0] && joint[1] === part[0][1];
     coordinates.push(...(sharesJoint ? part.slice(1) : part));
     tracedLengthMeters += edge.tracedLengthMeters;
+    highspeedMeters += line.highspeedMeters[k] ?? 0;
   }
   if (from > to) coordinates.reverse();
   return {
     geometry: { type: "LineString", coordinates },
     tracedLengthMeters,
+    highspeedMeters,
   };
 }

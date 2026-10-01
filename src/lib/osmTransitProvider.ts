@@ -224,6 +224,11 @@ interface RideLink {
   toStopId: string;
   distanceMeters: number;
   lineName: string;
+  /** The speed this hop is ridden at: its line's own type, except a Shinkansen hop on conventional
+   * track (`RideEdge.conventionalTrack`, ADR-0055 §2), which runs as a limited express. Boarding is
+   * still charged by the line's type — a Komachi past Morioka is a slow Shinkansen, not a cheaper
+   * train. */
+  speedType: LineType;
   geometry?: GeoJSON.LineString;
   forward: boolean;
 }
@@ -245,9 +250,14 @@ function buildAdjacency(graph: TransitGraph): Adjacency {
       graph.stopNodes.get(edge.fromStopId)?.lineName ??
       graph.stopNodes.get(edge.toStopId)?.lineName ??
       "";
+    const lineType =
+      graph.stopNodes.get(edge.fromStopId)?.lineType ?? "commuter";
     const shared = {
       distanceMeters: edge.distanceMeters,
       lineName,
+      speedType: edge.conventionalTrack
+        ? ("limitedExpress" as const)
+        : lineType,
       geometry: edge.geometry,
     };
     addRide(edge.fromStopId, {
@@ -414,9 +424,7 @@ function shortestPath(
         )
       )
         continue;
-      const lineType =
-        graph.stopNodes.get(rideEdge.fromStopId)?.lineType ?? "commuter";
-      const speed = LINE_TYPE_SPEEDS_KMH[lineType];
+      const speed = LINE_TYPE_SPEEDS_KMH[rideEdge.speedType];
       const candidateTime =
         currentTime + minutesForMeters(rideEdge.distanceMeters, speed);
       if (candidateTime < (timeMin.get(rideEdge.toStopId) ?? Infinity)) {
@@ -549,11 +557,9 @@ function railPathOf(
       ?.find((l) => l.toStopId === step.toStopId);
     if (!link) continue;
     meters += link.distanceMeters;
-    const lineType =
-      graph.stopNodes.get(step.fromStopId)?.lineType ?? "commuter";
     minutes += minutesForMeters(
       link.distanceMeters,
-      LINE_TYPE_SPEEDS_KMH[lineType],
+      LINE_TYPE_SPEEDS_KMH[link.speedType],
     );
     if (link.geometry) {
       spans.push(

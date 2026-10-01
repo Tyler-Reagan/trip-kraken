@@ -61,6 +61,8 @@ function buildFixture(): TransitGraph {
       ],
     },
     tracedLengthMeters: 1289.4,
+    // Round-trips like any other field (ADR-0055 §2); the Marunouchi edge below shows it absent.
+    conventionalTrack: true,
   });
 
   // Marunouchi line: a stop node at the same physical station as Tokyo (an interchange).
@@ -161,6 +163,30 @@ assert.throws(
   () => load(stalePath),
   /predates issue #159/,
   "a graph file from before StopNode.osmNodeId must throw loudly, not silently merge every stop node into one group",
+);
+
+// ── A pre-ADR-0055 file (no RideEdge.conventionalTrack): loud error, never Shinkansen speed on a
+// mini-Shinkansen's conventional stretch without saying so ──
+const stalePre0055Path = path.join(dir, "stale-pre-0055.db");
+{
+  const stale = new Database(stalePre0055Path);
+  stale.exec(`
+    CREATE TABLE StopNode (
+      id TEXT PRIMARY KEY, lineId TEXT NOT NULL, lineName TEXT NOT NULL, lineType TEXT NOT NULL,
+      stationName TEXT NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL, sequence INTEGER NOT NULL,
+      operator TEXT, osmNodeId TEXT NOT NULL
+    );
+    CREATE TABLE RideEdge (
+      fromStopId TEXT NOT NULL, toStopId TEXT NOT NULL, distanceMeters REAL NOT NULL,
+      geometry BLOB, tracedLengthMeters REAL
+    );
+  `);
+  stale.close();
+}
+assert.throws(
+  () => load(stalePre0055Path),
+  /predates ADR-0055/,
+  "a graph file from before RideEdge.conventionalTrack must throw loudly",
 );
 
 // ── Round trip: save then load must be structurally identical ──

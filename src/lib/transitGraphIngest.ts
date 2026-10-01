@@ -378,16 +378,21 @@ function buildLines(
       previous = { id, node: osmNode };
     }
 
+    const highspeedMeters = edgesOfLine.map(
+      () => undefined as number | undefined,
+    );
     traced.segments.forEach((segment, i) => {
       const edge = edgesOfLine[i];
       if (!segment || !edge) return;
       edge.geometry = segment.geometry;
       edge.tracedLengthMeters = segment.tracedLengthMeters;
+      highspeedMeters[i] = segment.highspeedMeters;
     });
     lines.push({
       lineId: relation.id,
       stopOsmIds: traced.stopOsmIds,
       edges: edgesOfLine,
+      highspeedMeters,
     });
   }
 
@@ -516,6 +521,28 @@ function buildClusters(
   }
 }
 
+// A Shinkansen hop with less than this share of its traced track on `highspeed=yes` ways runs on
+// conventional rails (ADR-0055 §2). Measured on 260101, a hop's share is bimodal — on Shinkansen
+// track it is ~1, on a mini-Shinkansen's conventional stretch ~0 — so the cut is not sensitive; a
+// half is simply "mostly".
+const CONVENTIONAL_TRACK_SHARE = 0.5;
+
+/** Flags each hop of a Shinkansen line whose own track is mostly conventional — the stretch a
+ * mini-Shinkansen shares with local trains, which no Shinkansen speed applies to. Only a traced hop
+ * can be judged: an untraced one keeps its line's speed, since there is no track to read. */
+function markConventionalTrack(graph: TransitGraph, lines: BuiltLine[]): void {
+  for (const line of lines) {
+    line.edges.forEach((edge, i) => {
+      const highspeed = line.highspeedMeters[i];
+      if (highspeed === undefined || !edge.tracedLengthMeters) return;
+      if (graph.stopNodes.get(edge.fromStopId)?.lineType !== "shinkansen")
+        return;
+      if (highspeed / edge.tracedLengthMeters < CONVENTIONAL_TRACK_SHARE)
+        edge.conventionalTrack = true;
+    });
+  }
+}
+
 /** The pure transform (Seam 2): parsed OSM nodes + ways + relations → a complete `TransitGraph`.
  * Ways joined the signature with ADR-0030 — they carry the geometry each ride edge is traced from,
  * and tracing belongs behind this seam, where ADR-0019's ticket #87 drew the unit-test line. */
@@ -535,6 +562,7 @@ export function buildTransitGraph(
   );
   // Only once every line has traced its own track can one lend it to another (ADR-0053 §2).
   borrowSharedTrack(lines);
+  markConventionalTrack(graph, lines);
   buildClusters(graph, relations, rawNodeToStopNodes);
   return graph;
 }

@@ -62,7 +62,8 @@ function createSchema(sqlite: Database.Database): void {
       toStopId TEXT NOT NULL,
       distanceMeters REAL NOT NULL,
       geometry BLOB,
-      tracedLengthMeters REAL
+      tracedLengthMeters REAL,
+      conventionalTrack INTEGER
     );
     CREATE TABLE TransferEdge (
       fromStopId TEXT NOT NULL,
@@ -109,7 +110,7 @@ export function save(
       "INSERT INTO ClusterMember (clusterId, stopNodeId) VALUES (?, ?)",
     );
     const insertRide = sqlite.prepare(
-      "INSERT INTO RideEdge (fromStopId, toStopId, distanceMeters, geometry, tracedLengthMeters) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO RideEdge (fromStopId, toStopId, distanceMeters, geometry, tracedLengthMeters, conventionalTrack) VALUES (?, ?, ?, ?, ?, ?)",
     );
     const insertTransfer = sqlite.prepare(
       "INSERT INTO TransferEdge (fromStopId, toStopId, clusterId) VALUES (?, ?, ?)",
@@ -145,6 +146,7 @@ export function save(
           edge.distanceMeters,
           edge.geometry ? encodeLineString(edge.geometry) : null,
           edge.tracedLengthMeters ?? null,
+          edge.conventionalTrack ? 1 : null,
         );
       }
       for (const edge of graph.transferEdges) {
@@ -200,6 +202,20 @@ export function load(filePath: string = DEFAULT_GRAPH_PATH): {
         `transit graph at ${filePath} predates issue #159 (StopNode.osmNodeId) — re-run \`pnpm ingest:transit-graph\``,
       );
     }
+    // ADR-0055 §2's `conventionalTrack` the same way: a file without it would price every
+    // mini-Shinkansen hop at Shinkansen speed and say nothing.
+    const rideEdgeColumns = new Set(
+      (
+        sqlite.prepare("PRAGMA table_info(RideEdge)").all() as {
+          name: string;
+        }[]
+      ).map((c) => c.name),
+    );
+    if (!rideEdgeColumns.has("conventionalTrack")) {
+      throw new Error(
+        `transit graph at ${filePath} predates ADR-0055 (RideEdge.conventionalTrack) — re-run \`pnpm ingest:transit-graph\``,
+      );
+    }
 
     const graph = createGraph();
 
@@ -235,9 +251,12 @@ export function load(filePath: string = DEFAULT_GRAPH_PATH): {
     }
     const rideRows = sqlite
       .prepare(
-        "SELECT fromStopId, toStopId, distanceMeters, geometry, tracedLengthMeters FROM RideEdge",
+        "SELECT fromStopId, toStopId, distanceMeters, geometry, tracedLengthMeters, conventionalTrack FROM RideEdge",
       )
-      .all() as (Omit<RideEdge, "geometry"> & { geometry: Buffer | null })[];
+      .all() as (Omit<RideEdge, "geometry" | "conventionalTrack"> & {
+      geometry: Buffer | null;
+      conventionalTrack: number | null;
+    })[];
     for (const row of rideRows) {
       const edge: RideEdge = {
         fromStopId: row.fromStopId,
@@ -248,6 +267,7 @@ export function load(filePath: string = DEFAULT_GRAPH_PATH): {
         edge.geometry = decodeLineString(row.geometry);
         edge.tracedLengthMeters = row.tracedLengthMeters;
       }
+      if (row.conventionalTrack) edge.conventionalTrack = true;
       graph.rideEdges.push(edge);
     }
     graph.transferEdges.push(

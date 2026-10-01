@@ -908,6 +908,56 @@ assert.equal(
   "a stray highspeed tag on a few per cent of the track does not make a Shinkansen",
 );
 
+// A mini-Shinkansen (ADR-0055 §2): Shinkansen track as far as S2, the rails local trains use after
+// it. The line is a Shinkansen — half its track is highspeed — but only its first two hops are.
+const miniGraph = buildTransitGraph(
+  trackNodes,
+  [
+    { id: "WMiniHigh", nodeRefs: ["S0", "S1", "S2"], highspeed: true },
+    { id: "WMiniConv", nodeRefs: ["S2", "S3", "S4"] },
+  ],
+  [
+    tracedRoute(
+      "RMini",
+      "Mini",
+      ["S0", "S1", "S2", "S3", "S4"],
+      ["WMiniHigh", "WMiniConv"],
+    ),
+    // Stops only at S2 and S4, with no track of its own: it borrows RMini's, flag and all.
+    {
+      ...tracedRoute("RMiniExpress", "Mini Express", ["S2", "S4"], []),
+      tags: { route: "train", name: "Mini Express", service: "high_speed" },
+    },
+  ],
+);
+const miniEdge = (from: string, to: string) =>
+  miniGraph.rideEdges.find((e) => e.fromStopId === from && e.toStopId === to)!;
+assert.equal(
+  [...miniGraph.stopNodes.values()].find((s) => s.lineId === "RMini")!.lineType,
+  "shinkansen",
+  "a line with half its track on Shinkansen rails is a Shinkansen",
+);
+assert.equal(
+  miniEdge("RMini:S0", "RMini:S1").conventionalTrack,
+  undefined,
+  "its hops on highspeed track carry no flag",
+);
+assert.equal(
+  miniEdge("RMini:S2", "RMini:S3").conventionalTrack,
+  true,
+  "its hops on conventional track are flagged, to be priced as a limited express",
+);
+assert.equal(
+  miniEdge("RMiniExpress:S2", "RMiniExpress:S4").conventionalTrack,
+  true,
+  "a shape borrowed across conventional track carries the flag too",
+);
+assert.equal(
+  trackGraph.rideEdges.some((e) => e.conventionalTrack),
+  false,
+  "and no hop of a conventional line is ever flagged — the flag only qualifies a Shinkansen",
+);
+
 const { ways: parsedWays } = parseOsmXml(`<?xml version="1.0" encoding="UTF-8"?>
 <osm version="0.6">
   <way id="1"><nd ref="a"/><nd ref="b"/><tag k="highspeed" v="yes"/><tag k="railway" v="rail"/></way>

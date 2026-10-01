@@ -74,6 +74,12 @@ export interface RideEdge {
   /** Length along `geometry`, present exactly when it is. Nothing costs travel with it —
    * `distanceMeters` stays the station-to-station haversine (ADR-0030 §4). */
   tracedLengthMeters?: number;
+  /** Set only on a Shinkansen line's hop that runs mostly on conventional track — a mini-Shinkansen
+   * (Komachi past Morioka, Tsubasa past Fukushima) on rails it shares with local trains. Such a hop
+   * is priced at `limitedExpress` speed, while boarding the line is still a Shinkansen boarding
+   * (ADR-0055 §2). Absent on every other edge, including any hop with no traced shape, since
+   * without the track there is nothing to read. */
+  conventionalTrack?: true;
 }
 
 export interface TransferEdge {

@@ -1007,5 +1007,68 @@ async function main() {
     "an ordinary JR leg carries no supplement flag at all",
   );
 
+  // ── A mini-Shinkansen's conventional stretch runs at limited-express speed (ADR-0055 §2) ──
+  //
+  // Two 100 km hops of one Shinkansen line: the first on Shinkansen track, the second flagged
+  // `conventionalTrack`. The Path must price each at its own track's speed, and charge one Shinkansen
+  // boarding for the line as a whole.
+  {
+    const mini = createGraph();
+    const stop = (id: string, lat: number, sequence: number) =>
+      mini.stopNodes.set(id, {
+        id,
+        osmNodeId: id,
+        lineId: "mini",
+        lineName: "Komachi",
+        lineType: "shinkansen",
+        stationName: id,
+        lat,
+        lng: 140.5,
+        sequence,
+      });
+    stop("mini-0", 39.0, 0);
+    stop("mini-1", 39.9, 1);
+    stop("mini-2", 40.8, 2);
+    mini.rideEdges.push(
+      { fromStopId: "mini-0", toStopId: "mini-1", distanceMeters: 100_000 },
+      {
+        fromStopId: "mini-1",
+        toStopId: "mini-2",
+        distanceMeters: 100_000,
+        conventionalTrack: true,
+      },
+    );
+    const miniProvider = createOsmTransitProvider(
+      mini,
+      buildSpatialIndex(mini),
+    );
+    const journey = await miniProvider.describeJourney(
+      P(39.0, 140.5001),
+      P(40.8, 140.5001),
+      ["rail"],
+    );
+    const rail = journey!.filter((p) => p.kind === "rail");
+    assert.equal(rail.length, 1, "one line, one rail Path, flag or no flag");
+    const expectedMinutes =
+      PREMIUM_BOARDING_MINUTES.shinkansen +
+      (100 / LINE_TYPE_SPEEDS_KMH.shinkansen) * 60 +
+      (100 / LINE_TYPE_SPEEDS_KMH.limitedExpress) * 60;
+    assert.ok(
+      Math.abs(rail[0].travelCost.durationSeconds / 60 - expectedMinutes) <
+        1e-6,
+      "the Shinkansen-track hop at Shinkansen speed, the conventional one at limited-express speed, one Shinkansen boarding",
+    );
+    const matrix = await miniProvider.costMatrix(
+      [P(39.0, 140.5001), P(40.8, 140.5001)],
+      ["rail"],
+    );
+    assert.ok(
+      Math.abs(
+        matrix[0][1]!.durationSeconds - journeyCost(journey!)!.durationSeconds,
+      ) < 1e-6,
+      "and the search the optimizer plans against prices it identically",
+    );
+  }
+
   console.log("✓ osmTransitProvider.test.ts passed");
 }
